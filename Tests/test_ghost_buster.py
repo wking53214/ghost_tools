@@ -306,3 +306,26 @@ def test_dead_code_string_subscript_key_only_counts_matching_names(tmp_path):
     findings = detect_dead_code([f])
     assert len(findings) == 1
     assert "truly_unused" in findings[0].summary
+
+
+def test_near_duplicate_disambiguates_same_named_functions_in_one_file(tmp_path):
+    """v0.1.2 bug: two distinct nested functions sharing a name (a real,
+    common pattern -- e.g. `thread_b` defined inside two different
+    similarly-shaped test functions) must both appear in the summary,
+    not silently collapse into one label because file+name matched."""
+    body = "\n".join(f"        z = z + {i}" for i in range(10))
+    content = (
+        f"def outer_one():\n    def helper(z):\n{body}\n        return z\n    return helper\n\n"
+        f"def outer_two():\n    def helper(z):\n{body}\n        return z\n    return helper\n"
+    )
+    f = _write(tmp_path, "m.py", content)
+    findings = detect_near_duplicate_functions([f], min_lines=3)
+    # Two clusters legitimately exist here: the two `outer_*` wrappers
+    # match each other (same shape: define+return a nested helper), and
+    # the two `helper` bodies match each other -- assert on the specific
+    # cluster this test is actually about, not the total count.
+    helper_findings = [x for x in findings if ":helper" in x.summary]
+    assert len(helper_findings) == 1
+    assert helper_findings[0].summary.count("m.py:") == 2, (
+        f"expected both same-named occurrences listed distinctly, got: {helper_findings[0].summary}"
+    )

@@ -281,7 +281,19 @@ def detect_near_duplicate_functions(files: List[Path], min_lines: int = 6) -> Li
     for fp, occurrences in by_fingerprint.items():
         if len(occurrences) < 2:
             continue
-        names = sorted({f"{p.name}:{n.name}" for p, n in occurrences})
+        # One label per OCCURRENCE, not per unique (file, name) pair --
+        # v0.1.2 bug fix, found via a real run against HERALD's own test
+        # suite: two distinct nested functions both happened to be named
+        # `thread_b` in the same file (a legitimate, common pattern --
+        # multiple similarly-shaped test functions each defining their
+        # own locally-scoped helper of the same name). The original
+        # `{f"{p.name}:{n.name}"}` SET silently collapsed both into one
+        # identical string, producing a finding that claimed "2 functions
+        # share..." while naming only one -- correct occurrence count,
+        # misleading/incomplete label. Line numbers make every label
+        # unique by construction; a plain list (not a set) means no
+        # future case can silently lose an occurrence this way again.
+        names = [f"{p.name}:{n.lineno}:{n.name}" for p, n in occurrences]
         primary_path, primary_node = occurrences[0]
         findings.append(Finding(
             detector="near_duplicate_function",
