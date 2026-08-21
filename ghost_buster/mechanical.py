@@ -223,6 +223,32 @@ def detect_long_functions(files: List[Path], threshold: int = 80) -> List[Findin
 # locations.
 # ---------------------------------------------------------------------------
 
+def _shape(n: ast.AST):
+    """AST shape of one node with Name/Constant/Attribute leaf values
+    erased -- the single normalization both _structural_fingerprint
+    (whole functions) and _block_fingerprint (statement runs within one
+    function) build on, so there is exactly one definition of "same
+    shape" in this file rather than two that could drift apart.
+    """
+    if isinstance(n, ast.Name):
+        return ("Name",)
+    if isinstance(n, ast.Constant):
+        return ("Constant", type(n.value).__name__)
+    if isinstance(n, ast.Attribute):
+        return ("Attribute", _shape(n.value))
+    fields = []
+    for field_name, value in ast.iter_fields(n):
+        if isinstance(value, ast.AST):
+            fields.append(_shape(value))
+        elif isinstance(value, list):
+            fields.append(tuple(
+                _shape(v) if isinstance(v, ast.AST) else v for v in value
+            ))
+        else:
+            fields.append(value if isinstance(value, (int, float, bool, type(None))) else None)
+    return (type(n).__name__, tuple(fields))
+
+
 def _structural_fingerprint(node: ast.AST) -> str:
     """A hash of a function body's AST *shape*, with all Name/Constant/
     Attribute leaf values erased -- two functions with the same control
@@ -233,26 +259,16 @@ def _structural_fingerprint(node: ast.AST) -> str:
     renamed" shape, which is the specific pattern the research flagged
     as the hard-to-find near-duplicate case, and nothing subtler.
     """
-    def shape(n: ast.AST):
-        if isinstance(n, ast.Name):
-            return ("Name",)
-        if isinstance(n, ast.Constant):
-            return ("Constant", type(n.value).__name__)
-        if isinstance(n, ast.Attribute):
-            return ("Attribute", shape(n.value))
-        fields = []
-        for field_name, value in ast.iter_fields(n):
-            if isinstance(value, ast.AST):
-                fields.append(shape(value))
-            elif isinstance(value, list):
-                fields.append(tuple(
-                    shape(v) if isinstance(v, ast.AST) else v for v in value
-                ))
-            else:
-                fields.append(value if isinstance(value, (int, float, bool, type(None))) else None)
-        return (type(n).__name__, tuple(fields))
+    return hashlib.sha256(repr(_shape(node)).encode("utf-8")).hexdigest()
 
-    return hashlib.sha256(repr(shape(node)).encode("utf-8")).hexdigest()
+
+def _block_fingerprint(stmts: List[ast.stmt]) -> str:
+    """Same normalization as _structural_fingerprint, applied to a run of
+    statements rather than a whole function -- see
+    detect_intra_function_duplicate_blocks for why this exists."""
+    return hashlib.sha256(
+        repr(tuple(_shape(s) for s in stmts)).encode("utf-8")
+    ).hexdigest()
 
 
 @register("near_duplicate_function")
@@ -317,6 +333,174 @@ def detect_near_duplicate_functions(files: List[Path], min_lines: int = 6) -> Li
                 related_files=[str(p) for p, _ in occurrences[1:]],
             ),
         ))
+    return findings
+
+
+# ---------------------------------------------------------------------------
+# Detector: intra_function_duplicate_block -- v0.2, added for a real gap
+# near_duplicate_function cannot see: repeated statement runs that live
+# INSIDE one function (e.g. sibling if/elif branches that each hand-build
+# the same shape of object) rather than being duplicated across two whole
+# functions. near_duplicate_function fingerprints entire function bodies,
+# so six near-identical ~9-line blocks inside one function's six verdict
+# branches are invisible to it -- confirmed live: this exact pattern in
+# HERALD's gate.py (six branches of submit(), each hand-constructing a
+# GateDecision with the same authorization_mac=_sign_decision(...) call)
+# was found by reading the code during triage, not by ghost_buster, and
+# was flagged at the time as a v0.2 gap worth closing.
+# ---------------------------------------------------------------------------
+
+_BLOCK_FIELD_NAMES = ("body", "orelse", "finalbody")
+
+
+def _stmt_blocks(func_node: ast.AST) -> Iterable[List[ast.stmt]]:
+    """Every list-of-statements belonging to a function's OWN scope: its
+    own body, plus the body/orelse/finalbody of every nested if/for/while/
+    try/with inside it, plus each except-handler's body. Each is a
+    candidate for "the same block repeated" -- a sibling if/elif branch is
+    exactly one of these lists, which is the shape the gate.py case
+    actually had.
+
+    Recurses only through statement lists (body/orelse/finalbody/handler
+    bodies), never through ast.walk -- ast.walk cannot be pruned, so using
+    it here would still surface a nested function's inner blocks (they're
+    descendants of func_node regardless of what a visitor does when it
+    reaches the FunctionDef node itself). Recursing through the AST's own
+    body/orelse/finalbody structure means a nested def/async def is simply
+    never entered: it has no such field on the *statements around it* to
+    recurse through, and is itself skipped explicitly below. That nested
+    function is still analyzed -- as its own `func` in the caller's outer
+    loop over the module -- just not folded into this function's set.
+
+    Scope limit, not fixed here: constructs whose bodies aren't a plain
+    list of statements (match-case bodies, comprehensions) are not
+    descended into. Rare in practice and left as a known residual rather
+    than adding a special case for every AST shape in a v0.2 detector.
+    """
+    def blocks_in(stmts: List[ast.stmt]) -> Iterable[List[ast.stmt]]:
+        yield stmts
+        for stmt in stmts:
+            if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            for field_name in _BLOCK_FIELD_NAMES:
+                value = getattr(stmt, field_name, None)
+                if value:
+                    yield from blocks_in(value)
+            for handler in getattr(stmt, "handlers", []):
+                if handler.body:
+                    yield from blocks_in(handler.body)
+
+    yield from blocks_in(func_node.body)
+
+
+def _node_count(node: ast.AST) -> int:
+    """Size of a statement's own subtree, in AST nodes -- the complexity
+    signal _stmt_candidates uses instead of (or alongside) raw statement
+    count. A single `return Decision(a=..., b=..., mac=sign(...))`
+    statement can easily be 30-50 nodes; a bare `x = 1` is 3-4. Counting
+    nodes catches "this one statement is doing a lot" in a way counting
+    statements never can, since a statement count of 1 looks identical
+    for both."""
+    return 1 + sum(_node_count(c) for c in ast.iter_child_nodes(node))
+
+
+def _stmt_candidates(
+    func_node: ast.AST, min_statements: int, min_complexity: int
+) -> Iterable[List[ast.stmt]]:
+    """Every comparison unit worth fingerprinting inside one function:
+    whole sibling blocks of >= min_statements statements (a duplicated
+    multi-statement branch body), AND individual statements whose own
+    subtree has >= min_complexity nodes (a duplicated single complex
+    statement -- see module comment above detect_intra_function_
+    duplicate_blocks for why this second case was added: it is not an
+    edge case, it is the shape the real motivating bug actually had).
+    """
+    for block in _stmt_blocks(func_node):
+        if len(block) >= min_statements:
+            yield block
+        for stmt in block:
+            if _node_count(stmt) >= min_complexity:
+                yield [stmt]
+
+
+@register("intra_function_duplicate_block")
+def detect_intra_function_duplicate_blocks(
+    files: List[Path], min_statements: int = 3, min_complexity: int = 15
+) -> List[Finding]:
+    """Within each function independently, groups statement-list blocks
+    (if/elif/else bodies, try/except/finally bodies, for/while bodies,
+    with bodies) AND individual complex statements by structural
+    fingerprint. A group of 2+ is the same "copy this, tweak the values,
+    repeat" shape near_duplicate_function is blind to, because no single
+    occurrence is a whole function.
+
+    v0.2's first design only compared runs of >= min_statements sibling
+    statements. Live-checked against the actual motivating case -- the
+    six branches of HERALD gate.py's pre-fix submit(), each hand-building
+    a GateDecision -- and it found NOTHING: every branch there was one
+    `return GateDecision(...)` statement, a statement COUNT of 1, however
+    deeply nested the call inside it. A pure statement-count floor is
+    blind to "the interesting duplication is one large statement, not a
+    run of several", so min_complexity (AST subtree size of a single
+    statement) is compared alongside min_statements, not instead of it --
+    both real shapes exist and neither subsumes the other.
+
+    Deliberately scoped to ONE function at a time, not the whole file or
+    repo: the confirmed real case was sibling branches within one
+    function, and going wider (matching a unit in function A against one
+    in function B) is a materially different, noisier claim -- "two
+    functions happen to share a sub-shape" is a much weaker signal than
+    "this one function repeats itself" -- left for a future version if
+    it turns out to matter.
+    """
+    findings: List[Finding] = []
+    for path in files:
+        tree = _parse(path)
+        if tree is None:
+            continue
+        for func in ast.walk(tree):
+            if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            by_fingerprint: Dict[str, List[List[ast.stmt]]] = {}
+            for unit in _stmt_candidates(func, min_statements, min_complexity):
+                fp = _block_fingerprint(unit)
+                by_fingerprint.setdefault(fp, []).append(unit)
+
+            for fp, units in by_fingerprint.items():
+                if len(units) < 2:
+                    continue
+                spans = [f"{u[0].lineno}-{u[-1].lineno}" for u in units]
+                first = units[0]
+                shape_note = (
+                    "single statement" if len(first) == 1
+                    else f"{len(first)}-statement block"
+                )
+                findings.append(Finding(
+                    detector="intra_function_duplicate_block",
+                    category=Category.DUPLICATION,
+                    layer=Layer.MECHANICAL,
+                    severity=Severity.MAJOR if len(units) > 2 else Severity.MINOR,
+                    status=Status.CONFIRMED,
+                    summary=(
+                        f"'{func.name}' repeats the same {shape_note} "
+                        f"{len(units)} times (lines {', '.join(spans)}): "
+                        "same shape, names/literals differ"
+                    ),
+                    detail=(
+                        "Structural fingerprint match within one function, not a "
+                        "whole-function match (near_duplicate_function's detection "
+                        "is blind to this shape). Typical real cause: several "
+                        "branches each hand-build the same kind of object or "
+                        "perform the same sequence of calls -- worth a single "
+                        "shared helper if the branches really are doing the same "
+                        "thing, not just a coincidental resemblance."
+                    ),
+                    evidence=Evidence(
+                        file=str(path), line_start=first[0].lineno,
+                        line_end=first[-1].lineno,
+                        related_files=[f"{path}:{s}" for s in spans[1:]],
+                    ),
+                ))
     return findings
 
 

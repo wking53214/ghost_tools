@@ -14,7 +14,8 @@ import pytest
 
 from ghost_buster.baseline import Baseline
 from ghost_buster.mechanical import (
-    detect_dead_code, detect_long_functions, detect_near_duplicate_functions, run_all,
+    detect_dead_code, detect_intra_function_duplicate_blocks, detect_long_functions,
+    detect_near_duplicate_functions, run_all,
 )
 from ghost_buster.schema import (
     Category, Evidence, Finding, FindingSet, Layer, Severity, Status,
@@ -329,3 +330,117 @@ def test_near_duplicate_disambiguates_same_named_functions_in_one_file(tmp_path)
     assert helper_findings[0].summary.count("m.py:") == 2, (
         f"expected both same-named occurrences listed distinctly, got: {helper_findings[0].summary}"
     )
+
+
+# ------------------------------------------------ intra_function_duplicate_block (v0.2)
+
+def test_intra_function_duplicate_block_finds_gate_py_shaped_case(tmp_path):
+    """The real case this detector was built for: one function with
+    several sibling if-branches, each hand-building the same shape of
+    object with different values -- exactly HERALD gate.py's submit()
+    before the _decide() refactor. near_duplicate_function cannot see
+    this at all because no single branch is a whole function."""
+    content = (
+        "def submit(verdict):\n"
+        "    if verdict == 'a':\n"
+        "        content_hash = claim.content_hash\n"
+        "        mac = sign(claim.claim_id, 'a', threshold, reason, content_hash)\n"
+        "        return Decision(claim.claim_id, 'a', mac)\n"
+        "    if verdict == 'b':\n"
+        "        content_hash = claim.content_hash\n"
+        "        mac = sign(claim.claim_id, 'b', threshold, reason, content_hash)\n"
+        "        return Decision(claim.claim_id, 'b', mac)\n"
+        "    if verdict == 'c':\n"
+        "        content_hash = claim.content_hash\n"
+        "        mac = sign(claim.claim_id, 'c', threshold, reason, content_hash)\n"
+        "        return Decision(claim.claim_id, 'c', mac)\n"
+        "    return None\n"
+    )
+    f = _write(tmp_path, "gate_shaped.py", content)
+    findings = detect_intra_function_duplicate_blocks([f], min_statements=3)
+    # Real duplication signals compound here: the whole 3-statement branch
+    # body matches across all three branches, AND its individually complex
+    # sub-statements (mac = sign(...), return Decision(...)) each separately
+    # clear the complexity floor and match each other too. All are genuine,
+    # non-redundant findings about the same underlying repetition -- assert
+    # on the whole-block finding specifically, not the total count.
+    block_findings = [x for x in findings if "3-statement block" in x.summary]
+    assert len(block_findings) == 1
+    assert "submit" in block_findings[0].summary
+    assert "3 times" in block_findings[0].summary
+    assert block_findings[0].severity == Severity.MAJOR
+
+
+def test_intra_function_duplicate_block_ignores_short_blocks(tmp_path):
+    """Two one-line 'return None' branches are not a ghost; min_statements
+    is the same false-positive guard near_duplicate_function's min_lines
+    is, applied to blocks instead of whole functions."""
+    content = (
+        "def f(x):\n"
+        "    if x:\n"
+        "        return None\n"
+        "    if not x:\n"
+        "        return None\n"
+    )
+    f = _write(tmp_path, "m.py", content)
+    findings = detect_intra_function_duplicate_blocks([f], min_statements=3)
+    assert findings == []
+
+
+def test_intra_function_duplicate_block_does_not_cross_function_boundaries(tmp_path):
+    """Deliberately scoped to one function at a time: the same block
+    repeated across two DIFFERENT functions must not be flagged by this
+    detector -- that is a different, wider claim this v0.2 detector
+    explicitly does not make (see detect_intra_function_duplicate_blocks
+    docstring)."""
+    body = "\n".join(f"        y = y + {i}" for i in range(4))
+    content = (
+        f"def one(x):\n    if x:\n{body}\n\n"
+        f"def two(x):\n    if x:\n{body}\n"
+    )
+    f = _write(tmp_path, "m.py", content)
+    findings = detect_intra_function_duplicate_blocks([f], min_statements=3)
+    assert findings == []
+
+
+def test_intra_function_duplicate_block_does_not_leak_nested_function_bodies(tmp_path):
+    """Regression guard for the real bug caught during development: a
+    naive ast.walk-based scope walk cannot be pruned at a nested def, so
+    a nested helper's blocks would leak into the outer function's set
+    AND be double-counted again when the nested function is visited on
+    its own. A block that exists ONLY inside a nested function, with no
+    sibling copy in the outer function's own scope, must not be flagged
+    as if the outer function repeated itself."""
+    inner_body = "\n".join(f"            y = y + {i}" for i in range(4))
+    content = (
+        "def outer(x):\n"
+        "    def inner(x):\n"
+        f"        if x:\n{inner_body}\n"
+        f"        if not x:\n{inner_body}\n"
+        "    return inner\n"
+    )
+    f = _write(tmp_path, "m.py", content)
+    findings = detect_intra_function_duplicate_blocks([f], min_statements=3)
+    # The duplication genuinely lives inside `inner`, not `outer` -- it
+    # must be attributed there, not reported against the outer function,
+    # and must not appear twice (once per scope).
+    assert len(findings) == 1
+    assert "inner" in findings[0].summary
+    assert "outer" not in findings[0].summary
+
+
+def test_intra_function_duplicate_block_included_in_run_all(tmp_path):
+    content = (
+        "def submit(v):\n"
+        "    if v == 'a':\n"
+        "        h = claim.content_hash\n"
+        "        m = sign('a', h)\n"
+        "        return D('a', m)\n"
+        "    if v == 'b':\n"
+        "        h = claim.content_hash\n"
+        "        m = sign('b', h)\n"
+        "        return D('b', m)\n"
+    )
+    f = _write(tmp_path, "m.py", content)
+    findings = run_all([f])
+    assert any(x.detector == "intra_function_duplicate_block" for x in findings)

@@ -1,4 +1,4 @@
-# ghost_tools -- v0.1
+# ghost_tools -- v0.2
 
 Two tools, one shared finding format, built to work in tandem: `ghost_buster`
 hunts down structural problems in code; `ghost_writer` turns the ones a human
@@ -42,8 +42,9 @@ Two independent layers, both producing the same `Finding` shape
 
 - **Mechanical** (`ghost_buster/mechanical.py`) -- deterministic, AST-based,
   stdlib only. Every finding is `Status.CONFIRMED`; there's nothing to
-  doubt about a deterministic check. Three detectors in v0.1:
-  `dead_code`, `long_function`, `near_duplicate_function`.
+  doubt about a deterministic check. Four detectors as of v0.2:
+  `dead_code`, `long_function`, `near_duplicate_function`,
+  `intra_function_duplicate_block`.
 
   `dead_code` was calibrated against a real, previously-unseen repo
   (ANVIL) and found two real false-positive classes on the first run:
@@ -55,6 +56,30 @@ Two independent layers, both producing the same `Finding` shape
   not fixed: getattr-by-string and decorator-based registration --
   confirmed live, this tool's own `@register` pattern in `mechanical.py`
   self-flags for exactly that reason when ghost_buster scans itself.
+
+  `intra_function_duplicate_block` (v0.2) closes a gap
+  `near_duplicate_function` cannot: duplication that lives INSIDE one
+  function rather than across two whole functions -- e.g. several sibling
+  if/elif branches that each hand-build the same kind of object.
+  Motivated by a real case found by reading code, not by ghost_buster,
+  during HERALD triage: `gate.py`'s `submit()` had six verdict branches
+  each independently constructing a `GateDecision` with the same
+  `authorization_mac=_sign_decision(...)` call -- invisible to
+  `near_duplicate_function` because no single branch is a whole function.
+  Two comparison units, both required because neither subsumes the
+  other (confirmed by a live check against the actual pre-fix `gate.py`,
+  which the first design -- statement-count only -- caught nothing on):
+  a contiguous run of `min_statements`+ sibling statements, and any
+  single statement whose own AST subtree exceeds `min_complexity` nodes
+  (a lone `return Decision(...)` with a nested call can be 40+ nodes
+  even though it's one statement). Scoped to one function at a time,
+  deliberately -- matching a block in function A against one in function
+  B is a different, noisier claim, left for later if it turns out to
+  matter. In practice, on a real test suite, most of what this flags is
+  low-severity (`MINOR`, 2 occurrences) pairs of near-identical
+  `assert` lines inside adversarial test scaffolding -- a disclosed,
+  expected pattern, the same kind `near_duplicate_function` already
+  disclosed for whole functions, not a bug.
 - **Semantic** (`ghost_buster/semantic.py`) -- backed by a real Claude API
   call (`AnthropicModelClient`, model `claude-sonnet-5`), for the class of
   ghost no static pass can see: two modules solving the same problem two
@@ -152,7 +177,26 @@ test suite runs.
 python -m pytest Tests/ -v
 ```
 
-31 tests, 0 network calls, 0 API key required -- the semantic-layer tests
+42 tests, 0 network calls, 0 API key required -- the semantic-layer tests
 verify the real parsing/fail-closed/injection-fencing logic via
 `StubModelClient`, the same technique `sentinel_os`'s own `interpretation/`
 package uses for its model-client tests.
+
+## Changelog
+
+- **v0.2** -- new mechanical detector `intra_function_duplicate_block`,
+  closing the "duplication inside one function" gap surfaced during the
+  HERALD dogfood run (see above). Includes a regression test for a real
+  bug caught during its own development: an `ast.walk`-based scope
+  boundary cannot be pruned at a nested `def`, so an early version leaked
+  a nested function's blocks into its enclosing function's comparison
+  set. Fixed by recursing through statement lists directly instead of
+  `ast.walk`.
+- **v0.1.2** -- fixed `near_duplicate_function` silently collapsing two
+  distinct same-named occurrences into one label (found via a real run
+  against HERALD).
+- **v0.1.1** -- fixed two `dead_code` false-positive classes (found via a
+  real run against ANVIL): `Protocol`/`ABC` interface classes, and
+  string-subscript-key dynamic dispatch.
+- **v0.1** -- initial release: `ghost_buster` (mechanical + semantic
+  layers) and `ghost_writer`.
