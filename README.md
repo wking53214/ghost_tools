@@ -1,4 +1,4 @@
-# ghost_tools -- v0.2
+# ghost_tools -- v0.3
 
 Two tools, one shared finding format, built to work in tandem: `ghost_buster`
 hunts down structural problems in code; `ghost_writer` turns the ones a human
@@ -42,9 +42,9 @@ Two independent layers, both producing the same `Finding` shape
 
 - **Mechanical** (`ghost_buster/mechanical.py`) -- deterministic, AST-based,
   stdlib only. Every finding is `Status.CONFIRMED`; there's nothing to
-  doubt about a deterministic check. Four detectors as of v0.2:
+  doubt about a deterministic check. Five detectors as of v0.3:
   `dead_code`, `long_function`, `near_duplicate_function`,
-  `intra_function_duplicate_block`.
+  `intra_function_duplicate_block`, `doc_test_count_drift`.
 
   `dead_code` was calibrated against a real, previously-unseen repo
   (ANVIL) and found two real false-positive classes on the first run:
@@ -80,6 +80,30 @@ Two independent layers, both producing the same `Finding` shape
   `assert` lines inside adversarial test scaffolding -- a disclosed,
   expected pattern, the same kind `near_duplicate_function` already
   disclosed for whole functions, not a bug.
+
+  `doc_test_count_drift` (v0.3) is the first detector that reads `.md`
+  files (the CLI's file collection now scans `*.md` alongside `*.py`;
+  every other detector still only acts on Python and silently skips
+  markdown via the same fail-closed `_parse()` every mechanical detector
+  already used). Found by doing, by hand, exactly the taxonomy-driven
+  scrub this detector now automates: HERALD's README claimed "135 tests
+  passing" while the real suite had grown to 321 collected cases across
+  15 commits the README was never updated for. This is the same
+  "documentation describes a system that no longer exists" failure the
+  *semantic* `doc_drift` detector already names (same `Category.DOC_DRIFT`)
+  -- but semantic `doc_drift` needs an API call and a human-supplied code
+  summary per check; it cannot self-drive a whole-repo scan. A number
+  next to the word "test(s)" in a markdown file is instead fully
+  mechanical: no API key, no judgment call, `Status.CONFIRMED`. Counts
+  the real side via static AST (every `test_*` function across the
+  scanned `.py` files) -- a deliberate LOWER BOUND, since
+  `@pytest.mark.parametrize` can only push the true collected count
+  higher, never lower. Because of that asymmetry the detector is
+  one-directional by design: it only flags a documented count the real
+  count has grown well past (`min_growth_ratio` AND `min_absolute_growth`
+  both required), never a documented count that looks high relative to
+  the static floor -- that direction isn't confidently wrong and would
+  false-positive on ordinary parametrize use.
 - **Semantic** (`ghost_buster/semantic.py`) -- backed by a real Claude API
   call (`AnthropicModelClient`, model `claude-sonnet-5`), for the class of
   ghost no static pass can see: two modules solving the same problem two
@@ -177,13 +201,19 @@ test suite runs.
 python -m pytest Tests/ -v
 ```
 
-42 tests, 0 network calls, 0 API key required -- the semantic-layer tests
+47 tests, 0 network calls, 0 API key required -- the semantic-layer tests
 verify the real parsing/fail-closed/injection-fencing logic via
 `StubModelClient`, the same technique `sentinel_os`'s own `interpretation/`
 package uses for its model-client tests.
 
 ## Changelog
 
+- **v0.3** -- new mechanical detector `doc_test_count_drift`, the first
+  taxonomy-driven scrub of a real target repo (HERALD) done by hand
+  against the researched ghost list, then turned into a detector. CLI
+  file collection now includes `*.md` alongside `*.py` (every other
+  detector is unaffected -- markdown fails `_parse()` and is silently
+  skipped, same fail-closed behavior as any other unparseable file).
 - **v0.2** -- new mechanical detector `intra_function_duplicate_block`,
   closing the "duplication inside one function" gap surfaced during the
   HERALD dogfood run (see above). Includes a regression test for a real

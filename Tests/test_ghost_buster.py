@@ -14,8 +14,8 @@ import pytest
 
 from ghost_buster.baseline import Baseline
 from ghost_buster.mechanical import (
-    detect_dead_code, detect_intra_function_duplicate_blocks, detect_long_functions,
-    detect_near_duplicate_functions, run_all,
+    detect_dead_code, detect_doc_test_count_drift, detect_intra_function_duplicate_blocks,
+    detect_long_functions, detect_near_duplicate_functions, run_all,
 )
 from ghost_buster.schema import (
     Category, Evidence, Finding, FindingSet, Layer, Severity, Status,
@@ -444,3 +444,71 @@ def test_intra_function_duplicate_block_included_in_run_all(tmp_path):
     f = _write(tmp_path, "m.py", content)
     findings = run_all([f])
     assert any(x.detector == "intra_function_duplicate_block" for x in findings)
+
+
+# ---------------------------------------------------------------- doc_test_count_drift (v0.3)
+
+def test_doc_test_count_drift_flags_a_real_stale_claim(tmp_path):
+    """The real case this detector was built from: a README claims a
+    small, stale test count while the .py files it was scanned alongside
+    contain far more test_* functions."""
+    readme = _write(tmp_path, "README.md", "Version 0.3.0. 3 tests passing, all green.\n")
+    test_file = _write(
+        tmp_path, "test_things.py",
+        "\n".join(f"def test_case_{i}():\n    assert True\n" for i in range(20)),
+    )
+    findings = detect_doc_test_count_drift([readme, test_file])
+    assert len(findings) == 1
+    assert "README.md" in findings[0].evidence.file
+    assert "3 test" in findings[0].summary
+    assert "20 test" in findings[0].summary
+
+
+def test_doc_test_count_drift_ignores_claims_within_tolerance(tmp_path):
+    """A doc that's merely a commit or two behind (small natural lag) is
+    not a ghost -- both min_growth_ratio and min_absolute_growth must be
+    cleared before this fires."""
+    readme = _write(tmp_path, "README.md", "18 tests passing.\n")
+    test_file = _write(
+        tmp_path, "test_things.py",
+        "\n".join(f"def test_case_{i}():\n    assert True\n" for i in range(20)),
+    )
+    findings = detect_doc_test_count_drift([readme, test_file])
+    assert findings == []
+
+
+def test_doc_test_count_drift_does_not_flag_an_overcount_claim(tmp_path):
+    """Deliberately one-directional: the static counter is a LOWER bound
+    (parametrize can only push the true count higher), so a documented
+    number ABOVE the static count is not confidently wrong and must not
+    be flagged."""
+    readme = _write(tmp_path, "README.md", "500 tests passing.\n")
+    test_file = _write(tmp_path, "test_things.py", "def test_one():\n    assert True\n")
+    findings = detect_doc_test_count_drift([readme, test_file])
+    assert findings == []
+
+
+def test_doc_test_count_drift_ignores_unrelated_numbers(tmp_path):
+    """A version number or an unrelated count sitting near the word
+    'test' in different phrasing must not be mistaken for a test-count
+    claim (e.g. calibration set size, phrased as 'cases' not 'tests')."""
+    readme = _write(
+        tmp_path, "README.md",
+        "Version 0.15.22. The starter set is 24 cases, each with a reason.\n",
+    )
+    test_file = _write(
+        tmp_path, "test_things.py",
+        "\n".join(f"def test_case_{i}():\n    assert True\n" for i in range(50)),
+    )
+    findings = detect_doc_test_count_drift([readme, test_file])
+    assert findings == []
+
+
+def test_doc_test_count_drift_included_in_run_all(tmp_path):
+    readme = _write(tmp_path, "README.md", "2 tests passing.\n")
+    test_file = _write(
+        tmp_path, "test_things.py",
+        "\n".join(f"def test_case_{i}():\n    assert True\n" for i in range(20)),
+    )
+    findings = run_all([readme, test_file])
+    assert any(f.detector == "doc_test_count_drift" for f in findings)

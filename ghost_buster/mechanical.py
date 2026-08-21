@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import re
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Set
 
@@ -501,6 +502,123 @@ def detect_intra_function_duplicate_blocks(
                         related_files=[f"{path}:{s}" for s in spans[1:]],
                     ),
                 ))
+    return findings
+
+
+# ---------------------------------------------------------------------------
+# Detector: doc_test_count_drift -- v0.3. A mechanical, deterministic
+# instance of doc/reality drift: a markdown file claims a specific number
+# of tests exist ("135 tests passing"), and the number of test_* functions
+# actually in the scanned .py files has since grown well past it.
+#
+# Found live, by hand, doing exactly the taxonomy-driven scrub this
+# detector now automates: HERALD's README said "Version 0.3.0. 135 tests
+# passing" while `python3 -m pytest --collect-only -q` reported 321.
+# git log showed why -- 15 commits touched Tests/ after the README's last
+# version-bump commit (an HMAX adversarial-test campaign), and the count
+# claim was simply never revisited. This is the same "documentation
+# describes a system that no longer exists" failure the semantic layer's
+# doc_drift already names (same Category.DOC_DRIFT), but semantic doc_drift
+# requires an LLM call AND a human-supplied code summary to compare
+# against -- it cannot self-drive a whole-repo scrub. A number in a
+# markdown file next to the word "test(s)" is instead a fully mechanical,
+# zero-ambiguity check: no API key, no judgment call, Status.CONFIRMED.
+# ---------------------------------------------------------------------------
+
+_TEST_COUNT_CLAIM_RE = re.compile(
+    r"\b(\d+)\s+tests?\b(?=\s*[,.]|\s+(?:passing|passed|collected))",
+    re.IGNORECASE,
+)
+
+
+def _count_test_functions(files: List[Path]) -> int:
+    """Static, conservative LOWER BOUND on the real test count: every
+    function (module-level or a method) named test_* in the scanned .py
+    files. A lower bound, not an exact match to pytest's own collection,
+    because @pytest.mark.parametrize expands one function into several
+    collected cases -- the true number can only be higher than this, never
+    lower, which is exactly the property detect_doc_test_count_drift needs
+    to flag an undercount claim without false-positiving on parametrize
+    making a once-correct claim look artificially low.
+    """
+    count = 0
+    for path in files:
+        if path.suffix != ".py":
+            continue
+        tree = _parse(path)
+        if tree is None:
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if node.name.startswith("test_"):
+                    count += 1
+    return count
+
+
+@register("doc_test_count_drift")
+def detect_doc_test_count_drift(
+    files: List[Path], min_growth_ratio: float = 1.15, min_absolute_growth: int = 10
+) -> List[Finding]:
+    """Flags a markdown "N tests passing/collected" (or "N tests,") claim
+    once the real, statically-counted test_* function count has grown well
+    past it. Deliberately one-directional: only flags UNDERcounts (real >
+    documented), never overcounts. _count_test_functions is a lower bound
+    (see its docstring -- parametrize can only push the true count higher),
+    so a documented number ABOVE the static count is not necessarily wrong
+    and is not flagged; a documented number this far BELOW the static count
+    is unambiguously stale regardless of parametrize.
+
+    Both min_growth_ratio and min_absolute_growth must be cleared (an AND,
+    not an OR) before flagging -- guards against flagging a doc that is
+    merely a commit or two behind (normal, not a ghost) versus one that
+    has been stale across an entire campaign of new tests (the real case
+    this was built from: 135 documented vs. 256 statically counted, a
+    parametrize-inclusive pytest run reporting 321).
+    """
+    md_files = [p for p in files if p.suffix.lower() == ".md"]
+    if not md_files:
+        return []
+    actual = _count_test_functions(files)
+    if actual == 0:
+        return []
+
+    findings: List[Finding] = []
+    for path in md_files:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        for match in _TEST_COUNT_CLAIM_RE.finditer(text):
+            documented = int(match.group(1))
+            if documented == 0:
+                continue
+            if actual < documented * min_growth_ratio:
+                continue
+            if actual - documented < min_absolute_growth:
+                continue
+            line = text.count("\n", 0, match.start()) + 1
+            findings.append(Finding(
+                detector="doc_test_count_drift",
+                category=Category.DOC_DRIFT,
+                layer=Layer.MECHANICAL,
+                severity=Severity.MINOR,
+                status=Status.CONFIRMED,
+                summary=(
+                    f"'{path.name}' claims {documented} test(s), but at least "
+                    f"{actual} test_* function(s) exist in the scanned .py files "
+                    "-- this claim is stale"
+                ),
+                detail=(
+                    "actual is a static AST lower bound (functions named test_*, "
+                    "counted directly, no pytest run) -- the true collected count "
+                    "can only be higher (pytest.mark.parametrize expands one "
+                    "function into several cases), never lower, so this can only "
+                    "under-flag, not over-flag. Confirm by running the real suite "
+                    "and update the claim, or remove the specific number if it "
+                    "will keep going stale."
+                ),
+                evidence=Evidence(file=str(path), line_start=line, line_end=line),
+            ))
     return findings
 
 

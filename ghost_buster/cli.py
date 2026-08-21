@@ -21,9 +21,14 @@ from .mechanical import run_all
 from .schema import Finding, FindingSet, Severity
 
 
-def _collect_py_files(root: Path) -> List[Path]:
+def _collect_files(root: Path) -> List[Path]:
+    """.py for every code detector, plus .md so doc_test_count_drift (v0.3)
+    has something to read -- every other detector calls _parse() on
+    whatever it's handed, which fails closed (returns None, gets skipped)
+    on non-Python text, so widening this list is safe for the existing
+    detectors and required for the new one."""
     return sorted(
-        p for p in root.rglob("*.py")
+        p for p in list(root.rglob("*.py")) + list(root.rglob("*.md"))
         if "__pycache__" not in p.parts and not p.name.startswith(".")
     )
 
@@ -70,7 +75,7 @@ def main(argv: List[str] = None) -> int:
         return 2
 
     baseline_path = args.baseline or (args.path / ".ghost_baseline.json")
-    files = _collect_py_files(args.path)
+    files = _collect_files(args.path)
     findings = run_all(files)
 
     baseline = Baseline(baseline_path)
