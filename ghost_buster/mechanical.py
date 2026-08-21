@@ -62,20 +62,52 @@ def detect_dead_code(files: List[Path]) -> List[Finding]:
       excluded from consideration as "never referenced" even if a
       naive scan would miss the reference (dynamic dispatch, string-based
       lookup, decorators, __all__ export).
-    - A name is "referenced" if it appears as an ast.Name/ast.Attribute
-      ANYWHERE else in the corpus, including in the same file (covers
-      self-reference, recursive helpers, internal use) -- this detector
-      only flags things that look completely unreferenced, not merely
-      privately-scoped.
+    - CLASSES DECLARING Protocol OR ABC AS A BASE ARE EXCLUDED ENTIRELY
+      (v0.1.1, added after a real false-positive run against ANVIL): an
+      interface/Protocol class's whole purpose is often to have ZERO
+      references within the file that defines it -- external implementers
+      are the intended consumers, and this detector has no visibility
+      into other repos. Flagging every Protocol/ABC as "dead" produced
+      pure noise on real code (GovernanceModule(Protocol) in ANVIL.py,
+      confirmed). Matched by simple base-expression name, not real type
+      resolution -- this is an AST-only tool by design.
+    - A STRING CONSTANT USED AS A SUBSCRIPT KEY counts as a reference too
+      (v0.1.1, same ANVIL run): `registry["SomeName"]` is a real,
+      extremely common dynamic-dispatch pattern (dict-based registries,
+      plugin lookups, and -- the exact case found live -- a validation
+      harness that loads a module via exec() into a dict and pulls names
+      out by string key rather than a normal import). This does not
+      attempt to trace exec()/importlib specifically; it generalizes past
+      that one case to anything keying a lookup by a name-shaped string
+      literal, which covers considerably more real dynamic-dispatch code
+      than special-casing exec() alone would.
+    - A name is "referenced" if it appears as an ast.Name/ast.Attribute,
+      OR as a string-constant ast.Subscript key, ANYWHERE else in the
+      corpus, including in the same file (covers self-reference,
+      recursive helpers, internal use) -- this detector only flags things
+      that look completely unreferenced, not merely privately-scoped.
     - Only module-level defs are considered (not methods) -- a method
       that's part of a class's public interface can be legitimately
       "unreferenced" in-repo (called by external consumers), and
       flagging every unused method would produce overwhelming noise for
       a v0.1. This is a real, disclosed scope limit, not an oversight.
+    - Residual, still disclosed and not fixed by the above: getattr-by-
+      string and decorator-based registration (this tool's own
+      @register pattern is the concrete example -- it self-flags on
+      ghost_buster's own codebase, see README) are still untraced.
     """
     definitions: Dict[str, List[Path]] = {}
-    all_referenced_names: Set[str] = set()
+    referenced_names: Set[str] = set()
     exported_names: Set[str] = set()
+
+    def _is_protocol_or_abc(class_node: ast.ClassDef) -> bool:
+        for base in class_node.bases:
+            base_name = base.id if isinstance(base, ast.Name) else (
+                base.attr if isinstance(base, ast.Attribute) else None
+            )
+            if base_name in ("Protocol", "ABC"):
+                return True
+        return False
 
     parsed = {}
     for path in files:
@@ -91,6 +123,8 @@ def detect_dead_code(files: List[Path]) -> List[Finding]:
                     continue
                 if node.name.startswith("test_") or node.name.startswith("Test"):
                     continue
+                if isinstance(node, ast.ClassDef) and _is_protocol_or_abc(node):
+                    continue
                 definitions.setdefault(node.name, []).append(path)
             if isinstance(node, ast.Assign):
                 for target in node.targets:
@@ -103,44 +137,38 @@ def detect_dead_code(files: List[Path]) -> List[Finding]:
     for path, tree in parsed.items():
         for node in ast.walk(tree):
             if isinstance(node, ast.Name):
-                all_referenced_names.add(node.id)
+                referenced_names.add(node.id)
             elif isinstance(node, ast.Attribute):
-                all_referenced_names.add(node.attr)
+                referenced_names.add(node.attr)
+            elif isinstance(node, ast.Subscript):
+                key = node.slice
+                if isinstance(key, ast.Constant) and isinstance(key.value, str):
+                    referenced_names.add(key.value)
 
     findings: List[Finding] = []
     for name, def_paths in definitions.items():
         if name in exported_names:
             continue
-        # A name is "referenced" if it shows up as a Name/Attribute
-        # anywhere -- but every definition site itself produces exactly
-        # one such node (the def statement doesn't count as a Name use,
-        # ast.FunctionDef.name is a plain string, not a Name node, so no
-        # self-counting correction is needed here).
-        occurrence_count = 0
-        for path, tree in parsed.items():
-            for node in ast.walk(tree):
-                if isinstance(node, ast.Name) and node.id == name:
-                    occurrence_count += 1
-                elif isinstance(node, ast.Attribute) and node.attr == name:
-                    occurrence_count += 1
-        if occurrence_count == 0:
-            for path in def_paths:
-                findings.append(Finding(
-                    detector="dead_code",
-                    category=Category.DEAD_CODE,
-                    layer=Layer.MECHANICAL,
-                    severity=Severity.MINOR,
-                    status=Status.CONFIRMED,
-                    summary=f"'{name}' is defined but never referenced anywhere in the scanned set",
-                    detail=(
-                        "No ast.Name or ast.Attribute node anywhere in the scanned "
-                        "files resolves to this identifier. Scope limit: dynamic "
-                        "dispatch (getattr-by-string, decorator registration, "
-                        "reflection) is not traced, so this can false-positive on "
-                        "names only reached that way -- confirm before deleting."
-                    ),
-                    evidence=Evidence(file=str(path)),
-                ))
+        if name in referenced_names:
+            continue
+        for path in def_paths:
+            findings.append(Finding(
+                detector="dead_code",
+                category=Category.DEAD_CODE,
+                layer=Layer.MECHANICAL,
+                severity=Severity.MINOR,
+                status=Status.CONFIRMED,
+                summary=f"'{name}' is defined but never referenced anywhere in the scanned set",
+                detail=(
+                    "No ast.Name, ast.Attribute, or string-subscript-key node "
+                    "anywhere in the scanned files resolves to this identifier. "
+                    "Scope limit: getattr-by-string and decorator-based "
+                    "registration are still not traced, so this can false-"
+                    "positive on names only reached that way -- confirm before "
+                    "deleting."
+                ),
+                evidence=Evidence(file=str(path)),
+            ))
     return findings
 
 

@@ -44,6 +44,17 @@ Two independent layers, both producing the same `Finding` shape
   stdlib only. Every finding is `Status.CONFIRMED`; there's nothing to
   doubt about a deterministic check. Three detectors in v0.1:
   `dead_code`, `long_function`, `near_duplicate_function`.
+
+  `dead_code` was calibrated against a real, previously-unseen repo
+  (ANVIL) and found two real false-positive classes on the first run:
+  `Protocol`/`ABC` interface classes (whose whole purpose is often zero
+  in-file references -- external implementers are the intended
+  consumers) and string-keyed dynamic dispatch (`registry["Name"]`,
+  including a module loaded via `exec()` into a dict and read back by
+  string key). Both are now excluded/traced (v0.1.1). Still disclosed and
+  not fixed: getattr-by-string and decorator-based registration --
+  confirmed live, this tool's own `@register` pattern in `mechanical.py`
+  self-flags for exactly that reason when ghost_buster scans itself.
 - **Semantic** (`ghost_buster/semantic.py`) -- backed by a real Claude API
   call (`AnthropicModelClient`, model `claude-sonnet-5`), for the class of
   ghost no static pass can see: two modules solving the same problem two

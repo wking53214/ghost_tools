@@ -251,3 +251,58 @@ def test_baseline_new_finding_still_surfaces_after_others_accepted(tmp_path):
     new, known = b2.diff([f1, f2])
     assert [f.summary for f in new] == ["new"]
     assert [f.summary for f in known] == ["old"]
+
+
+# --------------------------------------------- dead_code v0.1.1 fixes
+# (found via a real run against a previously-unseen repo, ANVIL --
+# see README/commit history for the full story)
+
+def test_dead_code_excludes_protocol_classes(tmp_path):
+    f = _write(tmp_path, "m.py",
+               "from typing import Protocol\n\n"
+               "class SomeInterface(Protocol):\n"
+               "    def do_thing(self) -> None: ...\n")
+    findings = detect_dead_code([f])
+    assert findings == []
+
+
+def test_dead_code_excludes_abc_classes(tmp_path):
+    f = _write(tmp_path, "m.py",
+               "from abc import ABC\n\n"
+               "class SomeBase(ABC):\n"
+               "    pass\n")
+    findings = detect_dead_code([f])
+    assert findings == []
+
+
+def test_dead_code_still_flags_ordinary_unused_classes(tmp_path):
+    """Confirms the Protocol/ABC exclusion is scoped correctly -- an
+    ordinary class with no special base is still flagged."""
+    f = _write(tmp_path, "m.py", "class OrdinaryUnused:\n    pass\n")
+    findings = detect_dead_code([f])
+    assert len(findings) == 1
+    assert "OrdinaryUnused" in findings[0].summary
+
+
+def test_dead_code_treats_string_subscript_key_as_a_reference(tmp_path):
+    """The exact real-world pattern found in ANVIL's own validation
+    harness: a module loaded via exec() into a dict, with names pulled
+    out by string key rather than a normal import."""
+    f = _write(tmp_path, "m.py",
+               "def helper():\n    return 1\n\n"
+               "registry = {}\n"
+               "looked_up = registry['helper']\n")
+    findings = detect_dead_code([f])
+    assert findings == []
+
+
+def test_dead_code_string_subscript_key_only_counts_matching_names(tmp_path):
+    """A subscript key that happens to be some OTHER string must not
+    accidentally suppress an unrelated unused function."""
+    f = _write(tmp_path, "m.py",
+               "def truly_unused():\n    return 1\n\n"
+               "d = {}\n"
+               "x = d['unrelated_key']\n")
+    findings = detect_dead_code([f])
+    assert len(findings) == 1
+    assert "truly_unused" in findings[0].summary
