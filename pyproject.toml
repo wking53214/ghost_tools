@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ghost-tools"
+version = "0.3.0"
+description = "Codebase integrity toolkit: detects structural ghosts, documentation drift, duplication, dead code and parallel implementations for human review"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [{ name = "William King" }]
+dependencies = []
+
+[project.optional-dependencies]
+semantic = ["anthropic"]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+testpaths = ["Tests"]
+
+[tool.ruff]
+line-length = 100
