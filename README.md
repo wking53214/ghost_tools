@@ -132,7 +132,17 @@ python -m ghost_buster.cli /path/to/repo --accept
 
 # emit machine-readable JSON (feeds the triage step, then ghost_writer)
 python -m ghost_buster.cli /path/to/repo --json > findings.json
+
+# skip a repo-specific vendored tree (e.g. a checked-in copy of another repo)
+python -m ghost_buster.cli /path/to/repo --exclude some_vendored_dir
 ```
+
+The scan always skips virtualenvs (by the `site-packages` component, so the
+venv's directory name doesn't matter), `node_modules`, VCS directories, and
+tool caches -- a working tree with a venv in it was otherwise reporting
+thousands of findings from its dependencies' source. `--exclude DIRNAME`
+(repeatable) adds a directory name for the repo-specific cases the built-in
+list can't know about, like a vendored copy of a sibling repo.
 
 Exit code is `1` if any new CRITICAL/MAJOR finding exists, `0` otherwise --
 usable as a CI gate on the mechanical layer (the semantic layer needs an
@@ -208,6 +218,14 @@ package uses for its model-client tests.
 
 ## Changelog
 
+- **v0.3.1** -- CLI file collection now skips virtualenvs / vendored
+  `site-packages` / `node_modules` / VCS dirs / tool caches, and takes a
+  repeatable `--exclude DIRNAME` for repo-specific vendored trees. Found by
+  running the mechanical layer across 18 real repos in one pass: one repo
+  with a `.venv` in its working tree reported 3,789 findings, of which 3,702
+  were inside `site-packages` (pytest's own source). `site-packages` is the
+  match that matters -- it catches an installed-package tree regardless of
+  the enclosing venv's directory name.
 - **v0.3** -- new mechanical detector `doc_test_count_drift`, the first
   taxonomy-driven scrub of a real target repo (HERALD) done by hand
   against the researched ghost list, then turned into a detector. CLI

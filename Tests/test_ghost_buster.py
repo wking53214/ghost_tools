@@ -512,3 +512,60 @@ def test_doc_test_count_drift_included_in_run_all(tmp_path):
     )
     findings = run_all([readme, test_file])
     assert any(f.detector == "doc_test_count_drift" for f in findings)
+
+
+# ------------------------------------------------------------ cli file collection
+
+from ghost_buster.cli import _collect_files, _EXCLUDED_DIRS  # noqa: E402
+
+
+def _touch(root: Path, rel: str) -> Path:
+    p = root / rel
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text("x = 1\n", encoding="utf-8")
+    return p
+
+
+def test_collect_files_takes_ordinary_py_and_md(tmp_path):
+    _touch(tmp_path, "pkg/module.py")
+    _touch(tmp_path, "README.md")
+    got = {p.name for p in _collect_files(tmp_path)}
+    assert got == {"module.py", "README.md"}
+
+
+def test_collect_files_skips_virtualenv_and_site_packages(tmp_path):
+    _touch(tmp_path, "real.py")
+    _touch(tmp_path, ".venv/lib/python3.11/site-packages/pytest/foo.py")
+    _touch(tmp_path, "venv/bin/activate_this.py")
+    _touch(tmp_path, "sub/site-packages/vendored.py")
+    got = {p.name for p in _collect_files(tmp_path)}
+    assert got == {"real.py"}
+
+
+def test_collect_files_skips_vcs_and_caches(tmp_path):
+    _touch(tmp_path, "real.py")
+    for junk in (".git/hooks/x.py", ".mypy_cache/y.py", ".pytest_cache/z.py",
+                 ".tox/py311/w.py", "__pycache__/c.py"):
+        _touch(tmp_path, junk)
+    assert {p.name for p in _collect_files(tmp_path)} == {"real.py"}
+
+
+def test_collect_files_honours_extra_excludes(tmp_path):
+    """A repo-specific vendored tree (e.g. a checked-in copy of a sibling
+    repo) is skipped when named via --exclude."""
+    _touch(tmp_path, "own_code.py")
+    _touch(tmp_path, "vendored_sibling/core.py")
+    _touch(tmp_path, "vendored_sibling/nested/more.py")
+    assert {p.name for p in _collect_files(tmp_path)} == {"own_code.py", "core.py", "more.py"}
+    assert {p.name for p in _collect_files(tmp_path, ["vendored_sibling"])} == {"own_code.py"}
+
+
+def test_collect_files_still_skips_dotfiles(tmp_path):
+    _touch(tmp_path, "real.py")
+    _touch(tmp_path, ".hidden.py")
+    assert {p.name for p in _collect_files(tmp_path)} == {"real.py"}
+
+
+def test_excluded_dirs_contains_the_load_bearing_names():
+    for name in ("site-packages", ".venv", "venv", "node_modules", "__pycache__", ".git"):
+        assert name in _EXCLUDED_DIRS

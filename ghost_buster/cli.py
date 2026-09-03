@@ -14,22 +14,49 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import List
+from typing import Iterable, List
 
 from .baseline import Baseline
 from .mechanical import run_all
 from .schema import Finding, FindingSet, Severity
 
 
-def _collect_files(root: Path) -> List[Path]:
+# Directory names never descended into. `site-packages` is the load-bearing
+# one: it catches an installed-package tree regardless of what the enclosing
+# virtualenv is called (.venv / venv / env / <anything>), which is the noise
+# source that actually swamps a blind run -- a repo with a venv in its
+# working tree was reporting thousands of findings from pytest's own source.
+# The rest are VCS internals and tool caches. Matched against any component
+# of a path, so a nested occurrence is still excluded.
+_EXCLUDED_DIRS = frozenset({
+    "__pycache__",
+    "site-packages",
+    ".venv", "venv",
+    "node_modules",
+    ".git", ".hg", ".svn",
+    ".tox", ".nox", ".eggs",
+    ".mypy_cache", ".pytest_cache", ".ruff_cache", ".hypothesis",
+    ".ipynb_checkpoints",
+})
+
+
+def _collect_files(root: Path, extra_excludes: Iterable[str] = ()) -> List[Path]:
     """.py for every code detector, plus .md so doc_test_count_drift (v0.3)
     has something to read -- every other detector calls _parse() on
     whatever it's handed, which fails closed (returns None, gets skipped)
-    on non-Python text, so widening this list is safe for the existing
-    detectors and required for the new one."""
+    on non-Python text, so widening the *type* list is safe.
+
+    Skips any path with a directory component in _EXCLUDED_DIRS (virtualenvs
+    / vendored site-packages / VCS dirs / tool caches) or in `extra_excludes`
+    -- the latter for a repo-specific vendored tree, e.g. a checked-in copy
+    of a sibling repo -- and any dot-prefixed file. Exclusion is by directory
+    NAME anywhere in the path, so pointing the scan directly at, say, a
+    `venv/` would also come back empty; scan the project root.
+    """
+    excluded = _EXCLUDED_DIRS | set(extra_excludes)
     return sorted(
         p for p in list(root.rglob("*.py")) + list(root.rglob("*.md"))
-        if "__pycache__" not in p.parts and not p.name.startswith(".")
+        if excluded.isdisjoint(p.parts) and not p.name.startswith(".")
     )
 
 
@@ -68,6 +95,13 @@ def main(argv: List[str] = None) -> int:
         "--json", action="store_true",
         help="emit the full finding set as JSON instead of the human report",
     )
+    parser.add_argument(
+        "--exclude", action="append", default=[], metavar="DIRNAME",
+        help="an extra directory name to skip (repeatable) -- for a "
+             "repo-specific vendored tree, e.g. a checked-in copy of "
+             "another repo. Virtualenvs, site-packages, VCS dirs and tool "
+             "caches are always skipped.",
+    )
     args = parser.parse_args(argv)
 
     if not args.path.is_dir():
@@ -75,7 +109,7 @@ def main(argv: List[str] = None) -> int:
         return 2
 
     baseline_path = args.baseline or (args.path / ".ghost_baseline.json")
-    files = _collect_files(args.path)
+    files = _collect_files(args.path, args.exclude)
     findings = run_all(files)
 
     baseline = Baseline(baseline_path)
