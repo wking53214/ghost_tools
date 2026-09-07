@@ -23,6 +23,7 @@ was lost is indistinguishable from a recovery and is not one.
 """
 
 from .detect import (
+    detect_dangling_in_debris,
     detect_dangling_names,
     detect_destroyed_residue,
     detect_missing_imports,
@@ -37,5 +38,6 @@ __all__ = [
     "Anchor", "EvidenceKind", "NegativeEvidence", "Void", "VoidKind",
     "scan", "detect_dangling_names", "detect_missing_imports",
     "detect_orphaned_tests", "detect_unparseable", "detect_destroyed_residue",
+    "detect_dangling_in_debris",
     "extrapolate", "group_by_target", "infer_usage_invariants",
 ]

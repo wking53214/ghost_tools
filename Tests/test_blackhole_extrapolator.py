@@ -422,3 +422,70 @@ def test_residue_states_what_it_cannot_support(tmp_path):
     detail = list(detect_destroyed_residue(flat))[0].detail
     assert "Names only" in detail
     assert "docstring examples" in detail
+
+
+# ---------------------------------------------------------------------------
+# Dangling references in debris
+# ---------------------------------------------------------------------------
+
+def test_dangling_references_are_recovered_from_an_unparseable_file(tmp_path):
+    """detect_dangling_names needs an AST and returns nothing without one --
+    which silently excludes exactly the files most likely to be surrounded by
+    voids.
+
+    Found by hand on a real archive skeleton: 2.7 KB, indentation flattened to
+    a uniform one space so nesting depth is gone and no mechanical repair is
+    possible, instantiating seven types it never defines and calling methods
+    on them. All legible; none of it reachable through the AST path."""
+    from blackhole_extrapolator import detect_dangling_in_debris
+
+    broken = tmp_path / "skeleton.py"
+    broken.write_text(
+        "class Pipeline:\n"
+        " def init(self) -> None:\n"
+        " self.filter = KalmanFilter()\n"
+        " def tick(self, snap: VitalSnapshot):\n"
+        " self.filter.predict()\n"
+        " self.filter.update(snap)\n"
+    )
+    evidence = list(detect_dangling_in_debris(broken))
+    found = {e.detail.split("`")[1] for e in evidence}
+    assert "KalmanFilter" in found
+    assert "VitalSnapshot" in found          # type annotation counts
+
+    kalman = next(e for e in evidence if "KalmanFilter" in e.detail)
+    assert "predict" in kalman.detail and "update" in kalman.detail
+
+
+def test_debris_dangling_is_not_run_on_a_file_that_parses(tmp_path):
+    """Where an AST exists it is authoritative and regex would be strictly
+    worse."""
+    from blackhole_extrapolator import detect_dangling_in_debris
+
+    ok = tmp_path / "ok.py"
+    ok.write_text("class A:\n    def f(self):\n        self.x = Missing()\n")
+    assert list(detect_dangling_in_debris(ok)) == []
+
+
+def test_a_name_mentioned_only_in_prose_is_not_evidence(tmp_path):
+    """Narrow on purpose: constructor calls, annotations and method calls on
+    a bound field. A capitalised word in a docstring is not a reach for
+    something."""
+    from blackhole_extrapolator import detect_dangling_in_debris
+
+    broken = tmp_path / "b.py"
+    broken.write_text('"""Discusses SomeGrandTheory at length."""\n'
+                      "class A:\n def f(self):\n self.x = RealThing()\n")
+    found = {e.detail.split("`")[1] for e in detect_dangling_in_debris(broken)}
+    assert "RealThing" in found
+    assert "SomeGrandTheory" not in found
+
+
+def test_a_type_defined_in_the_same_debris_is_not_a_void(tmp_path):
+    from blackhole_extrapolator import detect_dangling_in_debris
+
+    broken = tmp_path / "b.py"
+    broken.write_text("class Helper:\n pass\n"
+                      "class Main:\n def init(self):\n self.h = Helper()\n")
+    found = {e.detail.split("`")[1] for e in detect_dangling_in_debris(broken)}
+    assert "Helper" not in found

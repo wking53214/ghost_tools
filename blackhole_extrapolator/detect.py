@@ -42,6 +42,48 @@ _AMBIENT = frozenset({
 })
 
 
+# Directories never descended into. site-packages is the load-bearing one:
+# it catches an installed-package tree whatever the enclosing virtualenv is
+# called. Without this a scan of a repo with a 5 GB venv in its working tree
+# walks the venv -- measured: sentinel_os did not finish in two minutes, and
+# the analysis of its own 51k lines takes about seven seconds.
+_SKIP_DIRS = frozenset({
+    ".git", "__pycache__", "site-packages", ".venv", "venv", "env",
+    "node_modules", ".pytest_cache", ".ruff_cache", ".mypy_cache", ".tox",
+    "build", "dist", ".eggs",
+})
+
+
+def _source_files(root: Path) -> list[Path]:
+    """Every .py under root worth analysing."""
+    return [p for p in root.rglob("*.py") if not _SKIP_DIRS & set(p.parts)]
+
+
+def _available_modules(search_roots: Sequence[Path]) -> set[str]:
+    """Every module name importable from these roots.
+
+    Packages count. A directory containing __init__.py is importable by its
+    directory name, and omitting that reported every `import ccc` in a
+    perfectly healthy repository as a test orphaned by a missing module --
+    measured at 25 false positives out of 25 signals on a clean, fully-tested
+    package. A detector with that hit rate does not get read twice.
+    """
+    available: set[str] = set()
+    for root in search_roots:
+        if not root.is_dir():
+            continue
+        for path in _source_files(root):
+            available.add(path.stem)
+            if path.name == "__init__.py":
+                available.add(path.parent.name)
+        # a directory of .py files is importable as a namespace package too
+        for path in root.rglob("*/"):
+            if path.is_dir() and not _SKIP_DIRS & set(path.parts) and \
+                    any(path.glob("*.py")):
+                available.add(path.name)
+    return available
+
+
 def _bound_names(tree: ast.Module) -> set[str]:
     """Every name this module defines, imports, or binds at any scope.
 
@@ -165,13 +207,7 @@ def detect_missing_imports(path: Path, search_roots: Sequence[Path],
     except SyntaxError:
         return
 
-    available: set[str] = set()
-    for root in search_roots:
-        if not root.is_dir():
-            continue
-        for candidate in root.rglob("*.py"):
-            available.add(candidate.stem)
-            available.add(candidate.parent.name)
+    available = _available_modules(search_roots)
 
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
@@ -305,6 +341,65 @@ def detect_destroyed_residue(path: Path, source: str | None = None
     )
 
 
+_DEBRIS_CTOR = re.compile(r"=\s*([A-Z]\w+)\(\)")
+_DEBRIS_HINT = re.compile(r":\s*([A-Z]\w+)[,)]")
+_DEBRIS_BIND = re.compile(r"self\.(\w+)\s*=\s*([A-Z]\w+)\(\)")
+_DEBRIS_CALL = re.compile(r"self\.(\w+)\.(\w+)\(")
+
+
+def detect_dangling_in_debris(path: Path, source: str | None = None
+                              ) -> Iterator[NegativeEvidence]:
+    """Dangling references in a file that does not parse.
+
+    `detect_dangling_names` needs an AST and returns nothing when there is
+    none -- which silently excludes exactly the files most likely to be
+    surrounded by voids. Found by hand on ARCHIVE's PULSEARMPipeline.py: a
+    2.7 KB skeleton, indentation flattened to a uniform one space so the
+    nesting depth is gone and no mechanical repair is possible, which
+    instantiates seven types it never defines and calls methods on them. All
+    of that is legible; none of it was reachable through the AST path.
+
+    Regex, so weaker than the AST detector and correspondingly narrow: only
+    `x = Name()` constructor calls, `: Name` annotations, and
+    `self.field.method(` calls where the field's constructor is visible. A
+    name mentioned in prose or a docstring is not evidence and is not
+    matched.
+
+    Runs only on unparseable files. Where an AST exists it is authoritative
+    and this would be strictly worse.
+    """
+    text = source if source is not None else path.read_text(errors="replace")
+    try:
+        ast.parse(text)
+        return
+    except SyntaxError:
+        pass
+
+    defined = set(re.findall(r"\bclass\s+(\w+)", text))
+    bindings = dict(_DEBRIS_BIND.findall(text))          # field -> Type
+    methods: dict[str, set[str]] = {}
+    for field, method in _DEBRIS_CALL.findall(text):
+        methods.setdefault(field, set()).add(method)
+
+    referenced = set(_DEBRIS_CTOR.findall(text)) | set(_DEBRIS_HINT.findall(text))
+    for name in sorted(referenced - defined):
+        fields = [f for f, cls in bindings.items() if cls == name]
+        required = sorted({m for f in fields for m in methods.get(f, ())})
+        if fields:
+            role = f"constructed and bound to self.{fields[0]}"
+        else:
+            role = "used as a type annotation"
+        detail = f"`{name}` is {role} but never defined in this file."
+        if required:
+            detail += f" Callers require attributes: read {required}"
+        yield NegativeEvidence(
+            kind=EvidenceKind.DANGLING_REFERENCE,
+            detail=detail,
+            file=str(path),
+            observed="recovered from debris; this file does not parse",
+        )
+
+
 def detect_orphaned_tests(test_paths: Iterable[Path],
                           search_roots: Sequence[Path]) -> Iterator[NegativeEvidence]:
     """Tests exercising something that is not there.
@@ -313,17 +408,16 @@ def detect_orphaned_tests(test_paths: Iterable[Path],
     interface and the expected behaviour -- it says not only what the missing
     thing was called but what it was supposed to do.
     """
-    available: set[str] = set()
+    available = _available_modules(search_roots)
     for root in search_roots:
         if not root.is_dir():
             continue
-        for candidate in root.rglob("*.py"):
+        for candidate in _source_files(root):
             try:
-                tree = ast.parse(candidate.read_text(errors="replace"))
+                available.update(_bound_names(
+                    ast.parse(candidate.read_text(errors="replace"))))
             except SyntaxError:
                 continue
-            available.add(candidate.stem)
-            available.update(_bound_names(tree))
 
     for path in test_paths:
         try:
@@ -355,8 +449,7 @@ def detect_orphaned_tests(test_paths: Iterable[Path],
 def scan(root: Path) -> list[NegativeEvidence]:
     """Every mechanical negative-space signal under `root`."""
     root = Path(root)
-    sources = [p for p in root.rglob("*.py")
-               if ".git" not in p.parts and "__pycache__" not in p.parts]
+    sources = _source_files(root)
     tests = [p for p in sources
              if p.name.startswith("test_") or "test" in p.parent.name.lower()]
 
@@ -366,6 +459,7 @@ def scan(root: Path) -> list[NegativeEvidence]:
         evidence.extend(detect_unparseable(path, text))
         evidence.extend(detect_destroyed_residue(path, text))
         evidence.extend(detect_dangling_names(path, text))
+        evidence.extend(detect_dangling_in_debris(path, text))
         evidence.extend(detect_missing_imports(path, [root], text))
     evidence.extend(detect_orphaned_tests(tests, [root]))
     return evidence
