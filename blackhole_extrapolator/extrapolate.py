@@ -47,6 +47,9 @@ _KIND_WEIGHT = {
     EvidenceKind.UNCONSUMED_OUTPUT: 0.15,
     EvidenceKind.DOCUMENTED_NOT_IMPLEMENTED: 0.10,  # documents overstate
     EvidenceKind.SHAPE_COMPLEMENTARITY: 0.05,   # may be a connection never made
+    # Names what existed and nothing about structure, so it constrains the
+    # inventory strongly and the shape barely.
+    EvidenceKind.DESTROYED_RESIDUE: 0.20,
 }
 
 _READS = re.compile(r"read \[([^\]]*)\]")
