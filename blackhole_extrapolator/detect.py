@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import ast
 import builtins
+import re
 from pathlib import Path
 from typing import Iterable, Iterator, Sequence
 
@@ -231,6 +232,79 @@ def detect_unparseable(path: Path, source: str | None = None
         )
 
 
+# Identifier-shaped debris. Applied only to files that do not parse: on a
+# working module the AST is authoritative and regex would be a downgrade.
+_DEBRIS_CLASS = re.compile(r"\bclass\s+([A-Z][A-Za-z0-9_]*)")
+_DEBRIS_DEF = re.compile(r"\bdef\s+([a-z_][A-Za-z0-9_]*)")
+
+
+def detect_destroyed_residue(path: Path, source: str | None = None
+                             ) -> Iterator[NegativeEvidence]:
+    """Identifier debris surviving in a file that no longer parses.
+
+    The other half of the black-hole method. You cannot see inside the object,
+    but the debris field is measurable, and for a flattened paste the debris is
+    every identifier-shaped token still sitting in the bytes.
+
+    This is deliberately NOT run on files that parse. There the AST is
+    authoritative and regex over source text would be strictly worse -- it
+    cannot tell a class definition from the same word in a docstring. Here
+    there is no AST to have, so imprecise evidence beats none.
+
+    What the residue supports and does not:
+
+      supports      what names existed, roughly how many, what vocabulary
+      DOES NOT      structure, nesting, call graph, which names were public,
+                    which were live code as opposed to examples in a docstring
+
+    That last exclusion matters. A flattened chat paste routinely contains
+    the assistant's illustrative snippets alongside the real module, and
+    nothing in the bytes distinguishes them.
+    """
+    text = source if source is not None else path.read_text(errors="replace")
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        tree = None
+
+    if tree is not None:
+        # Parsing is not proof of survival. TOUCHSTONE's canonical silent-pass
+        # specimen is a flattened file whose single line happens to begin with
+        # `#`, so Python reads the whole 11,700 bytes as one comment: it
+        # imports cleanly, raises nothing, and defines zero names. An earlier
+        # version of this detector returned here and missed it -- fooled by
+        # exactly the property that specimen exists to catch, on the first
+        # real run against the corpus.
+        #
+        # A module that parses to nothing is destroyed regardless of what the
+        # parser says about it.
+        defines = any(isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef,
+                                     ast.ClassDef, ast.Assign, ast.Import,
+                                     ast.ImportFrom))
+                      for n in ast.walk(tree))
+        if defines or not text.strip():
+            return
+
+    classes = sorted(set(_DEBRIS_CLASS.findall(text)))
+    functions = sorted(set(_DEBRIS_DEF.findall(text)))
+    if not classes and not functions:
+        return
+
+    yield NegativeEvidence(
+        kind=EvidenceKind.DESTROYED_RESIDUE,
+        detail=(
+            f"unparseable file leaves identifier debris: {len(classes)} "
+            f"class-shaped and {len(functions)} def-shaped tokens. "
+            f"classes {classes[:12]}"
+            + (" ..." if len(classes) > 12 else "")
+            + ". Names only -- structure, nesting and which tokens were live "
+              "code rather than docstring examples are all destroyed."
+        ),
+        file=str(path),
+        observed=f"{len(text)} bytes, {text.count(chr(10))} newlines",
+    )
+
+
 def detect_orphaned_tests(test_paths: Iterable[Path],
                           search_roots: Sequence[Path]) -> Iterator[NegativeEvidence]:
     """Tests exercising something that is not there.
@@ -290,6 +364,7 @@ def scan(root: Path) -> list[NegativeEvidence]:
     for path in sources:
         text = path.read_text(errors="replace")
         evidence.extend(detect_unparseable(path, text))
+        evidence.extend(detect_destroyed_residue(path, text))
         evidence.extend(detect_dangling_names(path, text))
         evidence.extend(detect_missing_imports(path, [root], text))
     evidence.extend(detect_orphaned_tests(tests, [root]))

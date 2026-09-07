@@ -355,3 +355,70 @@ def test_scan_finds_evidence_across_a_tree(tmp_path):
     _write(tmp_path, "b.py", "def g():\n    return 1\n")
     kinds = {e.kind for e in scan(tmp_path)}
     assert EvidenceKind.DANGLING_REFERENCE in kinds
+
+
+# ---------------------------------------------------------------------------
+# Destroyed residue -- the debris field
+# ---------------------------------------------------------------------------
+
+def test_debris_survives_in_a_file_that_no_longer_parses(tmp_path):
+    """You cannot see inside the object; the debris field is measurable."""
+    from blackhole_extrapolator import detect_destroyed_residue
+
+    flat = tmp_path / "flat.py"
+    flat.write_text("class Alpha: def run(self): pass class Beta: def stop(self): pass "
+                    + "x " * 300)
+    evidence = list(detect_destroyed_residue(flat))
+    assert evidence
+    assert "Alpha" in evidence[0].detail and "Beta" in evidence[0].detail
+
+
+def test_residue_is_not_read_from_a_file_that_parses(tmp_path):
+    """On a working module the AST is authoritative, and regex over source
+    text cannot tell a class definition from the same word in a docstring."""
+    from blackhole_extrapolator import detect_destroyed_residue
+
+    ok = tmp_path / "ok.py"
+    ok.write_text('"""Mentions class Ghost in prose."""\nVALUE = 1\n')
+    assert list(detect_destroyed_residue(ok)) == []
+
+
+def test_a_file_that_parses_to_nothing_is_still_destroyed(tmp_path):
+    """Parsing is not proof of survival, and this is not hypothetical.
+
+    TOUCHSTONE's canonical silent-pass specimen is a flattened file whose
+    single line begins with `#`, so Python reads the whole 11,700 bytes as
+    one comment: it imports cleanly, raises nothing, defines zero names. The
+    first version of this detector returned early on it -- fooled by exactly
+    the property that specimen exists to catch, on the first real run against
+    the corpus."""
+    from blackhole_extrapolator import detect_destroyed_residue
+
+    commented = tmp_path / "silent.py"
+    commented.write_text("# class Alpha: def run(self): pass class Beta: pass "
+                         + "filler " * 200)
+    evidence = list(detect_destroyed_residue(commented))
+    assert evidence, "a module that parses to nothing was treated as intact"
+    assert "Alpha" in evidence[0].detail
+
+
+def test_an_empty_file_is_not_reported_as_destroyed(tmp_path):
+    """Nothing there and nothing lost are different states."""
+    from blackhole_extrapolator import detect_destroyed_residue
+
+    empty = tmp_path / "empty.py"
+    empty.write_text("\n  \n")
+    assert list(detect_destroyed_residue(empty)) == []
+
+
+def test_residue_states_what_it_cannot_support(tmp_path):
+    """Names only. Structure, nesting, and which tokens were live code rather
+    than docstring examples are all destroyed, and a reader who is not told
+    that will read an inventory as an architecture."""
+    from blackhole_extrapolator import detect_destroyed_residue
+
+    flat = tmp_path / "f.py"
+    flat.write_text("class A: def b(self): pass " + "z " * 300)
+    detail = list(detect_destroyed_residue(flat))[0].detail
+    assert "Names only" in detail
+    assert "docstring examples" in detail

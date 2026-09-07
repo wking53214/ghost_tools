@@ -76,6 +76,11 @@ class EvidenceKind(str, Enum):
     # existed rather than one that was lost.
     SHAPE_COMPLEMENTARITY = "shape_complementarity"
 
+    # Identifier tokens still sitting in a file that no longer parses. The
+    # debris field of a destroyed artifact: it names what was there and
+    # nothing about how any of it fitted together.
+    DESTROYED_RESIDUE = "destroyed_residue"
+
 
 class VoidKind(str, Enum):
     """What sort of absence this is, which decides how much may be claimed."""
