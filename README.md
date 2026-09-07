@@ -1,8 +1,13 @@
-# ghost_tools -- v0.3
+# ghost_tools -- v0.4
 
-Two tools, one shared finding format, built to work in tandem: `ghost_buster`
-hunts down structural problems in code; `ghost_writer` turns the ones a human
-decides are worth documenting (not fixing) into accurate docs.
+Three tools. `ghost_buster` hunts down structural problems in code;
+`ghost_writer` turns the ones a human decides are worth documenting (not
+fixing) into accurate docs; `blackhole_extrapolator` outlines the things that
+are not there at all.
+
+    ghost_buster              things that are present and wrong
+    ghost_writer              the ones worth documenting
+    blackhole_extrapolator    the ones that went up in smoke
 
 Built from a researched taxonomy of what actually goes wrong in large,
 iteratively-built (especially AI-assisted) codebases -- duplication,
@@ -248,3 +253,100 @@ package uses for its model-client tests.
   string-subscript-key dynamic dispatch.
 - **v0.1** -- initial release: `ghost_buster` (mechanical + semantic
   layers) and `ghost_writer`.
+
+
+---
+
+## blackhole_extrapolator
+
+A black hole is never observed. It is inferred entirely from what it does to
+the things around it -- the orbits it bends, the light it lenses -- and its
+interior is not recoverable at any resolution, ever. This tool applies that to
+missing code: it reconstructs the **shape** of an absence from the marks the
+absence left on the code that survived it.
+
+### Not an adapter, and not a seam
+
+Adapter construction and seam building both connect two things that exist. You
+can read both sides, run both sides, and test the join against both.
+
+A void has no such luxury. The connector itself went up in smoke -- a flattened
+paste that no longer parses, a module three files import and nothing provides,
+a name every caller expects and nothing defines. There is nothing to read. The
+only evidence is the shape of the hole.
+
+### What it reads
+
+Six kinds of mark an absence leaves, all detected mechanically by AST analysis
+-- same input, same output, no model:
+
+| signal | what it tells you |
+|---|---|
+| dangling reference | the strongest. Callers describe the interface in the act of using it |
+| orphaned test | interface **and** expected behaviour |
+| missing module | names it directly, and `from x import a, b` enumerates part of its surface |
+| unparseable file | something that existed and was destroyed; the bytes survive, the program does not |
+| unconsumed output / unsatisfied requirement | one side of a join that is gone |
+| shape complementarity | the weakest, and the only one that may mean a useful connection nobody ever made |
+
+### What it produces
+
+A `Void` -- a specification of an absence, carrying two lists that must be
+read together:
+
+    inferred        what the surrounding code forces to be true
+    undeterminable  what the surrounding code cannot decide
+
+The second is enforced: constructing a `Void` that infers something and admits
+nothing raises. An outline presented without its limits reads as a recovery,
+and a recovery is the one thing nobody can produce here.
+
+### A worked example
+
+`SYSTEM_GLOBALS` is referenced by four methods in a real GSA-lineage file and
+defined nowhere in the ecosystem. From the absence alone:
+
+    must define   current_trajectory_vectors
+    must define   emergency_escalation_tier
+    must define   integrity_debt_balance
+    must define   system_health_index
+    invariants    `integrity_debt_balance` is writable and numeric;
+                  callers hold it to a floor of 0.0
+    invariants    `current_trajectory_vectors` is a mapping;
+                  observed keys 'Resource_Scarcity', 'System_Entropy'
+    invariants    values in `current_trajectory_vectors` are numeric
+
+    UNDETERMINABLE
+      - the implementation -- what the missing code actually did, as opposed
+        to what its callers required of it
+      - any behaviour no surviving caller exercises
+      - internal state, lifecycle, persistence, and thread-safety
+      - whether the original was correct
+      - what the missing thing did on write to integrity_debt_balance:
+        validation, persistence, or notification would all look identical
+        from here
+
+Everything above the line is forced by the callers. Nothing below it is
+reachable from any amount of further analysis.
+
+### It does not generate code
+
+There is no `--generate`, no `--stub`, no `--fix`, and no code-emitting export
+-- asserted by a test. A file that fills the hole while carrying the name of
+what was lost is indistinguishable from a recovery and is not one, and the
+moment the tool can write one, somebody will commit its output as though the
+original had been found.
+
+`render()` is deliberately not valid source in any language. Someone who wants
+a stub can write one from the outline in a minute; nobody can paste the
+outline into a file and have it pass for what was lost.
+
+### Usage
+
+    python -m blackhole_extrapolator <path>
+    python -m blackhole_extrapolator <path> --json --min-confidence 0.3
+
+`shape_confidence` measures how well the evidence pins down the **outline**.
+It is not a claim that a reconstruction would be correct. Those are different
+questions, and conflating them turns a confident outline into a confident
+forgery.
