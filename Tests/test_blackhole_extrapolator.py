@@ -542,3 +542,26 @@ def test_an_import_list_does_not_swallow_the_next_statement(tmp_path):
     broken.write_text(text)
     found = {e.detail.split("`")[1] for e in detect_dangling_in_debris(broken)}
     assert "Ledger" in found
+
+
+@pytest.mark.parametrize("text,expected", [
+    # The common shape in real debris: a bare import running straight into a
+    # definition, with no punctuation between them.
+    ("from typing import Any, Dict class Foo: def g(self): self.x = Ledger()",
+     {"Any", "Dict"}),
+    ("from typing import Optional def h(p: Optional): pass", {"Optional"}),
+    ("from typing import Any; x = Thing()", {"Any"}),
+    ("from typing import ( Any, Dict, ) class K: pass", {"Any", "Dict"}),
+])
+def test_an_import_list_ends_where_the_next_definition_begins(text, expected):
+    """Both directions of this are failures and they are not symmetric.
+
+    Dropping a name puts back the false positive the import handling exists to
+    remove. Absorbing `class`/`def` or the name after it suppresses a real
+    void, which is the worse direction and the silent one.
+    """
+    from blackhole_extrapolator.detect import _debris_imported_names
+
+    names = _debris_imported_names(text)
+    assert expected <= names
+    assert not ({"class", "def", "Foo", "K", "Ledger", "Thing"} & names)
