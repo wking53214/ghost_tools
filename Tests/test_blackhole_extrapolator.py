@@ -489,3 +489,56 @@ def test_a_type_defined_in_the_same_debris_is_not_a_void(tmp_path):
                       "class Main:\n def init(self):\n self.h = Helper()\n")
     found = {e.detail.split("`")[1] for e in detect_dangling_in_debris(broken)}
     assert "Helper" not in found
+
+
+def test_a_type_imported_in_the_same_debris_is_not_a_void(tmp_path):
+    """Found on the first real specimen this was pointed at.
+
+    quorum_state_governance_source.py -- 14 KB, zero newlines -- reported
+    `Any` as missing code. Its `from typing import (...)` was sitting in the
+    same debris a few hundred bytes away. Only class definitions counted as
+    "defined", so every imported type read as an absence.
+
+    A name the file imports is resolved by that import. If the module itself
+    is gone that is a MISSING_MODULE void, reported once against the module
+    rather than once per name it supplied.
+    """
+    from blackhole_extrapolator import detect_dangling_in_debris
+
+    broken = tmp_path / "flat.py"
+    broken.write_text(
+        "from typing import ( Any, Dict, Optional ) "
+        "from dataclasses import dataclass, field "
+        "import hashlib "
+        "class Kernel: def run(self, payload: Any, opts: Dict) -> Optional: "
+        "self.engine = QuorumEngine() self.engine.decide()"
+    )
+    found = {e.detail.split("`")[1] for e in detect_dangling_in_debris(broken)}
+
+    assert "Any" not in found
+    assert "Dict" not in found
+    assert "Optional" not in found
+    # The genuine void is still reported.
+    assert "QuorumEngine" in found
+
+
+def test_an_import_list_does_not_swallow_the_next_statement(tmp_path):
+    """With the line breaks gone, `from a import b from c import d` is one run
+    of characters. A greedy word match would treat `class`, `def` and the next
+    module name as imported names and suppress real voids."""
+    from blackhole_extrapolator import detect_dangling_in_debris
+    from blackhole_extrapolator.detect import _debris_imported_names
+
+    text = ("from dataclasses import dataclass, field "
+            "from datetime import datetime, timezone "
+            "class Thing: def f(self): self.a = Ledger()")
+    names = _debris_imported_names(text)
+
+    assert {"dataclass", "field", "datetime", "timezone"} <= names
+    assert "class" not in names and "from" not in names
+    assert "Thing" not in names and "Ledger" not in names
+
+    broken = tmp_path / "flat2.py"
+    broken.write_text(text)
+    found = {e.detail.split("`")[1] for e in detect_dangling_in_debris(broken)}
+    assert "Ledger" in found

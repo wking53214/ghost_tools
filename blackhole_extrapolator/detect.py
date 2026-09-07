@@ -346,6 +346,51 @@ _DEBRIS_HINT = re.compile(r":\s*([A-Z]\w+)[,)]")
 _DEBRIS_BIND = re.compile(r"self\.(\w+)\s*=\s*([A-Z]\w+)\(\)")
 _DEBRIS_CALL = re.compile(r"self\.(\w+)\.(\w+)\(")
 
+# Imports surviving in the debris. A name the file imports is resolved by that
+# import and is not missing -- if the module itself is gone, that is a
+# MISSING_MODULE void found by detect_missing_imports, reported once against
+# the module rather than once per name it supplied.
+_DEBRIS_IMPORT_HEAD = re.compile(r"\bfrom\s+[\w.]+\s+import\s*")
+_DEBRIS_IMPORT_PLAIN = re.compile(r"\bimport\s+([\w.]+)(?:\s+as\s+(\w+))?")
+_IMPORT_TOKEN = re.compile(r"[A-Za-z_]\w*")
+
+# Tokens that end an import list once the line breaks are gone. In flattened
+# text `from a import b from c import d` is one run of characters, so a
+# non-greedy word match would otherwise swallow the next statement whole.
+_IMPORT_STOP = frozenset({
+    "from", "import", "class", "def", "return", "if", "for", "while", "try",
+    "with", "raise", "assert", "logger", "async", "await", "del", "global",
+})
+
+
+def _debris_imported_names(text: str) -> set[str]:
+    """Names this file brings in by import, recovered from unparseable text."""
+    names: set[str] = set()
+
+    # Scan forward from each `from X import`, taking names until the next
+    # statement begins. A single greedy pattern cannot do this: with the line
+    # breaks gone, `from a import b from c import d` is one uninterrupted run
+    # of word characters and separators, so a greedy match consumes the rest
+    # of the file and every import after the first is lost.
+    for head in _DEBRIS_IMPORT_HEAD.finditer(text):
+        for token in _IMPORT_TOKEN.finditer(text, head.end()):
+            word = token.group(0)
+            if word == "as":
+                continue          # `x as y` -- both names are bound locally
+            if word in _IMPORT_STOP:
+                break             # next statement; this import list is over
+            names.add(word)
+            # Stop at the first gap that is not list punctuation, so a bare
+            # `from a import b class C` ends after `b`.
+            between = text[token.end():token.end() + 1]
+            if between and between not in ",) \t\n(":
+                break
+
+    for module, alias in _DEBRIS_IMPORT_PLAIN.findall(text):
+        names.add(alias or module.split(".")[0])
+
+    return {n for n in names if n.isidentifier()}
+
 
 def detect_dangling_in_debris(path: Path, source: str | None = None
                               ) -> Iterator[NegativeEvidence]:
@@ -375,7 +420,11 @@ def detect_dangling_in_debris(path: Path, source: str | None = None
     except SyntaxError:
         pass
 
-    defined = set(re.findall(r"\bclass\s+(\w+)", text))
+    # Defined here, or imported here. Counting only class definitions reported
+    # every imported type as missing code: the first real specimen this ran on
+    # yielded `Any`, whose `from typing import (...)` was sitting in the same
+    # debris a few hundred bytes away.
+    defined = set(re.findall(r"\bclass\s+(\w+)", text)) | _debris_imported_names(text)
     bindings = dict(_DEBRIS_BIND.findall(text))          # field -> Type
     methods: dict[str, set[str]] = {}
     for field, method in _DEBRIS_CALL.findall(text):
