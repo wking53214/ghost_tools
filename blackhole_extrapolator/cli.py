@@ -34,6 +34,8 @@ def _kind_for(evidence) -> VoidKind:
     all, and saying otherwise would assert a history nobody can check.
     """
     kinds = {item.kind for item in evidence}
+    if kinds & {EvidenceKind.DESTROYED_RESIDUE, EvidenceKind.DEBRIS_STRUCTURE}:
+        return VoidKind.DESTROYED
     if EvidenceKind.MISSING_MODULE in kinds:
         for item in evidence:
             if "FLATTENED" in item.detail or "does not parse" in item.detail:
@@ -75,33 +77,32 @@ def main(argv: List[str] = None) -> int:
         if not repos:
             print(f"no checkouts (directories with .git) under {args.path}", file=sys.stderr)
             return 2
-        rc = 0
+        if args.json:
+            print(json.dumps({repo.name: _payload(*_analyse(repo, [r for r in repos if r != repo], args), args)
+                              for repo in repos}, indent=2))
+            return 0
         for repo in repos:
             print(f"=== {repo.name}")
-            rc = max(rc, _report(repo, [r for r in repos if r != repo], args))
+            _report(repo, [r for r in repos if r != repo], args)
             print()
-        return rc
+        return 0
     return _report(args.path, args.sibling, args)
 
 
-def _report(root: Path, siblings: List[Path], args) -> int:
+def _payload(voids, wiring, evidence, args):
+    if args.show_wiring:
+        return {"voids": [v.as_dict() for v in voids], "wiring": [w.as_dict() for w in wiring]}
+    return [v.as_dict() for v in voids]
+
+
+def _analyse(root: Path, siblings: List[Path], args):
+    """(voids, wiring, non-wiring evidence) for one tree."""
     evidence = [
         item for item in scan(root, siblings)
         if not (_SKIP_DIRS & set(Path(item.file).parts))
     ]
     wiring = [item for item in evidence if item.kind is EvidenceKind.WIRING]
     evidence = [item for item in evidence if item.kind is not EvidenceKind.WIRING]
-    if not evidence and not wiring:
-        print("No negative-space evidence found. Nothing is reaching for "
-              "something that is not there.")
-        return 0
-    if not evidence:
-        print(f"Nothing is missing. {len(wiring)} import(s) are provided elsewhere"
-              + (":" if args.show_wiring else " (use --show-wiring to list them)."))
-        if args.show_wiring:
-            _print_wiring(wiring)
-        return 0
-
     voids = []
     for target, items in sorted(group_by_target(evidence).items()):
         files = sorted({Path(i.file) for i in items})
@@ -115,13 +116,25 @@ def _report(root: Path, siblings: List[Path], args) -> int:
         )
         if void.shape_confidence >= args.min_confidence:
             voids.append(void)
+    return voids, wiring, evidence
 
+
+def _report(root: Path, siblings: List[Path], args) -> int:
+    voids, wiring, evidence = _analyse(root, siblings, args)
     if args.json:
+        # Always JSON on --json, including the empty case: a pipeline that
+        # parsed the output got prose the first time a clean tree was scanned.
+        print(json.dumps(_payload(voids, wiring, evidence, args), indent=2))
+        return 0
+    if not evidence and not wiring:
+        print("No negative-space evidence found. Nothing is reaching for "
+              "something that is not there.")
+        return 0
+    if not evidence:
+        print(f"Nothing is missing. {len(wiring)} import(s) are provided elsewhere"
+              + (":" if args.show_wiring else " (use --show-wiring to list them)."))
         if args.show_wiring:
-            print(json.dumps({"voids": [v.as_dict() for v in voids],
-                              "wiring": [w.as_dict() for w in wiring]}, indent=2))
-        else:
-            print(json.dumps([v.as_dict() for v in voids], indent=2))
+            _print_wiring(wiring)
         return 0
     voids.sort(key=lambda v: v.shape_confidence, reverse=True)
     for void in voids:

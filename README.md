@@ -462,6 +462,7 @@ mistaken for a lost dependency.
     blackhole-extrapolator ~ --ecosystem            # every checkout under ~, each against the rest
     python -m blackhole_extrapolator <path> --json --min-confidence 0.3
     python -m blackhole_extrapolator <path> --json --show-wiring   # {"voids": [...], "wiring": [...]}
+    blackhole-extrapolator ~ --ecosystem --json     # {"<checkout>": [...voids...], ...}
 
 `shape_confidence` measures how well the evidence pins down the **outline**.
 It is not a claim that a reconstruction would be correct. Those are different

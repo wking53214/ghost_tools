@@ -109,6 +109,25 @@ def _recovered_from_debris(evidence: Iterable[NegativeEvidence]) -> list[str]:
     return out
 
 
+def _debris_defines(item: NegativeEvidence) -> set[str]:
+    """Top-level names a DEBRIS_STRUCTURE item says the destroyed file defined:
+    class names and module-level functions, not methods."""
+    names: set[str] = set()
+    if item.kind is not EvidenceKind.DEBRIS_STRUCTURE:
+        return names
+    for line in item.detail.splitlines()[1:]:
+        text = line.strip()
+        if not text or text.startswith("companion "):
+            continue
+        if text.startswith("class "):
+            names.add(text[len("class "):].strip())
+            continue
+        head = text.split("(", 1)[0]
+        if "." not in head:
+            names.add(head)
+    return names
+
+
 def infer_usage_invariants(source: str, target: str) -> list[str]:
     """Constraints the callers' own code forces on the missing thing.
 
@@ -270,6 +289,12 @@ def extrapolate(
             "method belongs to, which is read from token order and is wrong "
             "for a paste that interleaved two files"
         )
+    if recovered and any(item.kind in (EvidenceKind.DANGLING_REFERENCE,
+                                       EvidenceKind.ORPHANED_TEST) for item in evidence):
+        undeterminable.append(
+            "whether the callers grouped here meant this file's definition of "
+            "the name or another definition of the same name that is also gone"
+        )
     if kind is VoidKind.UNREALISED:
         undeterminable.append(
             "whether this connection was ever intended -- both sides fitting "
@@ -328,4 +353,16 @@ def group_by_target(evidence: Sequence[NegativeEvidence]) -> dict[str, list[Nega
             continue
         found = re.search(r"`([A-Za-z_][A-Za-z0-9_.]*)`", item.detail)
         grouped[found.group(1) if found else item.file].append(item)
+    # A name the callers reach for that a destroyed file's debris defines is
+    # that file's void, not a second one. Measured on TOUCHSTONE: three
+    # superseded specimens reached for `QuorumConsensusEngine`, reported as
+    # never built beside the flattened file whose headers still declared it.
+    defined_in: dict[str, str] = {}
+    for item in evidence:
+        for name in _debris_defines(item):
+            defined_in.setdefault(name, item.file)
+    for target in list(grouped):
+        home = defined_in.get(target)
+        if home and home != target and home in grouped:
+            grouped[home].extend(grouped.pop(target))
     return dict(grouped)

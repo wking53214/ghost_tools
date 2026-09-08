@@ -103,3 +103,15 @@ def test_json_shape_is_unchanged_unless_wiring_is_requested(tmp_path, capsys):
     assert main([str(spine), "--sibling", str(ccc), "--json", "--show-wiring"]) == 0
     shaped = json.loads(capsys.readouterr().out)
     assert set(shaped) == {"voids", "wiring"} and len(shaped["wiring"]) == 1
+
+
+def test_a_test_importing_a_sibling_provided_module_is_wiring_not_an_orphan(tmp_path):
+    """Measured 2026-09-08 with every sibling supplied: the spine still showed
+    `ccc`, `gems` and `governance_gateway` as voids. The import detector had
+    consulted the providers; the orphaned-test detector had not."""
+    spine = _repo(tmp_path, "spine", {"test_ccc_adapter.py": "from ccc import CCCSystem\n"})
+    ccc = _repo(tmp_path, "CCC", {"ccc/__init__.py": "class CCCSystem: ...\n"})
+    alone = scan(spine)
+    assert EvidenceKind.ORPHANED_TEST in {e.kind for e in alone}
+    with_sibling = scan(spine, siblings=[ccc])
+    assert {e.kind for e in with_sibling} == {EvidenceKind.WIRING}

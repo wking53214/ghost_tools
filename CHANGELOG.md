@@ -55,6 +55,16 @@ The release that makes the toolkit shippable and closes the pipeline.
   names so an ancestor of a rewrite is not reported as a lost dependency.
   Measured on TOUCHSTONE's `quorum_state_governance_source.py`: 38 signatures
   recovered where 0.4 reported seven names and no shape.
+- **Corpus run fixes** (nine checkouts, 49 voids to 36). A test that imports
+  a sibling-provided module is wiring, not an orphaned test (the spine's
+  `ccc`, `gems` and `governance_gateway` were being reported twice, once by
+  each detector, and only one consulted the providers). A file that parses as
+  a single comment is destroyed for the structure detector as it already was
+  for the residue detector, and its void is classified destroyed. Callers of a
+  name a destroyed file's debris defines join that file's void instead of
+  forming a second, never-built one; the void says the join is by name.
+  `--json` emits JSON when nothing is missing, and `--ecosystem --json` emits
+  one object keyed by checkout instead of prose headers between documents.
 
 ### Packaging
 - Console scripts: `ghost-buster`, `ghost-writer`, `ghost-triage`,

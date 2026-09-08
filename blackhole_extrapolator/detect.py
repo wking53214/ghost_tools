@@ -364,6 +364,26 @@ _DEBRIS_CLASS = re.compile(r"\bclass\s+([A-Z][A-Za-z0-9_]*)")
 _DEBRIS_DEF = re.compile(r"\bdef\s+([a-z_][A-Za-z0-9_]*)")
 
 
+_DEFINING_NODES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef,
+                   ast.Assign, ast.Import, ast.ImportFrom)
+
+
+def _is_destroyed(text: str) -> bool:
+    """Does not parse, or parses to a module that defines nothing.
+
+    The second case is TOUCHSTONE's canonical silent-pass specimen: a
+    flattened file whose single line begins with `#`, so Python reads all
+    11,700 bytes as one comment. It imports cleanly and defines zero names.
+    An empty file is empty, not destroyed."""
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return True
+    if not text.strip():
+        return False
+    return not any(isinstance(n, _DEFINING_NODES) for n in ast.walk(tree))
+
+
 def detect_destroyed_residue(path: Path, source: str | None = None
                              ) -> Iterator[NegativeEvidence]:
     """Identifier debris surviving in a file that no longer parses.
@@ -388,28 +408,8 @@ def detect_destroyed_residue(path: Path, source: str | None = None
     nothing in the bytes distinguishes them.
     """
     text = source if source is not None else path.read_text(errors="replace")
-    try:
-        tree = ast.parse(text)
-    except SyntaxError:
-        tree = None
-
-    if tree is not None:
-        # Parsing is not proof of survival. TOUCHSTONE's canonical silent-pass
-        # specimen is a flattened file whose single line happens to begin with
-        # `#`, so Python reads the whole 11,700 bytes as one comment: it
-        # imports cleanly, raises nothing, and defines zero names. An earlier
-        # version of this detector returned here and missed it -- fooled by
-        # exactly the property that specimen exists to catch, on the first
-        # real run against the corpus.
-        #
-        # A module that parses to nothing is destroyed regardless of what the
-        # parser says about it.
-        defines = any(isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef,
-                                     ast.ClassDef, ast.Assign, ast.Import,
-                                     ast.ImportFrom))
-                      for n in ast.walk(tree))
-        if defines or not text.strip():
-            return
+    if not _is_destroyed(text):
+        return
 
     classes = sorted(set(_DEBRIS_CLASS.findall(text)))
     functions = sorted(set(_DEBRIS_DEF.findall(text)))
@@ -484,11 +484,8 @@ def detect_debris_structure(path: Path, source: str | None = None
     interleaved two files.
     """
     text = source if source is not None else path.read_text(errors="replace")
-    try:
-        ast.parse(text)
+    if not _is_destroyed(text):
         return
-    except SyntaxError:
-        pass
     structure = debris_structure(text)
     if not structure:
         return
@@ -639,7 +636,9 @@ def detect_dangling_in_debris(path: Path, source: str | None = None
 
 
 def detect_orphaned_tests(test_paths: Iterable[Path],
-                          search_roots: Sequence[Path]) -> Iterator[NegativeEvidence]:
+                          search_roots: Sequence[Path],
+                          providers: dict[str, str] | None = None
+                          ) -> Iterator[NegativeEvidence]:
     """Tests exercising something that is not there.
 
     Unusually strong evidence, because a test encodes both the expected
@@ -674,6 +673,19 @@ def detect_orphaned_tests(test_paths: Iterable[Path],
                 continue
             except Exception:  # noqa: BLE001
                 pass
+            provider = (providers or {}).get(module) or (providers or {}).get(_normalise_dist(module))
+            if provider:
+                # Measured 2026-09-08: with every sibling checkout supplied,
+                # the spine still reported `ccc`, `gems` and
+                # `governance_gateway` as voids, because only the import
+                # detector consulted the providers and the test detector
+                # reported the same modules a second time.
+                yield NegativeEvidence(
+                    kind=EvidenceKind.WIRING,
+                    detail=f"module `{module}` is not in this tree; provided by {provider}",
+                    file=str(path), line=node.lineno,
+                )
+                continue
             wanted = [a.name for a in node.names] if isinstance(node, ast.ImportFrom) else []
             yield NegativeEvidence(
                 kind=EvidenceKind.ORPHANED_TEST,
@@ -706,5 +718,5 @@ def scan(root: Path, siblings: Sequence[Path] = ()) -> list[NegativeEvidence]:
         evidence.extend(detect_dangling_names(path, text))
         evidence.extend(detect_dangling_in_debris(path, text))
         evidence.extend(detect_missing_imports(path, [root], text, providers))
-    evidence.extend(detect_orphaned_tests(tests, [root]))
+    evidence.extend(detect_orphaned_tests(tests, [root], providers))
     return evidence

@@ -109,3 +109,66 @@ def test_cli_prints_the_recovered_signatures(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "must define  Engine.__init__(self, ledger: Ledger, ratio: float = 0.66)" in out
     assert "the evidence constrains no shape" not in out
+
+
+# ---------------------------------------------------------------- corpus run, 2026-09-08
+
+COMMENT_FLATTENED = "# " + " ".join(ORIGINAL.split("\n"))
+
+
+def test_a_file_that_parses_as_one_comment_is_destroyed_and_still_yields_its_interface(tmp_path):
+    """TOUCHSTONE's silent-pass specimen: one line beginning with `#`, so the
+    parser accepts it and it defines nothing. The residue detector already
+    caught it; the structure detector returned early on the parse."""
+    flat = tmp_path / "quiet_source.py"
+    flat.write_text(COMMENT_FLATTENED)
+    found = list(detect_debris_structure(flat))
+    assert len(found) == 1 and "Ledger.append(self, event: Dict[str, Any]) -> None" in found[0].detail
+    main([str(tmp_path), "--json"])
+
+
+def test_comment_flattened_void_is_classified_destroyed_not_never_built(tmp_path, capsys):
+    (tmp_path / "quiet_source.py").write_text(COMMENT_FLATTENED)
+    main([str(tmp_path), "--json"])
+    voids = __import__("json").loads(capsys.readouterr().out)
+    assert [v["kind"] for v in voids] == ["destroyed"]
+
+
+def test_callers_of_a_name_the_debris_defines_join_that_files_void(tmp_path, capsys):
+    """Three superseded specimens reached for `QuorumConsensusEngine` and were
+    reported as a never-built void beside the flattened file whose headers
+    still declared the class."""
+    flat = _flat(tmp_path)
+    (tmp_path / "wrapper.py").write_text("e = Engine(Ledger('x'))\nprint(e.decide([]))\n")
+    grouped = group_by_target(scan(tmp_path))
+    assert list(grouped) == [str(flat)]
+    void = extrapolate(summary="x", anchors=[], evidence=grouped[str(flat)])
+    assert {e.kind for e in void.evidence} >= {EvidenceKind.DANGLING_REFERENCE, EvidenceKind.DEBRIS_STRUCTURE}
+    assert any("another definition of the same name" in u for u in void.undeterminable)
+    assert void.shape_confidence > 0.65
+    # A name nothing destroyed defines stays its own void.
+    (tmp_path / "other.py").write_text("x = Nowhere()\n")
+    assert sorted(group_by_target(scan(tmp_path))) == sorted([str(flat), "Nowhere"])
+
+
+def test_json_is_json_even_when_nothing_is_missing(tmp_path, capsys):
+    import json
+    (tmp_path / "fine.py").write_text(ORIGINAL)
+    assert main([str(tmp_path), "--json"]) == 0
+    assert json.loads(capsys.readouterr().out) == []
+    assert main([str(tmp_path), "--json", "--show-wiring"]) == 0
+    assert json.loads(capsys.readouterr().out) == {"voids": [], "wiring": []}
+
+
+def test_ecosystem_json_is_one_object_keyed_by_checkout(tmp_path, capsys):
+    import json
+    for name in ("alpha", "beta"):
+        repo = tmp_path / name
+        repo.mkdir()
+        (repo / ".git").mkdir()
+    (tmp_path / "alpha" / "thing_source.py").write_text(FLATTENED)
+    (tmp_path / "beta" / "fine.py").write_text(ORIGINAL)
+    assert main([str(tmp_path), "--ecosystem", "--json"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert sorted(out) == ["alpha", "beta"]
+    assert [v["kind"] for v in out["alpha"]] == ["destroyed"] and out["beta"] == []
