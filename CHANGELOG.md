@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.1 (2026-09-08)
+
+### blackhole_extrapolator
+- **Rename candidates.** A name nothing defines is compared, by shape and
+  never by name, against every signature the tree still has: parsing files
+  and the headers read back from flattened ones. Dimensions: a keyword the
+  caller passes is a parameter of the candidate; the caller unpacks N values
+  and the candidate returns an N-tuple; an unpacked value is passed on to
+  another known signature whose parameter carries the same annotation as the
+  tuple element; a method used on the result is one the candidate class
+  defines; the two names share a word. Arity compatibility is a gate. Two
+  matching dimensions, at least one of them not the name, make a
+  `rename_candidate` evidence item in the undefined name's own void, and the
+  void lists the hypothesis as undeterminable. Nothing is merged. Found on
+  TOUCHSTONE: `initialize_hybrid_cluster` is `initialize_network_cluster` on
+  five dimensions, and `UnifiedGovernanceKernel` is `GovernanceKernel` on its
+  four keyword parameters, in a flattened file the callers never name.
+
 ## 0.5.0 (2026-09-08)
 
 The release that makes the toolkit shippable and closes the pipeline.

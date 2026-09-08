@@ -91,6 +91,11 @@ class EvidenceKind(str, Enum):
     # nothing about how any of it fitted together.
     DESTROYED_RESIDUE = "destroyed_residue"
 
+    # A name nothing defines that some signature fits by shape: keywords,
+    # unpack count, where the values flow, methods used on the result. A
+    # hypothesis that Sally is now called Karen, never a merge.
+    RENAME_CANDIDATE = "rename_candidate"
+
 
 class VoidKind(str, Enum):
     """What sort of absence this is, which decides how much may be claimed."""
