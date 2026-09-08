@@ -4,13 +4,38 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ghost-tools"
-version = "0.3.1"
-description = "Codebase integrity toolkit: detects structural ghosts, documentation drift, duplication, dead code and parallel implementations for human review"
+version = "0.5.0"
+description = "Codebase integrity toolkit: finds structural ghosts, proves vacuous tests by mutation, outlines missing code, and turns human-triaged findings into accurate docs"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
 authors = [{ name = "William King" }]
+keywords = ["code-quality", "mutation-testing", "dead-code", "documentation-drift", "ai-generated-code", "static-analysis"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Testing",
+]
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/wking53214/ghost_tools"
+Changelog = "https://github.com/wking53214/ghost_tools/blob/main/CHANGELOG.md"
+
+[project.scripts]
+ghost-buster = "ghost_buster.cli:main"
+ghost-writer = "ghost_writer.cli:main"
+ghost-triage = "ghost_writer.triage:main"
+blackhole-extrapolator = "blackhole_extrapolator.cli:main"
+
+[tool.setuptools]
+packages = ["ghost_buster", "ghost_writer", "blackhole_extrapolator"]
 
 [project.optional-dependencies]
 semantic = ["anthropic"]

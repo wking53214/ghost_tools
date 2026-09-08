@@ -77,3 +77,85 @@ def render_ghost_report(findings: List[Finding], title: str = "Known Structural 
             lines.append("")
 
     return "\n".join(lines)
+
+
+def render_triage_report(findings: List[Finding], title: str = "Ghost Findings, Awaiting Triage") -> str:
+    """The other report: EVERYTHING ghost_buster found, for the person doing
+    the triage, most severe first, grouped by file so one file's problems
+    read together.
+
+    This is deliberately not the document mode. It says on its face that
+    nothing in it has been reviewed, so it can never be mistaken for a
+    design decision. Findings that already carry a disposition are listed
+    in a closing section with the decision, so a re-run report shows what
+    was decided and what is still open.
+
+    A `vacuous_check` finding carries its proof (the mutation the test
+    survived) in `detail`; it is rendered as its own line because a reader
+    who wants to reproduce the finding needs exactly that sentence.
+    """
+    severity_order = {Severity.CRITICAL: 0, Severity.MAJOR: 1, Severity.MINOR: 2, Severity.INFORMATIONAL: 3}
+    items = list(findings)
+    open_items = [f for f in items if not f.disposition]
+    decided = [f for f in items if f.disposition]
+
+    lines = [f"## {title}", ""]
+    lines.append(
+        "_Every entry below was produced by ghost_buster and has NOT been "
+        "reviewed by a human. It is a list of things to look at, not a list "
+        "of defects. Record decisions with `ghost_triage`._"
+    )
+    lines.append("")
+
+    # Summary table by severity and detector.
+    counts: Dict[Severity, int] = defaultdict(int)
+    by_detector: Dict[str, int] = defaultdict(int)
+    for f in open_items:
+        counts[f.severity] += 1
+        by_detector[f.detector] += 1
+    lines.append(f"**{len(open_items)} open**, {len(decided)} decided.")
+    lines.append("")
+    lines.append("| severity | count |")
+    lines.append("|---|---|")
+    for sev in sorted(counts, key=lambda s: severity_order[s]):
+        lines.append(f"| {sev.value} | {counts[sev]} |")
+    lines.append("")
+    lines.append("| detector | count |")
+    lines.append("|---|---|")
+    for det, n in sorted(by_detector.items(), key=lambda kv: -kv[1]):
+        lines.append(f"| {det} | {n} |")
+    lines.append("")
+
+    # Open findings by file, most severe file first.
+    by_file: Dict[str, List[Finding]] = defaultdict(list)
+    for f in open_items:
+        by_file[f.evidence.file].append(f)
+
+    def file_rank(path: str) -> tuple:
+        worst = min(severity_order[f.severity] for f in by_file[path])
+        return (worst, -len(by_file[path]), path)
+
+    for path in sorted(by_file, key=file_rank):
+        entries = sorted(by_file[path], key=lambda f: (severity_order[f.severity], f.evidence.line_start or 0))
+        lines.append(f"### `{path}` ({len(entries)})")
+        lines.append("")
+        for f in entries:
+            line = f":{f.evidence.line_start}" if f.evidence.line_start else ""
+            lines.append(f"- **[{f.severity.value}]** {f.summary} (`{f.detector}`, line{line}, `{f.id}`)")
+            if f.category is Category.VACUOUS_CHECK and f.detail:
+                lines.append(f"  *Proof:* {f.detail}")
+            elif f.detail:
+                lines.append(f"  {f.detail}")
+        lines.append("")
+
+    if decided:
+        lines.append("### Already decided")
+        lines.append("")
+        for f in sorted(decided, key=lambda f: (f.disposition or "", severity_order[f.severity])):
+            note = f" -- {f.disposition_note}" if f.disposition_note else ""
+            lines.append(f"- `{f.disposition}` {f.summary} (`{f.id}`){note}")
+        lines.append("")
+    if not open_items:
+        lines.append("_Nothing open._")
+        lines.append("")
+    return "\n".join(lines)

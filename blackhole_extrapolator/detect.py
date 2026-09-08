@@ -84,6 +84,78 @@ def _available_modules(search_roots: Sequence[Path]) -> set[str]:
     return available
 
 
+def _normalise_dist(name: str) -> str:
+    return re.sub(r"[-_.]+", "_", name.strip().lower())
+
+
+def _declared_dependencies(root: Path) -> set[str]:
+    """Top-level names a project says it depends on, from requirements files
+    and pyproject, normalised the way pip does. Best effort: the import name
+    and the distribution name usually match, and when they do not the module
+    is reported as unresolved rather than guessed."""
+    names: set[str] = set()
+    for req in list(root.glob("requirements*.txt")) + list(root.glob("requirements/*.txt")):
+        for line in req.read_text(errors="replace").splitlines():
+            line = line.split("#", 1)[0].strip()
+            if not line or line.startswith(("-", "git+", "http")):
+                continue
+            token = re.split(r"[<>=!~;\[\s]", line, 1)[0]
+            if token:
+                names.add(_normalise_dist(token))
+    pyproject = root / "pyproject.toml"
+    if pyproject.is_file():
+        text = pyproject.read_text(errors="replace")
+        # `dependencies = [...]` plus every list in [project.optional-dependencies]:
+        # an optional extra is still a declared provider, not a lost module.
+        blocks = re.findall(r"dependencies\s*=\s*\[(.*?)\]", text, re.S)
+        optional = re.search(r"\[project\.optional-dependencies\](.*?)(?:\n\[|\Z)", text, re.S)
+        if optional:
+            blocks += re.findall(r"=\s*\[(.*?)\]", optional.group(1), re.S)
+        for block in blocks:
+            for token in re.findall(r"[\"']([A-Za-z0-9_.\-]+)", block):
+                names.add(_normalise_dist(token))
+    return names
+
+
+def _submodules(root: Path) -> list[tuple[str, bool]]:
+    """(path, initialised) for every git submodule the tree declares."""
+    modules_file = root / ".gitmodules"
+    if not modules_file.is_file():
+        return []
+    out = []
+    for path in re.findall(r"^\s*path\s*=\s*(\S+)", modules_file.read_text(errors="replace"), re.M):
+        target = root / path
+        initialised = target.is_dir() and any(target.rglob("*.py"))
+        out.append((path, initialised))
+    return out
+
+
+def resolve_providers(root: Path, siblings: Sequence[Path] = ()) -> dict[str, str]:
+    """Module name -> who provides it, for everything this tree does not.
+
+    Three sources, in the order a reader would want them named: a sibling
+    checkout that defines the module; a dependency the project declares but
+    that is not installed here; a git submodule declared in .gitmodules.
+    An uninitialised submodule cannot say which modules it would provide, so
+    it is attached to every otherwise-unresolved import as a note, never as
+    a claim.
+    """
+    root = Path(root)
+    providers: dict[str, str] = {}
+    for sibling in siblings:
+        sibling = Path(sibling)
+        if not sibling.is_dir() or sibling.resolve() == root.resolve():
+            continue
+        for name in _available_modules([sibling]):
+            providers.setdefault(name, f"sibling checkout `{sibling.name}` ({sibling})")
+    for name in _declared_dependencies(root):
+        providers.setdefault(name, "declared dependency (not installed in this environment)")
+    for path, initialised in _submodules(root):
+        if not initialised:
+            providers.setdefault("__uninitialised_submodule__", path)
+    return providers
+
+
 def _bound_names(tree: ast.Module) -> set[str]:
     """Every name this module defines, imports, or binds at any scope.
 
@@ -194,12 +266,17 @@ def detect_dangling_names(path: Path, source: str | None = None
 
 
 def detect_missing_imports(path: Path, search_roots: Sequence[Path],
-                           source: str | None = None) -> Iterator[NegativeEvidence]:
+                           source: str | None = None,
+                           providers: dict[str, str] | None = None) -> Iterator[NegativeEvidence]:
     """Imports of modules that exist nowhere under the search roots.
 
     Distinguished from a dangling name because the evidence is different: an
     import names the missing thing directly, and `from x import a, b, c` also
     enumerates part of its public surface.
+
+    With `providers` (see resolve_providers), an import that something else
+    known would satisfy is reported as WIRING rather than MISSING_MODULE: the
+    module is not in this tree, and it is not lost either.
     """
     text = source if source is not None else path.read_text(errors="replace")
     try:
@@ -225,9 +302,22 @@ def detect_missing_imports(path: Path, search_roots: Sequence[Path],
             continue
         except Exception:          # noqa: BLE001
             pass
+        providers = providers or {}
+        provider = providers.get(module) or providers.get(_normalise_dist(module))
+        if provider:
+            yield NegativeEvidence(
+                kind=EvidenceKind.WIRING,
+                detail=f"module `{module}` is not in this tree; provided by {provider}",
+                file=str(path), line=node.lineno,
+            )
+            continue
         detail = f"module `{module}` is imported and exists nowhere in the search roots"
         if names:
             detail += f"; its expected surface includes {sorted(names)}"
+        submodule = providers.get("__uninitialised_submodule__")
+        if submodule:
+            detail += (f"; note: git submodule `{submodule}` is declared but not initialised, "
+                       "run `git submodule update --init` and rescan before treating this as lost")
         yield NegativeEvidence(
             kind=EvidenceKind.MISSING_MODULE, detail=detail,
             file=str(path), line=node.lineno,
@@ -274,6 +364,26 @@ _DEBRIS_CLASS = re.compile(r"\bclass\s+([A-Z][A-Za-z0-9_]*)")
 _DEBRIS_DEF = re.compile(r"\bdef\s+([a-z_][A-Za-z0-9_]*)")
 
 
+_DEFINING_NODES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef,
+                   ast.Assign, ast.Import, ast.ImportFrom)
+
+
+def _is_destroyed(text: str) -> bool:
+    """Does not parse, or parses to a module that defines nothing.
+
+    The second case is TOUCHSTONE's canonical silent-pass specimen: a
+    flattened file whose single line begins with `#`, so Python reads all
+    11,700 bytes as one comment. It imports cleanly and defines zero names.
+    An empty file is empty, not destroyed."""
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return True
+    if not text.strip():
+        return False
+    return not any(isinstance(n, _DEFINING_NODES) for n in ast.walk(tree))
+
+
 def detect_destroyed_residue(path: Path, source: str | None = None
                              ) -> Iterator[NegativeEvidence]:
     """Identifier debris surviving in a file that no longer parses.
@@ -298,28 +408,8 @@ def detect_destroyed_residue(path: Path, source: str | None = None
     nothing in the bytes distinguishes them.
     """
     text = source if source is not None else path.read_text(errors="replace")
-    try:
-        tree = ast.parse(text)
-    except SyntaxError:
-        tree = None
-
-    if tree is not None:
-        # Parsing is not proof of survival. TOUCHSTONE's canonical silent-pass
-        # specimen is a flattened file whose single line happens to begin with
-        # `#`, so Python reads the whole 11,700 bytes as one comment: it
-        # imports cleanly, raises nothing, and defines zero names. An earlier
-        # version of this detector returned here and missed it -- fooled by
-        # exactly the property that specimen exists to catch, on the first
-        # real run against the corpus.
-        #
-        # A module that parses to nothing is destroyed regardless of what the
-        # parser says about it.
-        defines = any(isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef,
-                                     ast.ClassDef, ast.Assign, ast.Import,
-                                     ast.ImportFrom))
-                      for n in ast.walk(tree))
-        if defines or not text.strip():
-            return
+    if not _is_destroyed(text):
+        return
 
     classes = sorted(set(_DEBRIS_CLASS.findall(text)))
     functions = sorted(set(_DEBRIS_DEF.findall(text)))
@@ -333,11 +423,107 @@ def detect_destroyed_residue(path: Path, source: str | None = None
             f"class-shaped and {len(functions)} def-shaped tokens. "
             f"classes {classes[:12]}"
             + (" ..." if len(classes) > 12 else "")
-            + ". Names only -- structure, nesting and which tokens were live "
-              "code rather than docstring examples are all destroyed."
+            + ". Names only here; token order still holds the interface, "
+              "see the debris_structure evidence. Which tokens were live "
+              "code rather than docstring examples is destroyed."
         ),
         file=str(path),
         observed=f"{len(text)} bytes, {text.count(chr(10))} newlines",
+    )
+
+
+_DEBRIS_HEADER = re.compile(
+    r"\bclass\s+([A-Z]\w*)\s*(\([^)]*\))?\s*:"
+    r"|\bdef\s+([a-z_]\w*)\s*\(([^)]*)\)\s*(->\s*[^:]+?)?\s*:"
+)
+_PAIR_SUFFIXES = (("_source.py", "_adapter.py"), ("-flattened.py", ".py"))
+
+
+def _companion(path: Path) -> Path | None:
+    """The parsing counterpart of a destroyed file, by naming convention:
+    `x_source.py` beside `x_adapter.py`, `x-flattened.py` beside `x.py`."""
+    for old, new in _PAIR_SUFFIXES:
+        if path.name.endswith(old):
+            candidate = path.with_name(path.name[: -len(old)] + new)
+            if candidate.is_file() and candidate != path:
+                return candidate
+    return None
+
+
+def debris_structure(text: str) -> list[tuple[str, str, str, str]]:
+    """(owner, name, params, returns) for every class and def header in token
+    order. A def whose first parameter is `self` or `cls` is attributed to the
+    most recent class header; anything else is module level. Newlines are
+    gone but order is not, and that is enough to read the interface back."""
+    out: list[tuple[str, str, str, str]] = []
+    current = ""
+    for m in _DEBRIS_HEADER.finditer(text):
+        if m.group(1):
+            current = m.group(1)
+            out.append(("", current, (m.group(2) or "").strip("()"), ""))
+            continue
+        params = " ".join((m.group(4) or "").split())
+        first = params.split(",", 1)[0].split(":", 1)[0].strip()
+        owner = current if first in ("self", "cls") and current else ""
+        out.append((owner, m.group(3), params, " ".join((m.group(5) or "").split())))
+    return out
+
+
+def detect_debris_structure(path: Path, source: str | None = None
+                            ) -> Iterator[NegativeEvidence]:
+    """The interface of a flattened file, read from the order of its debris.
+
+    Only for files that do not parse: on a parsing file the AST is
+    authoritative. What survives flattening is every token in its original
+    order, so `class A:` followed by three `def`s taking `self` is class A
+    with three methods, each with the parameter list and return annotation
+    it was written with. Bodies are not recovered and never will be here;
+    a def inside a docstring example is indistinguishable from a live one;
+    and a method that followed its class in the text is attributed to it,
+    which is right for ordinary source and wrong for a paste that
+    interleaved two files.
+    """
+    text = source if source is not None else path.read_text(errors="replace")
+    if not _is_destroyed(text):
+        return
+    structure = debris_structure(text)
+    if not structure:
+        return
+    lines = []
+    for owner, name, params, returns in structure:
+        if not owner and not params and not returns and name[:1].isupper():
+            lines.append(f"    class {name}")
+            continue
+        qual = f"{owner}.{name}" if owner else name
+        lines.append(f"    {qual}({params}){' ' + returns if returns else ''}")
+    classes = [n for o, n, p, r in structure if not o and n[:1].isupper() and not p and not r]
+    methods = [x for x in structure if x[0]]
+    functions = [x for x in structure if not x[0] and not x[1][:1].isupper()]
+    detail = (
+        f"ordered debris recovers the interface: {len(classes)} class(es), "
+        f"{len(methods)} method(s), {len(functions)} module-level function(s), "
+        "each with the parameter list and return annotation it was written with:\n"
+        + "\n".join(lines)
+    )
+    companion = _companion(path)
+    if companion is not None:
+        try:
+            tree = ast.parse(companion.read_text(errors="replace"))
+            their = {n.name for n in ast.walk(tree) if isinstance(n, ast.ClassDef)}
+            shared = sorted(set(classes) & their)
+            detail += (
+                f"\n    companion `{companion.name}` parses and shares {len(shared)} of "
+                f"{len(classes)} class name(s)"
+                + (f" ({shared})" if shared else "")
+                + (": a renamed rewrite, so this file is an ancestor and nothing reaches "
+                   "for it, not a lost dependency" if not shared else
+                   ": the same names survive there, so compare before treating this as lost")
+            )
+        except (SyntaxError, OSError):
+            pass
+    yield NegativeEvidence(
+        kind=EvidenceKind.DEBRIS_STRUCTURE, detail=detail, file=str(path),
+        observed=f"{len(structure)} header tokens in order",
     )
 
 
@@ -450,7 +636,9 @@ def detect_dangling_in_debris(path: Path, source: str | None = None
 
 
 def detect_orphaned_tests(test_paths: Iterable[Path],
-                          search_roots: Sequence[Path]) -> Iterator[NegativeEvidence]:
+                          search_roots: Sequence[Path],
+                          providers: dict[str, str] | None = None
+                          ) -> Iterator[NegativeEvidence]:
     """Tests exercising something that is not there.
 
     Unusually strong evidence, because a test encodes both the expected
@@ -485,6 +673,19 @@ def detect_orphaned_tests(test_paths: Iterable[Path],
                 continue
             except Exception:  # noqa: BLE001
                 pass
+            provider = (providers or {}).get(module) or (providers or {}).get(_normalise_dist(module))
+            if provider:
+                # Measured 2026-09-08: with every sibling checkout supplied,
+                # the spine still reported `ccc`, `gems` and
+                # `governance_gateway` as voids, because only the import
+                # detector consulted the providers and the test detector
+                # reported the same modules a second time.
+                yield NegativeEvidence(
+                    kind=EvidenceKind.WIRING,
+                    detail=f"module `{module}` is not in this tree; provided by {provider}",
+                    file=str(path), line=node.lineno,
+                )
+                continue
             wanted = [a.name for a in node.names] if isinstance(node, ast.ImportFrom) else []
             yield NegativeEvidence(
                 kind=EvidenceKind.ORPHANED_TEST,
@@ -495,9 +696,15 @@ def detect_orphaned_tests(test_paths: Iterable[Path],
             )
 
 
-def scan(root: Path) -> list[NegativeEvidence]:
-    """Every mechanical negative-space signal under `root`."""
+def scan(root: Path, siblings: Sequence[Path] = ()) -> list[NegativeEvidence]:
+    """Every mechanical negative-space signal under `root`.
+
+    `siblings` are other checkouts that may provide what this tree imports;
+    they classify, they do not silence. A module a sibling provides comes
+    back as WIRING evidence rather than disappearing, so the reader sees the
+    dependency and does not mistake it for a loss."""
     root = Path(root)
+    providers = resolve_providers(root, siblings)
     sources = _source_files(root)
     tests = [p for p in sources
              if p.name.startswith("test_") or "test" in p.parent.name.lower()]
@@ -507,8 +714,9 @@ def scan(root: Path) -> list[NegativeEvidence]:
         text = path.read_text(errors="replace")
         evidence.extend(detect_unparseable(path, text))
         evidence.extend(detect_destroyed_residue(path, text))
+        evidence.extend(detect_debris_structure(path, text))
         evidence.extend(detect_dangling_names(path, text))
         evidence.extend(detect_dangling_in_debris(path, text))
-        evidence.extend(detect_missing_imports(path, [root], text))
-    evidence.extend(detect_orphaned_tests(tests, [root]))
+        evidence.extend(detect_missing_imports(path, [root], text, providers))
+    evidence.extend(detect_orphaned_tests(tests, [root], providers))
     return evidence

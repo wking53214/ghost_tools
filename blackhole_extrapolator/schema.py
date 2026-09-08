@@ -62,6 +62,16 @@ class EvidenceKind(str, Enum):
 
     # An import of a module that does not exist anywhere.
     MISSING_MODULE = "missing_module"
+    # Ordered debris in a flattened file: `class X:` followed by the `def`s
+    # that were indented under it, with their parameter lists and return
+    # annotations intact. Newlines are gone; token order is not. This is the
+    # interface of what was destroyed, read directly off the wreckage.
+    DEBRIS_STRUCTURE = "debris_structure"
+    # An import of a module this tree does not provide but something else
+    # known does: a sibling checkout, a declared dependency, a git submodule.
+    # Wiring, not absence. Never grouped into a void; reported beside them so
+    # the reader can tell "not here" from "not anywhere".
+    WIRING = "wiring"
 
     # A test exercising something that is not there. Tests are unusually good
     # evidence: they encode the expected interface AND the expected behaviour.

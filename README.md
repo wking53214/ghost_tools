@@ -1,13 +1,26 @@
-# ghost_tools -- v0.4
+# ghost_tools -- v0.5
 
-Three tools. `ghost_buster` hunts down structural problems in code;
-`ghost_writer` turns the ones a human decides are worth documenting (not
-fixing) into accurate docs; `blackhole_extrapolator` outlines the things that
-are not there at all.
+Four commands, one pipeline. `ghost-buster` hunts down structural problems
+in code and, with `--mutate`, proves which tests pass without checking
+anything; `ghost-triage` records the human decision on each finding;
+`ghost-writer` turns the ones worth documenting (not fixing) into accurate
+docs; `blackhole-extrapolator` outlines the things that are not there at all.
 
-    ghost_buster              things that are present and wrong
-    ghost_writer              the ones worth documenting
-    blackhole_extrapolator    the ones that went up in smoke
+    ghost-buster              things that are present and wrong
+    ghost-buster --mutate     tests that pass with the thing they name broken
+    ghost-triage              the human decision, recorded with its reason
+    ghost-writer              the ones worth documenting
+    blackhole-extrapolator    the ones that went up in smoke
+
+## Install
+
+```bash
+python -m pip install "git+https://github.com/wking53214/ghost_tools"
+ghost-buster /path/to/repo
+```
+
+No dependencies. Python 3.11 or later. `python -m ghost_buster.cli` and the
+other module forms keep working for a checkout without an install.
 
 Built from a researched taxonomy of what actually goes wrong in large,
 iteratively-built (especially AI-assisted) codebases -- duplication,
@@ -140,7 +153,46 @@ python -m ghost_buster.cli /path/to/repo --json > findings.json
 
 # skip a repo-specific vendored tree (e.g. a checked-in copy of another repo)
 python -m ghost_buster.cli /path/to/repo --exclude some_vendored_dir
+
+# prove vacuous tests by mutation (one pytest process per mutant; the working
+# tree is never touched). --mutate-only narrows to test files matching a string.
+python -m ghost_buster.cli /path/to/repo --mutate --mutate-verbose
+python -m ghost_buster.cli /path/to/repo --mutate --mutate-only test_policy --json > findings.json
 ```
+
+### `--mutate`: the proof a check is vacuous
+
+The characteristic defect of an iteratively built codebase is a check that
+passes without doing its job. Coverage counts it; CI is green; nothing
+notices. The only honest proof that a test is vacuous is a broken
+implementation the test still passes. Deleting an assertion proves nothing,
+because a deleted assertion cannot fail.
+
+`--mutate` does what a careful auditor does by hand:
+
+1. finds candidate tests by shape: every assertion is `is not None` / `> 0`
+   / `isinstance` / a bare name; a result assigned from a call and never
+   read; assertions behind a bare `if`; a hand-written list of strings
+   compared with something derived;
+2. resolves what project code each candidate calls, through the test file's
+   imports (constructed instances and fixture-injected receivers included,
+   when exactly one imported class defines the method);
+3. copies the project to a scratch directory (siblings symlinked beside it),
+   breaks that code one operator at a time -- `drop_body`, `return_none`,
+   `flip_compare`, `bump_constants` -- and runs only that test; for a guard,
+   instruments it and fails the test if the guarded assertions never ran;
+   for a restated list, adds a member to the enum or collection that defines
+   those values;
+4. reports a finding ONLY when the test survived, with the mutation named
+   as its proof. A killed mutant is not a finding: the test did its job. A
+   candidate that does not pass unmutated is reported as unjudged, never as
+   a finding.
+
+Findings carry category `vacuous_check`. A guard that holds every assertion
+of its test is CRITICAL; one beside unguarded assertions is MAJOR; a
+survived code mutation is MAJOR. Validated on real repositories on
+2026-09-08: it found the test a hand audit had confirmed the day before, and
+one that survives eleven inverted comparisons in the function it names.
 
 The scan always skips virtualenvs (by the `site-packages` component, so the
 venv's directory name doesn't matter), `node_modules`, VCS directories, and
@@ -187,9 +239,28 @@ findings, report = detect_parallel_implementations(client, {
 ### Usage
 
 ```bash
+# the whole pipeline
+ghost-buster /path/to/repo --mutate --json > findings.json
+ghost-triage findings.json                      # list what is undecided
+ghost-triage findings.json --set ghost-1a2b3c=fix:"real bug, issue #12" \
+                           --set ghost-4d5e6f=document:"deliberate, see ADR-7"
+ghost-writer findings.json --mode triage         # everything, for the person deciding
+ghost-writer findings.json --out ARCHITECTURE_GHOSTS.md   # only what was marked document
+
+# module forms, for a checkout without an install
+python -m ghost_writer.triage findings.json --set ID=suppress:"accepted"
 python -m ghost_writer.cli findings.json --title "Known Structural Ghosts"
-python -m ghost_writer.cli findings.json --out ARCHITECTURE_GHOSTS.md
 ```
+
+`ghost-triage` is the human step the pipeline diagram always had and the
+code never did: it records `fix` / `suppress` / `document` and a note
+against finding ids (a unique prefix is enough), refuses unknown or
+ambiguous ids rather than silently doing nothing, and never touches code,
+docs or the baseline. `--mode triage` renders every finding, most severe
+first, grouped by file, with `vacuous_check` proofs called out and
+already-decided findings listed with their decision; it says on its face
+that nothing in it has been reviewed. The document mode and its gate are
+unchanged.
 
 ## Non-goals, stated explicitly (v0.1 and likely beyond)
 
@@ -216,7 +287,7 @@ test suite runs.
 python -m pytest Tests/ -v
 ```
 
-47 tests, 0 network calls, 0 API key required -- the semantic-layer tests
+134 tests, 0 network calls, 0 API key required -- the semantic-layer tests
 verify the real parsing/fail-closed/injection-fencing logic via
 `StubModelClient`, the same technique `sentinel_os`'s own `interpretation/`
 package uses for its model-client tests.
@@ -286,6 +357,7 @@ Six kinds of mark an absence leaves, all detected mechanically by AST analysis
 | orphaned test | interface **and** expected behaviour |
 | missing module | names it directly, and `from x import a, b` enumerates part of its surface |
 | unparseable file | something that existed and was destroyed; the bytes survive, the program does not |
+| debris structure | a flattened file's `class` and `def` headers in token order, with parameter lists and return annotations: the interface survives, the bodies do not |
 | unconsumed output / unsatisfied requirement | one side of a join that is gone |
 | shape complementarity | the weakest, and the only one that may mean a useful connection nobody ever made |
 
@@ -341,10 +413,56 @@ original had been found.
 a stub can write one from the outline in a minute; nobody can paste the
 outline into a file and have it pass for what was lost.
 
+### Not here, or not anywhere
+
+Scanned one repository at a time, a multi-repository ecosystem reports every
+sibling checkout, declared dependency and git submodule as a void. Measured on
+2026-09-08 across eighteen repositories: ninety-odd voids, all true, none a
+loss. The reader could not tell "not in this tree" from "not anywhere".
+
+So the tool now classifies. An import that a sibling checkout defines, that
+the project declares as a dependency (including optional extras), or that a
+declared git submodule would provide is reported as **wiring**, beside the
+voids, with the provider named. It is never grouped into a void and never
+silenced. An import nothing known provides stays a void; when the tree
+declares a submodule that is not initialised, the void says so and tells you
+to initialise it and rescan before treating the module as lost.
+
+`--ecosystem PARENT` scans every checkout under a parent directory with all
+the others as siblings and reports only what nothing in the ecosystem
+provides. On the governance stack that took the spine from five voids to
+one, and the one it kept was the real nominal dependency the audit had found
+by hand.
+
+### What a flattened file still says
+
+Strip every newline from a module and it stops parsing, but every token is
+still there in the order it was written. `class A:` followed by three `def`s
+whose first parameter is `self` is class A with three methods, each with the
+parameter list and return annotation it had. The tool reads that back and
+lists it under `must define`, in token order, beside the callers' evidence.
+Measured on TOUCHSTONE's `quorum_state_governance_source.py` (14,162 bytes,
+zero newlines): seven classes, seventeen methods and fourteen functions with
+full signatures, where the previous version reported the seven class names
+and "the evidence constrains no shape".
+
+It is still an outline. Bodies are gone; a `def` inside a docstring example
+looks exactly like a live one; and a method is attributed to the class that
+precedes it in the text, which is right for ordinary source and wrong for a
+paste that interleaved two files. All three are listed as undeterminable on
+every such void. When a parsing companion sits beside the flattened file
+(`x_source.py` beside `x_adapter.py`), the void says whether the companion
+kept any of the class names, so an ancestor of a renamed rewrite is not
+mistaken for a lost dependency.
+
 ### Usage
 
-    python -m blackhole_extrapolator <path>
+    blackhole-extrapolator <path>
+    blackhole-extrapolator <path> --sibling ../CCC --sibling ../AUGUR --show-wiring
+    blackhole-extrapolator ~ --ecosystem            # every checkout under ~, each against the rest
     python -m blackhole_extrapolator <path> --json --min-confidence 0.3
+    python -m blackhole_extrapolator <path> --json --show-wiring   # {"voids": [...], "wiring": [...]}
+    blackhole-extrapolator ~ --ecosystem --json     # {"<checkout>": [...voids...], ...}
 
 `shape_confidence` measures how well the evidence pins down the **outline**.
 It is not a claim that a reconstruction would be correct. Those are different
