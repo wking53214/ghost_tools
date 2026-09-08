@@ -34,6 +34,18 @@ The release that makes the toolkit shippable and closes the pipeline.
   It states on its face that nothing in it has been reviewed. The document
   mode and its gate are unchanged.
 
+### blackhole_extrapolator
+- **Ecosystem awareness.** An import that a sibling checkout defines, that the
+  project declares as a dependency (requirements files, pyproject dependencies
+  and optional extras), or that a declared git submodule would provide is
+  reported as **wiring** with the provider named, beside the voids, never
+  grouped into one and never silenced. An uninitialised submodule is attached
+  to unresolved imports as a note, not a claim. `--sibling DIR` (repeatable),
+  `--ecosystem PARENT` (every checkout under a parent, each against the rest),
+  `--show-wiring`. Default JSON shape unchanged; with `--show-wiring` it is
+  `{"voids": [...], "wiring": [...]}`. Measured on the governance stack: the
+  spine went from five voids to the one real nominal dependency.
+
 ### Packaging
 - Console scripts: `ghost-buster`, `ghost-writer`, `ghost-triage`,
   `blackhole-extrapolator`. Explicit package list, classifiers, keywords, URLs.

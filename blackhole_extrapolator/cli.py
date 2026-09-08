@@ -51,19 +51,55 @@ def main(argv: List[str] = None) -> int:
                         help="emit machine-readable voids instead of outlines")
     parser.add_argument("--min-confidence", type=float, default=0.0,
                         help="hide voids whose shape is less pinned down than this")
+    parser.add_argument(
+        "--sibling", action="append", default=[], type=Path, metavar="DIR",
+        help="another checkout that may provide what this tree imports "
+             "(repeatable). Imports it satisfies are reported as wiring, "
+             "not voids.",
+    )
+    parser.add_argument(
+        "--ecosystem", action="store_true",
+        help="treat PATH as a parent directory of checkouts: scan each one "
+             "with every other as a sibling, and report only what nothing "
+             "in the ecosystem provides.",
+    )
+    parser.add_argument("--show-wiring", action="store_true",
+                        help="also list imports that are provided elsewhere")
     args = parser.parse_args(argv)
-
     if not args.path.is_dir():
         print(f"not a directory: {args.path}", file=sys.stderr)
         return 2
 
+    if args.ecosystem:
+        repos = sorted(p for p in args.path.iterdir() if p.is_dir() and (p / ".git").exists())
+        if not repos:
+            print(f"no checkouts (directories with .git) under {args.path}", file=sys.stderr)
+            return 2
+        rc = 0
+        for repo in repos:
+            print(f"=== {repo.name}")
+            rc = max(rc, _report(repo, [r for r in repos if r != repo], args))
+            print()
+        return rc
+    return _report(args.path, args.sibling, args)
+
+
+def _report(root: Path, siblings: List[Path], args) -> int:
     evidence = [
-        item for item in scan(args.path)
+        item for item in scan(root, siblings)
         if not (_SKIP_DIRS & set(Path(item.file).parts))
     ]
-    if not evidence:
+    wiring = [item for item in evidence if item.kind is EvidenceKind.WIRING]
+    evidence = [item for item in evidence if item.kind is not EvidenceKind.WIRING]
+    if not evidence and not wiring:
         print("No negative-space evidence found. Nothing is reaching for "
               "something that is not there.")
+        return 0
+    if not evidence:
+        print(f"Nothing is missing. {len(wiring)} import(s) are provided elsewhere"
+              + (":" if args.show_wiring else " (use --show-wiring to list them)."))
+        if args.show_wiring:
+            _print_wiring(wiring)
         return 0
 
     voids = []
@@ -81,15 +117,32 @@ def main(argv: List[str] = None) -> int:
             voids.append(void)
 
     if args.json:
-        print(json.dumps([v.as_dict() for v in voids], indent=2))
+        if args.show_wiring:
+            print(json.dumps({"voids": [v.as_dict() for v in voids],
+                              "wiring": [w.as_dict() for w in wiring]}, indent=2))
+        else:
+            print(json.dumps([v.as_dict() for v in voids], indent=2))
         return 0
-
     voids.sort(key=lambda v: v.shape_confidence, reverse=True)
     for void in voids:
         print(void.render())
         print()
-    print(f"{len(voids)} void(s) from {len(evidence)} negative-space signals.")
+    print(f"{len(voids)} void(s) from {len(evidence)} negative-space signals"
+          + (f"; {len(wiring)} import(s) provided elsewhere" if wiring else "")
+          + ("." if not wiring or args.show_wiring else " (use --show-wiring to list them)."))
+    if wiring and args.show_wiring:
+        _print_wiring(wiring)
     return 0
+
+
+def _print_wiring(wiring) -> None:
+    by_provider = {}
+    for item in wiring:
+        provider = item.detail.split("provided by ", 1)[-1]
+        by_provider.setdefault(provider, set()).add(
+            item.detail.split("`")[1] if "`" in item.detail else item.detail)
+    for provider, modules in sorted(by_provider.items()):
+        print(f"  {provider}: {', '.join(sorted(modules))}")
 
 
 if __name__ == "__main__":

@@ -62,6 +62,11 @@ class EvidenceKind(str, Enum):
 
     # An import of a module that does not exist anywhere.
     MISSING_MODULE = "missing_module"
+    # An import of a module this tree does not provide but something else
+    # known does: a sibling checkout, a declared dependency, a git submodule.
+    # Wiring, not absence. Never grouped into a void; reported beside them so
+    # the reader can tell "not here" from "not anywhere".
+    WIRING = "wiring"
 
     # A test exercising something that is not there. Tests are unusually good
     # evidence: they encode the expected interface AND the expected behaviour.

@@ -287,7 +287,7 @@ test suite runs.
 python -m pytest Tests/ -v
 ```
 
-126 tests, 0 network calls, 0 API key required -- the semantic-layer tests
+134 tests, 0 network calls, 0 API key required -- the semantic-layer tests
 verify the real parsing/fail-closed/injection-fencing logic via
 `StubModelClient`, the same technique `sentinel_os`'s own `interpretation/`
 package uses for its model-client tests.
@@ -412,10 +412,34 @@ original had been found.
 a stub can write one from the outline in a minute; nobody can paste the
 outline into a file and have it pass for what was lost.
 
+### Not here, or not anywhere
+
+Scanned one repository at a time, a multi-repository ecosystem reports every
+sibling checkout, declared dependency and git submodule as a void. Measured on
+2026-09-08 across eighteen repositories: ninety-odd voids, all true, none a
+loss. The reader could not tell "not in this tree" from "not anywhere".
+
+So the tool now classifies. An import that a sibling checkout defines, that
+the project declares as a dependency (including optional extras), or that a
+declared git submodule would provide is reported as **wiring**, beside the
+voids, with the provider named. It is never grouped into a void and never
+silenced. An import nothing known provides stays a void; when the tree
+declares a submodule that is not initialised, the void says so and tells you
+to initialise it and rescan before treating the module as lost.
+
+`--ecosystem PARENT` scans every checkout under a parent directory with all
+the others as siblings and reports only what nothing in the ecosystem
+provides. On the governance stack that took the spine from five voids to
+one, and the one it kept was the real nominal dependency the audit had found
+by hand.
+
 ### Usage
 
-    python -m blackhole_extrapolator <path>
+    blackhole-extrapolator <path>
+    blackhole-extrapolator <path> --sibling ../CCC --sibling ../AUGUR --show-wiring
+    blackhole-extrapolator ~ --ecosystem            # every checkout under ~, each against the rest
     python -m blackhole_extrapolator <path> --json --min-confidence 0.3
+    python -m blackhole_extrapolator <path> --json --show-wiring   # {"voids": [...], "wiring": [...]}
 
 `shape_confidence` measures how well the evidence pins down the **outline**.
 It is not a claim that a reconstruction would be correct. Those are different

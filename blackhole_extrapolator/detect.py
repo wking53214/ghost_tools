@@ -84,6 +84,78 @@ def _available_modules(search_roots: Sequence[Path]) -> set[str]:
     return available
 
 
+def _normalise_dist(name: str) -> str:
+    return re.sub(r"[-_.]+", "_", name.strip().lower())
+
+
+def _declared_dependencies(root: Path) -> set[str]:
+    """Top-level names a project says it depends on, from requirements files
+    and pyproject, normalised the way pip does. Best effort: the import name
+    and the distribution name usually match, and when they do not the module
+    is reported as unresolved rather than guessed."""
+    names: set[str] = set()
+    for req in list(root.glob("requirements*.txt")) + list(root.glob("requirements/*.txt")):
+        for line in req.read_text(errors="replace").splitlines():
+            line = line.split("#", 1)[0].strip()
+            if not line or line.startswith(("-", "git+", "http")):
+                continue
+            token = re.split(r"[<>=!~;\[\s]", line, 1)[0]
+            if token:
+                names.add(_normalise_dist(token))
+    pyproject = root / "pyproject.toml"
+    if pyproject.is_file():
+        text = pyproject.read_text(errors="replace")
+        # `dependencies = [...]` plus every list in [project.optional-dependencies]:
+        # an optional extra is still a declared provider, not a lost module.
+        blocks = re.findall(r"dependencies\s*=\s*\[(.*?)\]", text, re.S)
+        optional = re.search(r"\[project\.optional-dependencies\](.*?)(?:\n\[|\Z)", text, re.S)
+        if optional:
+            blocks += re.findall(r"=\s*\[(.*?)\]", optional.group(1), re.S)
+        for block in blocks:
+            for token in re.findall(r"[\"']([A-Za-z0-9_.\-]+)", block):
+                names.add(_normalise_dist(token))
+    return names
+
+
+def _submodules(root: Path) -> list[tuple[str, bool]]:
+    """(path, initialised) for every git submodule the tree declares."""
+    modules_file = root / ".gitmodules"
+    if not modules_file.is_file():
+        return []
+    out = []
+    for path in re.findall(r"^\s*path\s*=\s*(\S+)", modules_file.read_text(errors="replace"), re.M):
+        target = root / path
+        initialised = target.is_dir() and any(target.rglob("*.py"))
+        out.append((path, initialised))
+    return out
+
+
+def resolve_providers(root: Path, siblings: Sequence[Path] = ()) -> dict[str, str]:
+    """Module name -> who provides it, for everything this tree does not.
+
+    Three sources, in the order a reader would want them named: a sibling
+    checkout that defines the module; a dependency the project declares but
+    that is not installed here; a git submodule declared in .gitmodules.
+    An uninitialised submodule cannot say which modules it would provide, so
+    it is attached to every otherwise-unresolved import as a note, never as
+    a claim.
+    """
+    root = Path(root)
+    providers: dict[str, str] = {}
+    for sibling in siblings:
+        sibling = Path(sibling)
+        if not sibling.is_dir() or sibling.resolve() == root.resolve():
+            continue
+        for name in _available_modules([sibling]):
+            providers.setdefault(name, f"sibling checkout `{sibling.name}` ({sibling})")
+    for name in _declared_dependencies(root):
+        providers.setdefault(name, "declared dependency (not installed in this environment)")
+    for path, initialised in _submodules(root):
+        if not initialised:
+            providers.setdefault("__uninitialised_submodule__", path)
+    return providers
+
+
 def _bound_names(tree: ast.Module) -> set[str]:
     """Every name this module defines, imports, or binds at any scope.
 
@@ -194,12 +266,17 @@ def detect_dangling_names(path: Path, source: str | None = None
 
 
 def detect_missing_imports(path: Path, search_roots: Sequence[Path],
-                           source: str | None = None) -> Iterator[NegativeEvidence]:
+                           source: str | None = None,
+                           providers: dict[str, str] | None = None) -> Iterator[NegativeEvidence]:
     """Imports of modules that exist nowhere under the search roots.
 
     Distinguished from a dangling name because the evidence is different: an
     import names the missing thing directly, and `from x import a, b, c` also
     enumerates part of its public surface.
+
+    With `providers` (see resolve_providers), an import that something else
+    known would satisfy is reported as WIRING rather than MISSING_MODULE: the
+    module is not in this tree, and it is not lost either.
     """
     text = source if source is not None else path.read_text(errors="replace")
     try:
@@ -225,9 +302,22 @@ def detect_missing_imports(path: Path, search_roots: Sequence[Path],
             continue
         except Exception:          # noqa: BLE001
             pass
+        providers = providers or {}
+        provider = providers.get(module) or providers.get(_normalise_dist(module))
+        if provider:
+            yield NegativeEvidence(
+                kind=EvidenceKind.WIRING,
+                detail=f"module `{module}` is not in this tree; provided by {provider}",
+                file=str(path), line=node.lineno,
+            )
+            continue
         detail = f"module `{module}` is imported and exists nowhere in the search roots"
         if names:
             detail += f"; its expected surface includes {sorted(names)}"
+        submodule = providers.get("__uninitialised_submodule__")
+        if submodule:
+            detail += (f"; note: git submodule `{submodule}` is declared but not initialised, "
+                       "run `git submodule update --init` and rescan before treating this as lost")
         yield NegativeEvidence(
             kind=EvidenceKind.MISSING_MODULE, detail=detail,
             file=str(path), line=node.lineno,
@@ -495,9 +585,15 @@ def detect_orphaned_tests(test_paths: Iterable[Path],
             )
 
 
-def scan(root: Path) -> list[NegativeEvidence]:
-    """Every mechanical negative-space signal under `root`."""
+def scan(root: Path, siblings: Sequence[Path] = ()) -> list[NegativeEvidence]:
+    """Every mechanical negative-space signal under `root`.
+
+    `siblings` are other checkouts that may provide what this tree imports;
+    they classify, they do not silence. A module a sibling provides comes
+    back as WIRING evidence rather than disappearing, so the reader sees the
+    dependency and does not mistake it for a loss."""
     root = Path(root)
+    providers = resolve_providers(root, siblings)
     sources = _source_files(root)
     tests = [p for p in sources
              if p.name.startswith("test_") or "test" in p.parent.name.lower()]
@@ -509,6 +605,6 @@ def scan(root: Path) -> list[NegativeEvidence]:
         evidence.extend(detect_destroyed_residue(path, text))
         evidence.extend(detect_dangling_names(path, text))
         evidence.extend(detect_dangling_in_debris(path, text))
-        evidence.extend(detect_missing_imports(path, [root], text))
+        evidence.extend(detect_missing_imports(path, [root], text, providers))
     evidence.extend(detect_orphaned_tests(tests, [root]))
     return evidence
