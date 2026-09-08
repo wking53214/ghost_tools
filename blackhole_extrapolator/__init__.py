@@ -22,6 +22,7 @@ package, by design. A file that fills the hole while carrying the name of what
 was lost is indistinguishable from a recovery and is not one.
 """
 
+from .rename import detect_rename_candidates as detect_rename_candidates
 from .detect import (
     detect_dangling_in_debris,
     detect_dangling_names,

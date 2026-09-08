@@ -52,6 +52,8 @@ _KIND_WEIGHT = {
     EvidenceKind.DESTROYED_RESIDUE: 0.20,
     # Ordered headers with parameter lists: the interface, not the bodies.
     EvidenceKind.DEBRIS_STRUCTURE: 0.25,
+    # A hypothesis about identity, not a constraint on shape.
+    EvidenceKind.RENAME_CANDIDATE: 0.05,
 }
 
 _READS = re.compile(r"read \[([^\]]*)\]")
@@ -299,6 +301,14 @@ def extrapolate(
         undeterminable.append(
             "whether this connection was ever intended -- both sides fitting "
             "is not evidence that anything joined them"
+        )
+    renames = [item for item in evidence if item.kind is EvidenceKind.RENAME_CANDIDATE]
+    if renames:
+        undeterminable.append(
+            f"whether the {len(renames)} rename candidate(s) listed in the evidence "
+            "are this name under another name or a coincidence of shape: they were "
+            "matched on keywords, unpack count, value flow and methods, never on "
+            "the name, and nothing here can tell the two apart"
         )
     if not must_define and not invariants:
         undeterminable.append(

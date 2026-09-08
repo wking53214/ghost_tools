@@ -719,4 +719,6 @@ def scan(root: Path, siblings: Sequence[Path] = ()) -> list[NegativeEvidence]:
         evidence.extend(detect_dangling_in_debris(path, text))
         evidence.extend(detect_missing_imports(path, [root], text, providers))
     evidence.extend(detect_orphaned_tests(tests, [root], providers))
+    from .rename import detect_rename_candidates
+    evidence.extend(detect_rename_candidates(sources, evidence))
     return evidence

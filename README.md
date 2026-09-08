@@ -455,6 +455,22 @@ every such void. When a parsing companion sits beside the flattened file
 kept any of the class names, so an ancestor of a renamed rewrite is not
 mistaken for a lost dependency.
 
+### Sally is now Karen
+
+Every detector above keys on the literal identifier. Rename a function and
+miss one caller, or paste an older wrapper beside a newer module, and the
+caller's name is a never-built void while the definition sits unrelated a
+file away. So the tool also compares each undefined name against every
+signature it can still see, on dimensions that do not involve the name: the
+keywords the caller passes, how many values it unpacks, where those values
+flow next and what type the receiving parameter declares, and which methods
+it calls on the result. Two matching dimensions make a rename candidate,
+listed in the undefined name's void with the reasons spelled out.
+
+It is a hypothesis and the void says so. A coincidence of shape looks
+identical, and a rename that also changed the parameters drops below the
+threshold. Nothing is merged on the strength of it.
+
 ### Usage
 
     blackhole-extrapolator <path>
