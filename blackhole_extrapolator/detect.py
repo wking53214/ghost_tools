@@ -76,10 +76,13 @@ def _available_modules(search_roots: Sequence[Path]) -> set[str]:
             available.add(path.stem)
             if path.name == "__init__.py":
                 available.add(path.parent.name)
-        # a directory of .py files is importable as a namespace package too
+        # A directory with Python anywhere beneath it is importable as a
+        # namespace package too. Beneath, not directly inside: ecology's
+        # `src/` holds only sub-packages, and `import src.rag` was reported
+        # missing 38 times on the first full-library run.
         for path in root.rglob("*/"):
             if path.is_dir() and not _SKIP_DIRS & set(path.parts) and \
-                    any(path.glob("*.py")):
+                    any(not _SKIP_DIRS & set(p.parts) for p in path.rglob("*.py")):
                 available.add(path.name)
     return available
 
@@ -88,20 +91,58 @@ def _normalise_dist(name: str) -> str:
     return re.sub(r"[-_.]+", "_", name.strip().lower())
 
 
+# Distribution names that provide a differently named top-level module. The
+# generic rule below (the first token of the distribution name) covers
+# psycopg2-binary, opentelemetry-api, google-generativeai and most others;
+# these are the common ones it cannot.
+_IMPORT_ALIASES = {
+    "pyyaml": "yaml", "pillow": "PIL", "beautifulsoup4": "bs4",
+    "scikit_learn": "sklearn", "python_dateutil": "dateutil",
+    "python_dotenv": "dotenv", "attrs": "attr", "pyjwt": "jwt",
+}
+
+
+def _import_names(dist: str) -> set[str]:
+    """Top-level module names a declared distribution plausibly provides."""
+    name = _normalise_dist(dist)
+    return {name, name.split("_", 1)[0], _IMPORT_ALIASES.get(name, name)}
+
+
 def _declared_dependencies(root: Path) -> set[str]:
     """Top-level names a project says it depends on, from requirements files
     and pyproject, normalised the way pip does. Best effort: the import name
     and the distribution name usually match, and when they do not the module
     is reported as unresolved rather than guessed."""
     names: set[str] = set()
-    for req in list(root.glob("requirements*.txt")) + list(root.glob("requirements/*.txt")):
+    # Requirements files anywhere in the tree, not only at the root:
+    # sentinel_os keeps its own one directory down. `-r other.txt` includes
+    # are followed relative to the including file; GSA-815's requirements
+    # is a single include pointing into a submodule.
+    seen: set[Path] = set()
+    queue = [req for req in root.rglob("requirements*.txt")
+             if not _SKIP_DIRS & set(req.relative_to(root).parts)]
+    queue += list(root.glob("requirements/*.txt"))
+    while queue:
+        req = queue.pop().resolve()
+        if req in seen or not req.is_file():
+            continue
+        seen.add(req)
         for line in req.read_text(errors="replace").splitlines():
             line = line.split("#", 1)[0].strip()
-            if not line or line.startswith(("-", "git+", "http")):
+            if not line:
+                continue
+            include = re.match(r"^(?:-r|--requirement)\s+(\S+)", line)
+            if include:
+                queue.append(req.parent / include.group(1))
+                continue
+            # URLs, editable installs and pip options are not distributions.
+            # `http` alone also skipped `httpx<0.28`, so the one dependency
+            # sentinel_os pins with a comment read as its one void.
+            if line.startswith(("-", "git+", "http://", "https://")):
                 continue
             token = re.split(r"[<>=!~;\[\s]", line, 1)[0]
             if token:
-                names.add(_normalise_dist(token))
+                names |= _import_names(token)
     pyproject = root / "pyproject.toml"
     if pyproject.is_file():
         text = pyproject.read_text(errors="replace")
@@ -113,7 +154,7 @@ def _declared_dependencies(root: Path) -> set[str]:
             blocks += re.findall(r"=\s*\[(.*?)\]", optional.group(1), re.S)
         for block in blocks:
             for token in re.findall(r"[\"']([A-Za-z0-9_.\-]+)", block):
-                names.add(_normalise_dist(token))
+                names |= _import_names(token)
     return names
 
 
@@ -528,7 +569,10 @@ def detect_debris_structure(path: Path, source: str | None = None
 
 
 _DEBRIS_CTOR = re.compile(r"=\s*([A-Z]\w+)\(\)")
-_DEBRIS_HINT = re.compile(r":\s*([A-Z]\w+)[,)]")
+# An annotation follows a parameter name. `{"ok": True,` follows a quote and
+# is a dict literal, which leaked `True` and `False` into OBSERVE's voids.
+_DEBRIS_HINT = re.compile(r"\w\s*:\s*([A-Z]\w+)[,)]")
+_DEBRIS_LITERALS = {"True", "False", "None"}
 _DEBRIS_BIND = re.compile(r"self\.(\w+)\s*=\s*([A-Z]\w+)\(\)")
 _DEBRIS_CALL = re.compile(r"self\.(\w+)\.(\w+)\(")
 
@@ -616,7 +660,7 @@ def detect_dangling_in_debris(path: Path, source: str | None = None
     for field, method in _DEBRIS_CALL.findall(text):
         methods.setdefault(field, set()).add(method)
 
-    referenced = set(_DEBRIS_CTOR.findall(text)) | set(_DEBRIS_HINT.findall(text))
+    referenced = (set(_DEBRIS_CTOR.findall(text)) | set(_DEBRIS_HINT.findall(text))) - _DEBRIS_LITERALS
     for name in sorted(referenced - defined):
         fields = [f for f, cls in bindings.items() if cls == name]
         required = sorted({m for f in fields for m in methods.get(f, ())})
