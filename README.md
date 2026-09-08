@@ -357,6 +357,7 @@ Six kinds of mark an absence leaves, all detected mechanically by AST analysis
 | orphaned test | interface **and** expected behaviour |
 | missing module | names it directly, and `from x import a, b` enumerates part of its surface |
 | unparseable file | something that existed and was destroyed; the bytes survive, the program does not |
+| debris structure | a flattened file's `class` and `def` headers in token order, with parameter lists and return annotations: the interface survives, the bodies do not |
 | unconsumed output / unsatisfied requirement | one side of a join that is gone |
 | shape complementarity | the weakest, and the only one that may mean a useful connection nobody ever made |
 
@@ -432,6 +433,27 @@ the others as siblings and reports only what nothing in the ecosystem
 provides. On the governance stack that took the spine from five voids to
 one, and the one it kept was the real nominal dependency the audit had found
 by hand.
+
+### What a flattened file still says
+
+Strip every newline from a module and it stops parsing, but every token is
+still there in the order it was written. `class A:` followed by three `def`s
+whose first parameter is `self` is class A with three methods, each with the
+parameter list and return annotation it had. The tool reads that back and
+lists it under `must define`, in token order, beside the callers' evidence.
+Measured on TOUCHSTONE's `quorum_state_governance_source.py` (14,162 bytes,
+zero newlines): seven classes, seventeen methods and fourteen functions with
+full signatures, where the previous version reported the seven class names
+and "the evidence constrains no shape".
+
+It is still an outline. Bodies are gone; a `def` inside a docstring example
+looks exactly like a live one; and a method is attributed to the class that
+precedes it in the text, which is right for ordinary source and wrong for a
+paste that interleaved two files. All three are listed as undeterminable on
+every such void. When a parsing companion sits beside the flattened file
+(`x_source.py` beside `x_adapter.py`), the void says whether the companion
+kept any of the class names, so an ancestor of a renamed rewrite is not
+mistaken for a lost dependency.
 
 ### Usage
 

@@ -45,6 +45,16 @@ The release that makes the toolkit shippable and closes the pipeline.
   `--show-wiring`. Default JSON shape unchanged; with `--show-wiring` it is
   `{"voids": [...], "wiring": [...]}`. Measured on the governance stack: the
   spine went from five voids to the one real nominal dependency.
+- **Debris archaeology.** A flattened file (no newlines, does not parse)
+  keeps every `class` and `def` header in token order. New evidence kind
+  `debris_structure` reads the interface back, with parameter lists and return
+  annotations and methods attributed to the class that precedes them, and the
+  void lists it under `must define`. Bodies, docstring examples and
+  interleaved pastes are named as undeterminable on every such void. A parsing
+  companion (`x_source.py` beside `x_adapter.py`) is checked for shared class
+  names so an ancestor of a rewrite is not reported as a lost dependency.
+  Measured on TOUCHSTONE's `quorum_state_governance_source.py`: 38 signatures
+  recovered where 0.4 reported seven names and no shape.
 
 ### Packaging
 - Console scripts: `ghost-buster`, `ghost-writer`, `ghost-triage`,

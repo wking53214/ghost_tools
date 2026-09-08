@@ -423,11 +423,110 @@ def detect_destroyed_residue(path: Path, source: str | None = None
             f"class-shaped and {len(functions)} def-shaped tokens. "
             f"classes {classes[:12]}"
             + (" ..." if len(classes) > 12 else "")
-            + ". Names only -- structure, nesting and which tokens were live "
-              "code rather than docstring examples are all destroyed."
+            + ". Names only here; token order still holds the interface, "
+              "see the debris_structure evidence. Which tokens were live "
+              "code rather than docstring examples is destroyed."
         ),
         file=str(path),
         observed=f"{len(text)} bytes, {text.count(chr(10))} newlines",
+    )
+
+
+_DEBRIS_HEADER = re.compile(
+    r"\bclass\s+([A-Z]\w*)\s*(\([^)]*\))?\s*:"
+    r"|\bdef\s+([a-z_]\w*)\s*\(([^)]*)\)\s*(->\s*[^:]+?)?\s*:"
+)
+_PAIR_SUFFIXES = (("_source.py", "_adapter.py"), ("-flattened.py", ".py"))
+
+
+def _companion(path: Path) -> Path | None:
+    """The parsing counterpart of a destroyed file, by naming convention:
+    `x_source.py` beside `x_adapter.py`, `x-flattened.py` beside `x.py`."""
+    for old, new in _PAIR_SUFFIXES:
+        if path.name.endswith(old):
+            candidate = path.with_name(path.name[: -len(old)] + new)
+            if candidate.is_file() and candidate != path:
+                return candidate
+    return None
+
+
+def debris_structure(text: str) -> list[tuple[str, str, str, str]]:
+    """(owner, name, params, returns) for every class and def header in token
+    order. A def whose first parameter is `self` or `cls` is attributed to the
+    most recent class header; anything else is module level. Newlines are
+    gone but order is not, and that is enough to read the interface back."""
+    out: list[tuple[str, str, str, str]] = []
+    current = ""
+    for m in _DEBRIS_HEADER.finditer(text):
+        if m.group(1):
+            current = m.group(1)
+            out.append(("", current, (m.group(2) or "").strip("()"), ""))
+            continue
+        params = " ".join((m.group(4) or "").split())
+        first = params.split(",", 1)[0].split(":", 1)[0].strip()
+        owner = current if first in ("self", "cls") and current else ""
+        out.append((owner, m.group(3), params, " ".join((m.group(5) or "").split())))
+    return out
+
+
+def detect_debris_structure(path: Path, source: str | None = None
+                            ) -> Iterator[NegativeEvidence]:
+    """The interface of a flattened file, read from the order of its debris.
+
+    Only for files that do not parse: on a parsing file the AST is
+    authoritative. What survives flattening is every token in its original
+    order, so `class A:` followed by three `def`s taking `self` is class A
+    with three methods, each with the parameter list and return annotation
+    it was written with. Bodies are not recovered and never will be here;
+    a def inside a docstring example is indistinguishable from a live one;
+    and a method that followed its class in the text is attributed to it,
+    which is right for ordinary source and wrong for a paste that
+    interleaved two files.
+    """
+    text = source if source is not None else path.read_text(errors="replace")
+    try:
+        ast.parse(text)
+        return
+    except SyntaxError:
+        pass
+    structure = debris_structure(text)
+    if not structure:
+        return
+    lines = []
+    for owner, name, params, returns in structure:
+        if not owner and not params and not returns and name[:1].isupper():
+            lines.append(f"    class {name}")
+            continue
+        qual = f"{owner}.{name}" if owner else name
+        lines.append(f"    {qual}({params}){' ' + returns if returns else ''}")
+    classes = [n for o, n, p, r in structure if not o and n[:1].isupper() and not p and not r]
+    methods = [x for x in structure if x[0]]
+    functions = [x for x in structure if not x[0] and not x[1][:1].isupper()]
+    detail = (
+        f"ordered debris recovers the interface: {len(classes)} class(es), "
+        f"{len(methods)} method(s), {len(functions)} module-level function(s), "
+        "each with the parameter list and return annotation it was written with:\n"
+        + "\n".join(lines)
+    )
+    companion = _companion(path)
+    if companion is not None:
+        try:
+            tree = ast.parse(companion.read_text(errors="replace"))
+            their = {n.name for n in ast.walk(tree) if isinstance(n, ast.ClassDef)}
+            shared = sorted(set(classes) & their)
+            detail += (
+                f"\n    companion `{companion.name}` parses and shares {len(shared)} of "
+                f"{len(classes)} class name(s)"
+                + (f" ({shared})" if shared else "")
+                + (": a renamed rewrite, so this file is an ancestor and nothing reaches "
+                   "for it, not a lost dependency" if not shared else
+                   ": the same names survive there, so compare before treating this as lost")
+            )
+        except (SyntaxError, OSError):
+            pass
+    yield NegativeEvidence(
+        kind=EvidenceKind.DEBRIS_STRUCTURE, detail=detail, file=str(path),
+        observed=f"{len(structure)} header tokens in order",
     )
 
 
@@ -603,6 +702,7 @@ def scan(root: Path, siblings: Sequence[Path] = ()) -> list[NegativeEvidence]:
         text = path.read_text(errors="replace")
         evidence.extend(detect_unparseable(path, text))
         evidence.extend(detect_destroyed_residue(path, text))
+        evidence.extend(detect_debris_structure(path, text))
         evidence.extend(detect_dangling_names(path, text))
         evidence.extend(detect_dangling_in_debris(path, text))
         evidence.extend(detect_missing_imports(path, [root], text, providers))

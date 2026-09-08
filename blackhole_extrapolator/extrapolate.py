@@ -50,6 +50,8 @@ _KIND_WEIGHT = {
     # Names what existed and nothing about structure, so it constrains the
     # inventory strongly and the shape barely.
     EvidenceKind.DESTROYED_RESIDUE: 0.20,
+    # Ordered headers with parameter lists: the interface, not the bodies.
+    EvidenceKind.DEBRIS_STRUCTURE: 0.25,
 }
 
 _READS = re.compile(r"read \[([^\]]*)\]")
@@ -83,6 +85,28 @@ def _attributes_from_evidence(evidence: Iterable[NegativeEvidence]
                     for part in found.group(1).split(",") if part.strip()
                 )
     return reads, writes
+
+
+def _recovered_from_debris(evidence: Iterable[NegativeEvidence]) -> list[str]:
+    """Signatures read back from DEBRIS_STRUCTURE detail, in token order.
+
+    The first line of the detail is the summary and any `companion` line is
+    commentary; everything else is one header per line, already rendered as
+    `Class`, `Class.method(params) -> Ret` or `function(params)`.
+    """
+    out: list[str] = []
+    for item in evidence:
+        if item.kind is not EvidenceKind.DEBRIS_STRUCTURE:
+            continue
+        for line in item.detail.splitlines()[1:]:
+            text = line.strip()
+            if not text or text.startswith("companion "):
+                continue
+            if text.startswith("class "):
+                text = text[len("class "):]
+            if text not in out:
+                out.append(text)
+    return out
 
 
 def infer_usage_invariants(source: str, target: str) -> list[str]:
@@ -216,7 +240,11 @@ def extrapolate(
     # de-duplicate while keeping order
     invariants = list(dict.fromkeys(invariants))
 
-    must_define = tuple(sorted(reads | writes))
+    recovered = _recovered_from_debris(evidence)
+    # Callers' attributes are sorted; recovered headers keep their token
+    # order, which is the only structure a flattened file has left.
+    must_define = tuple(sorted(reads | writes)) + tuple(
+        item for item in recovered if item not in reads and item not in writes)
     must_accept = tuple(sorted(
         item for anchor in anchors for item in anchor.provides))
     must_return = tuple(sorted(
@@ -234,6 +262,13 @@ def extrapolate(
             "how far the surviving callers exercised the original: an outline "
             "built from callers is a lower bound on what existed, never an "
             "inventory of it"
+        )
+    if recovered:
+        undeterminable.append(
+            "the bodies behind the recovered signatures; whether every header "
+            "was live code rather than a docstring example; and the class a "
+            "method belongs to, which is read from token order and is wrong "
+            "for a paste that interleaved two files"
         )
     if kind is VoidKind.UNREALISED:
         undeterminable.append(
@@ -286,6 +321,11 @@ def group_by_target(evidence: Sequence[NegativeEvidence]) -> dict[str, list[Nega
     """
     grouped: dict[str, list[NegativeEvidence]] = defaultdict(list)
     for item in evidence:
+        if item.kind in (EvidenceKind.DESTROYED_RESIDUE, EvidenceKind.DEBRIS_STRUCTURE):
+            # A destroyed file is its own void; its detail may name a
+            # companion file, which is context, not the target.
+            grouped[item.file].append(item)
+            continue
         found = re.search(r"`([A-Za-z_][A-Za-z0-9_.]*)`", item.detail)
         grouped[found.group(1) if found else item.file].append(item)
     return dict(grouped)

@@ -26,6 +26,7 @@ from .detect import (
     detect_dangling_in_debris,
     detect_dangling_names,
     detect_destroyed_residue,
+    detect_debris_structure as detect_debris_structure,
     detect_missing_imports,
     resolve_providers as resolve_providers,
     detect_orphaned_tests,
