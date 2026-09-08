@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.5.2 (2026-09-08)
+
+### blackhole_extrapolator
+Three defects from the first full-library run (18 checkouts):
+- A directory with Python anywhere beneath it is an importable namespace
+  package, not only one with `.py` files directly inside. ecology's `src/`
+  was reported missing 38 times.
+- Requirements files are found anywhere in the tree, and `-r` / `--requirement`
+  includes are followed relative to the including file, with a cycle guard.
+  sentinel_os keeps its requirements one directory down; GSA-815's file is a
+  single include into a submodule.
+- The debris scanner no longer reads `{"ok": True,` as a type annotation:
+  an annotation must follow a parameter name, and `True`, `False`, `None`
+  are never dangling types.
+- A declared distribution provides the import name it plausibly maps to:
+  its first name token (`psycopg2-binary` gives `psycopg2`,
+  `opentelemetry-api` gives `opentelemetry`) plus a short alias table
+  (`PyYAML` gives `yaml`). sentinel_os declared every dependency it uses and
+  three still read as voids.
+- A requirements line starting with `http` is skipped only when it is a
+  URL. `httpx<0.28` was being skipped as one.
+
 ## 0.5.1 (2026-09-08)
 
 ### blackhole_extrapolator
