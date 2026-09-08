@@ -1,13 +1,26 @@
-# ghost_tools -- v0.4
+# ghost_tools -- v0.5
 
-Three tools. `ghost_buster` hunts down structural problems in code;
-`ghost_writer` turns the ones a human decides are worth documenting (not
-fixing) into accurate docs; `blackhole_extrapolator` outlines the things that
-are not there at all.
+Four commands, one pipeline. `ghost-buster` hunts down structural problems
+in code and, with `--mutate`, proves which tests pass without checking
+anything; `ghost-triage` records the human decision on each finding;
+`ghost-writer` turns the ones worth documenting (not fixing) into accurate
+docs; `blackhole-extrapolator` outlines the things that are not there at all.
 
-    ghost_buster              things that are present and wrong
-    ghost_writer              the ones worth documenting
-    blackhole_extrapolator    the ones that went up in smoke
+    ghost-buster              things that are present and wrong
+    ghost-buster --mutate     tests that pass with the thing they name broken
+    ghost-triage              the human decision, recorded with its reason
+    ghost-writer              the ones worth documenting
+    blackhole-extrapolator    the ones that went up in smoke
+
+## Install
+
+```bash
+python -m pip install "git+https://github.com/wking53214/ghost_tools"
+ghost-buster /path/to/repo
+```
+
+No dependencies. Python 3.11 or later. `python -m ghost_buster.cli` and the
+other module forms keep working for a checkout without an install.
 
 Built from a researched taxonomy of what actually goes wrong in large,
 iteratively-built (especially AI-assisted) codebases -- duplication,
@@ -140,7 +153,46 @@ python -m ghost_buster.cli /path/to/repo --json > findings.json
 
 # skip a repo-specific vendored tree (e.g. a checked-in copy of another repo)
 python -m ghost_buster.cli /path/to/repo --exclude some_vendored_dir
+
+# prove vacuous tests by mutation (one pytest process per mutant; the working
+# tree is never touched). --mutate-only narrows to test files matching a string.
+python -m ghost_buster.cli /path/to/repo --mutate --mutate-verbose
+python -m ghost_buster.cli /path/to/repo --mutate --mutate-only test_policy --json > findings.json
 ```
+
+### `--mutate`: the proof a check is vacuous
+
+The characteristic defect of an iteratively built codebase is a check that
+passes without doing its job. Coverage counts it; CI is green; nothing
+notices. The only honest proof that a test is vacuous is a broken
+implementation the test still passes. Deleting an assertion proves nothing,
+because a deleted assertion cannot fail.
+
+`--mutate` does what a careful auditor does by hand:
+
+1. finds candidate tests by shape: every assertion is `is not None` / `> 0`
+   / `isinstance` / a bare name; a result assigned from a call and never
+   read; assertions behind a bare `if`; a hand-written list of strings
+   compared with something derived;
+2. resolves what project code each candidate calls, through the test file's
+   imports (constructed instances and fixture-injected receivers included,
+   when exactly one imported class defines the method);
+3. copies the project to a scratch directory (siblings symlinked beside it),
+   breaks that code one operator at a time -- `drop_body`, `return_none`,
+   `flip_compare`, `bump_constants` -- and runs only that test; for a guard,
+   instruments it and fails the test if the guarded assertions never ran;
+   for a restated list, adds a member to the enum or collection that defines
+   those values;
+4. reports a finding ONLY when the test survived, with the mutation named
+   as its proof. A killed mutant is not a finding: the test did its job. A
+   candidate that does not pass unmutated is reported as unjudged, never as
+   a finding.
+
+Findings carry category `vacuous_check`. A guard that holds every assertion
+of its test is CRITICAL; one beside unguarded assertions is MAJOR; a
+survived code mutation is MAJOR. Validated on real repositories on
+2026-09-08: it found the test a hand audit had confirmed the day before, and
+one that survives eleven inverted comparisons in the function it names.
 
 The scan always skips virtualenvs (by the `site-packages` component, so the
 venv's directory name doesn't matter), `node_modules`, VCS directories, and
@@ -187,9 +239,28 @@ findings, report = detect_parallel_implementations(client, {
 ### Usage
 
 ```bash
+# the whole pipeline
+ghost-buster /path/to/repo --mutate --json > findings.json
+ghost-triage findings.json                      # list what is undecided
+ghost-triage findings.json --set ghost-1a2b3c=fix:"real bug, issue #12" \
+                           --set ghost-4d5e6f=document:"deliberate, see ADR-7"
+ghost-writer findings.json --mode triage         # everything, for the person deciding
+ghost-writer findings.json --out ARCHITECTURE_GHOSTS.md   # only what was marked document
+
+# module forms, for a checkout without an install
+python -m ghost_writer.triage findings.json --set ID=suppress:"accepted"
 python -m ghost_writer.cli findings.json --title "Known Structural Ghosts"
-python -m ghost_writer.cli findings.json --out ARCHITECTURE_GHOSTS.md
 ```
+
+`ghost-triage` is the human step the pipeline diagram always had and the
+code never did: it records `fix` / `suppress` / `document` and a note
+against finding ids (a unique prefix is enough), refuses unknown or
+ambiguous ids rather than silently doing nothing, and never touches code,
+docs or the baseline. `--mode triage` renders every finding, most severe
+first, grouped by file, with `vacuous_check` proofs called out and
+already-decided findings listed with their decision; it says on its face
+that nothing in it has been reviewed. The document mode and its gate are
+unchanged.
 
 ## Non-goals, stated explicitly (v0.1 and likely beyond)
 
@@ -216,7 +287,7 @@ test suite runs.
 python -m pytest Tests/ -v
 ```
 
-47 tests, 0 network calls, 0 API key required -- the semantic-layer tests
+126 tests, 0 network calls, 0 API key required -- the semantic-layer tests
 verify the real parsing/fail-closed/injection-fencing logic via
 `StubModelClient`, the same technique `sentinel_os`'s own `interpretation/`
 package uses for its model-client tests.
