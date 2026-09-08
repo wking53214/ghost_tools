@@ -15,13 +15,19 @@ from typing import List
 
 from ghost_buster.schema import FindingSet
 
-from .report import render_ghost_report
+from .report import render_ghost_report, render_triage_report
 
 
 def main(argv: List[str] = None) -> int:
     parser = argparse.ArgumentParser(prog="ghost_writer")
     parser.add_argument("findings", type=Path, help="a FindingSet JSON file (from ghost_buster --json)")
-    parser.add_argument("--title", default="Known Structural Ghosts")
+    parser.add_argument(
+        "--mode", choices=("document", "triage"), default="document",
+        help="document (default): render only findings a human dispositioned "
+             "'document', for a README or ARCHITECTURE.md. triage: render "
+             "everything, most severe first, for the person deciding.",
+    )
+    parser.add_argument("--title", default=None)
     parser.add_argument("--out", type=Path, default=None, help="write to a file instead of stdout")
     args = parser.parse_args(argv)
 
@@ -30,7 +36,10 @@ def main(argv: List[str] = None) -> int:
         return 2
 
     fs = FindingSet.from_json(args.findings.read_text(encoding="utf-8"))
-    report = render_ghost_report(list(fs), title=args.title)
+    if args.mode == "triage":
+        report = render_triage_report(list(fs), title=args.title or "Ghost Findings, Awaiting Triage")
+    else:
+        report = render_ghost_report(list(fs), title=args.title or "Known Structural Ghosts")
 
     if args.out:
         args.out.write_text(report, encoding="utf-8")
