@@ -100,6 +100,49 @@ def _stable_id(*parts: str) -> str:
     return f"ghost-{digest[:12]}"
 
 
+def _portable_path(path: str) -> str:
+    """The part of a path that identifies a file inside its project.
+
+    The ID hashed the ABSOLUTE path, which made every committed baseline
+    inert. Measured across this ecosystem: 17 of 18 `.ghost_baseline.json`
+    files had been generated against temporary clones under a scratchpad
+    directory, so not one of their 1,287 entries could match the same
+    finding scanned at its real location. Every run reported 100% of
+    findings as new, which is the same as having no baseline while looking
+    like a repo that had been triaged.
+
+    A baseline is committed to a repository and read back on other machines,
+    in CI, and from clones at other paths. Anything in the ID that varies
+    with where the checkout happens to sit is a defect in the ID.
+
+    So: cut at the project root when one is recognisable (a VCS or packaging
+    marker), else fall back to the last two segments, which is stable enough
+    to distinguish files and short enough not to carry a home directory.
+    """
+    from pathlib import PurePath
+
+    parts = PurePath(path).parts
+    for marker in (".git", "pyproject.toml", "setup.py", "setup.cfg"):
+        root = _project_root(path, marker)
+        if root is not None:
+            try:
+                return PurePath(path).relative_to(root).as_posix()
+            except ValueError:
+                pass
+    return PurePath(*parts[-2:]).as_posix() if len(parts) >= 2 else path
+
+
+def _project_root(path: str, marker: str):
+    """Nearest ancestor directory containing `marker`, or None."""
+    from pathlib import Path
+
+    current = Path(path).parent
+    for candidate in (current, *current.parents):
+        if (candidate / marker).exists():
+            return candidate
+    return None
+
+
 @dataclass
 class Evidence:
     """Where a finding points, precisely enough that a human can go
@@ -139,7 +182,7 @@ class Finding:
 
     def __post_init__(self):
         self.id = _stable_id(
-            self.detector, self.evidence.file, self.summary,
+            self.detector, _portable_path(self.evidence.file), self.summary,
         )
         if self.confidence is not None and not (0.0 <= self.confidence <= 1.0):
             raise ValueError(f"confidence must be 0.0-1.0, got {self.confidence}")

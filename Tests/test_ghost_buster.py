@@ -569,3 +569,72 @@ def test_collect_files_still_skips_dotfiles(tmp_path):
 def test_excluded_dirs_contains_the_load_bearing_names():
     for name in ("site-packages", ".venv", "venv", "node_modules", "__pycache__", ".git"):
         assert name in _EXCLUDED_DIRS
+
+
+# ---------------------------------------------------------------------------
+# A baseline is only worth committing if it survives the trip
+# ---------------------------------------------------------------------------
+
+def test_finding_ids_do_not_depend_on_where_the_checkout_sits(tmp_path):
+    """The defect that made every committed baseline in this ecosystem inert.
+
+    The ID hashed the absolute file path, so a baseline generated in one
+    directory could never match the same finding scanned in another. Measured
+    before the fix: 17 of 18 `.ghost_baseline.json` files across the stack had
+    been generated against temporary clones under a scratchpad, and not one of
+    their 1,287 entries could ever match. Every run reported 100% of findings
+    as new -- indistinguishable from having no baseline, while looking like a
+    repository that had been triaged.
+
+    A baseline is committed and read back on other machines, in CI, and from
+    clones at other paths. Anything in the ID that varies with the checkout
+    location is a defect in the ID.
+    """
+    from ghost_buster.schema import Category, Evidence, Finding, Layer, Severity, Status
+
+    def make(path):
+        return Finding(
+            detector="long_function",
+            category=Category.COMPLEXITY,
+            layer=Layer.MECHANICAL,
+            severity=Severity.MINOR,
+            status=Status.CONFIRMED,
+            summary="'f' spans 200 lines",
+            evidence=Evidence(file=str(path), line_start=1, line_end=200),
+        )
+
+    # Same project-relative file, two entirely different checkout locations.
+    for root in (tmp_path / "home" / "proj", tmp_path / "tmp" / "scratch" / "clone" / "proj"):
+        (root / "pkg").mkdir(parents=True)
+        (root / ".git").mkdir()
+        (root / "pkg" / "mod.py").write_text("x = 1\n")
+
+    a = make(tmp_path / "home" / "proj" / "pkg" / "mod.py")
+    b = make(tmp_path / "tmp" / "scratch" / "clone" / "proj" / "pkg" / "mod.py")
+
+    assert a.id == b.id, (
+        "the same finding got different IDs at different checkout paths, so a "
+        "baseline committed from one location cannot suppress it at another"
+    )
+
+
+def test_different_files_still_get_different_ids(tmp_path):
+    """Portability must not be bought with collisions: two genuinely different
+    files in the same project must stay distinguishable."""
+    from ghost_buster.schema import Category, Evidence, Finding, Layer, Severity, Status
+
+    root = tmp_path / "proj"
+    (root / "pkg").mkdir(parents=True)
+    (root / ".git").mkdir()
+    for name in ("one.py", "two.py"):
+        (root / "pkg" / name).write_text("x = 1\n")
+
+    def make(name):
+        return Finding(
+            detector="long_function", category=Category.COMPLEXITY,
+            layer=Layer.MECHANICAL, severity=Severity.MINOR, status=Status.CONFIRMED,
+            summary="'f' spans 200 lines",
+            evidence=Evidence(file=str(root / "pkg" / name)),
+        )
+
+    assert make("one.py").id != make("two.py").id
