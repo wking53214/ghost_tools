@@ -79,6 +79,7 @@ class Category(str, Enum):
     PARALLEL_IMPLEMENTATION = "parallel_implementation"
     DOC_DRIFT = "doc_drift"
     ARCHITECTURE = "architecture"
+    VACUOUS_CHECK = "vacuous_check"    # a test that passes with the thing it names broken
     OTHER = "other"
 
 

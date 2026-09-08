@@ -18,6 +18,7 @@ from typing import Iterable, List
 
 from .baseline import Baseline
 from .mechanical import run_all
+from .mutation import render_run, run_mutations
 from .schema import Finding, FindingSet, Severity
 
 
@@ -102,6 +103,21 @@ def main(argv: List[str] = None) -> int:
              "another repo. Virtualenvs, site-packages, VCS dirs and tool "
              "caches are always skipped.",
     )
+    parser.add_argument(
+        "--mutate", action="store_true",
+        help="prove vacuous checks by mutation: find tests shaped like they check "
+             "nothing, break the code they call in a scratch copy, and report only "
+             "the tests that still pass. Runs one pytest process per mutant; the "
+             "working tree is never modified.",
+    )
+    parser.add_argument("--mutate-max", type=int, default=6, metavar="N",
+                        help="mutants to try per candidate test (default 6)")
+    parser.add_argument("--mutate-timeout", type=float, default=120.0, metavar="SECONDS",
+                        help="per-test timeout for each mutant run (default 120)")
+    parser.add_argument("--mutate-only", default=None, metavar="SUBSTRING",
+                        help="restrict mutation to test files whose path contains this")
+    parser.add_argument("--mutate-verbose", action="store_true",
+                        help="also list killed mutants and candidates that could not be judged")
     args = parser.parse_args(argv)
 
     if not args.path.is_dir():
@@ -111,6 +127,13 @@ def main(argv: List[str] = None) -> int:
     baseline_path = args.baseline or (args.path / ".ghost_baseline.json")
     files = _collect_files(args.path, args.exclude)
     findings = run_all(files)
+    mutation_run = None
+    if args.mutate:
+        mutation_run = run_mutations(
+            args.path, files, max_mutants_per_candidate=args.mutate_max,
+            timeout=args.mutate_timeout, only=args.mutate_only,
+        )
+        findings.extend(mutation_run.findings)
 
     baseline = Baseline(baseline_path)
 
@@ -125,6 +148,8 @@ def main(argv: List[str] = None) -> int:
         print(FindingSet(new).to_json())
     else:
         _print_report(new, known)
+        if mutation_run is not None:
+            print(render_run(mutation_run, verbose=args.mutate_verbose))
 
     return 1 if any(f.severity in (Severity.CRITICAL, Severity.MAJOR) for f in new) else 0
 
