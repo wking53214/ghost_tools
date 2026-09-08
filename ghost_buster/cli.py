@@ -126,6 +126,16 @@ def main(argv: List[str] = None) -> int:
 
     baseline_path = args.baseline or (args.path / ".ghost_baseline.json")
     files = _collect_files(args.path, args.exclude)
+    if not files:
+        # A scan of nothing is not a clean scan. A checkout under a directory
+        # named venv, node_modules or .tox, an empty directory, or a wrong
+        # path all used to print "0 new finding(s)" and exit 0 (measured
+        # 2026-09-08).
+        print(f"error: no .py or .md files to scan under {args.path} "
+              f"(excluded directory names: {', '.join(sorted(_EXCLUDED_DIRS | set(args.exclude)))})",
+              file=sys.stderr)
+        return 2
+    print(f"ghost_buster: scanning {len(files)} file(s) under {args.path}", file=sys.stderr)
     findings = run_all(files)
     mutation_run = None
     if args.mutate:
@@ -135,14 +145,27 @@ def main(argv: List[str] = None) -> int:
         )
         findings.extend(mutation_run.findings)
 
-    baseline = Baseline(baseline_path)
+    try:
+        baseline = Baseline(baseline_path)
+    except (ValueError, OSError) as e:
+        # A corrupt or unreadable baseline used to escape as a traceback with
+        # exit 1, the same status as "MAJOR finding". It is a usage error.
+        print(f"error: baseline {baseline_path} could not be read: {type(e).__name__}: {e}", file=sys.stderr)
+        return 2
 
     if args.accept:
         baseline.accept(findings)
-        print(f"accepted {len(findings)} finding(s) into {baseline_path}")
+        print(f"accepted {len(findings)} finding(s) into {baseline_path}", file=sys.stderr)
+        if args.json:
+            print(FindingSet(findings).to_json())
         return 0
 
     new, known = baseline.diff(findings)
+    stale = baseline.stale(findings)
+    if stale:
+        print(f"ghost_buster: {len(stale)} of {baseline.size} baseline entries matched nothing scanned "
+              f"(fixed, renamed detector, or a baseline written from another checkout); "
+              f"first: {stale[0].id} {stale[0].evidence.file}", file=sys.stderr)
 
     if args.json:
         print(FindingSet(new).to_json())

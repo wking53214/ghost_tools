@@ -122,12 +122,21 @@ def _portable_path(path: str) -> str:
     """
     from pathlib import PurePath
 
-    parts = PurePath(path).parts
+    pure = PurePath(path)
+    # A path that is already relative is already portable: it was cut at
+    # the project root when the finding was made and stored that way. The
+    # first version of this function recomputed from the stored path and,
+    # because the marker walk needs the file to exist, a baseline read on
+    # another machine fell through to the two-segment fallback and matched
+    # nothing (measured 2026-09-08: 137 of 137 entries inert).
+    if not pure.is_absolute():
+        return pure.as_posix()
+    parts = pure.parts
     for marker in (".git", "pyproject.toml", "setup.py", "setup.cfg"):
         root = _project_root(path, marker)
         if root is not None:
             try:
-                return PurePath(path).relative_to(root).as_posix()
+                return pure.relative_to(root).as_posix()
             except ValueError:
                 pass
     return PurePath(*parts[-2:]).as_posix() if len(parts) >= 2 else path
@@ -147,13 +156,18 @@ def _project_root(path: str, marker: str):
 @dataclass
 class Evidence:
     """Where a finding points, precisely enough that a human can go
-    look without re-deriving what the detector already knows."""
+    look without re-deriving what the detector already knows.
+
+    `file` is project-relative (see _portable_path); `absolute_file` is the
+    path on the machine that made the finding, for the human report, and is
+    not part of the finding's identity."""
 
     file: str
     line_start: Optional[int] = None
     line_end: Optional[int] = None
     snippet: Optional[str] = None
     related_files: List[str] = field(default_factory=list)
+    absolute_file: Optional[str] = None
 
     def as_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -182,9 +196,14 @@ class Finding:
     id: str = field(init=False)
 
     def __post_init__(self):
-        self.id = _stable_id(
-            self.detector, _portable_path(self.evidence.file), self.summary,
-        )
+        # Store the portable path, not the absolute one, so the baseline
+        # carries what the id was computed from and reads back identically
+        # from any checkout. The absolute path is kept for the human report.
+        portable = _portable_path(self.evidence.file)
+        if portable != self.evidence.file:
+            self.evidence.absolute_file = self.evidence.file
+            self.evidence.file = portable
+        self.id = _stable_id(self.detector, portable, self.summary)
         if self.confidence is not None and not (0.0 <= self.confidence <= 1.0):
             raise ValueError(f"confidence must be 0.0-1.0, got {self.confidence}")
         if self.layer == Layer.MECHANICAL and self.status == Status.REASONED:
