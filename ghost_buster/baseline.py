@@ -33,9 +33,15 @@ class Baseline:
     def __init__(self, path: Path):
         self.path = path
         self._known_ids: Set[str] = set()
+        self._known: dict = {}
         if path.exists():
             fs = FindingSet.from_json(path.read_text(encoding="utf-8"))
-            self._known_ids = {f.id for f in fs}
+            self._known = {f.id: f for f in fs}
+            self._known_ids = set(self._known)
+
+    @property
+    def size(self) -> int:
+        return len(self._known_ids)
 
     def accept(self, findings: List[Finding]) -> None:
         """Add these findings' IDs to the baseline and persist it."""
@@ -53,9 +59,39 @@ class Baseline:
     def diff(self, current: List[Finding]) -> Tuple[List[Finding], List[Finding]]:
         """Split `current` into (new, already_known). `new` is what a
         report should actually surface; `already_known` still exists but
-        was already accepted into the baseline on a prior run."""
+        was already accepted into the baseline on a prior run.
+
+        An accepted finding whose severity has since risen is NEW again: the
+        id hashes detector, path and summary, not severity, so before this an
+        entry accepted as MINOR silently suppressed the same finding once it
+        became CRITICAL (measured 2026-09-08)."""
         new: List[Finding] = []
         known: List[Finding] = []
         for f in current:
-            (known if f.id in self._known_ids else new).append(f)
+            stored = self._known.get(f.id)
+            if stored is None:
+                new.append(f)
+            elif _rank(f.severity) < _rank(stored.severity):
+                f.detail = (
+                    f"ESCALATED since baseline: accepted as {stored.severity.value}, now {f.severity.value}. "
+                    + (f.detail or "")
+                ).strip()
+                new.append(f)
+            else:
+                known.append(f)
         return new, known
+
+    def stale(self, current: List[Finding]) -> List[Finding]:
+        """Baseline entries that matched nothing in this run.
+
+        Before this they were invisible: a fixed finding, a renamed detector
+        and a baseline written on another machine all looked the same as a
+        clean repository (measured 2026-09-08: 137 of 137 entries in one
+        committed baseline were inert and nothing said so)."""
+        seen = {f.id for f in current}
+        return [f for fid, f in self._known.items() if fid not in seen]
+
+
+def _rank(severity) -> int:
+    from .schema import Severity
+    return {Severity.CRITICAL: 0, Severity.MAJOR: 1, Severity.MINOR: 2, Severity.INFORMATIONAL: 3}[severity]
