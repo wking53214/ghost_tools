@@ -101,7 +101,51 @@
   One mutant from the exploratory run is documented rather than forced:
   dropping `--redact` changes nothing observable through `scan()`, since
   no field it touches is ever read into a finding.
-- Tests: 353 -> TESTCOUNT.
+- **New correlation layer `ghost_buster/correlate.py`** (on by default,
+  `--no-correlate` opts out): connectors that produce findings only
+  visible when two detectors are read together. A connector is a pure
+  function over findings a run already produced -- no parsing, no
+  subprocess, no file reads -- so it costs nothing and stays silent when
+  its inputs are absent. Four ship: `secret_in_duplicated_file` (a leak's
+  blast radius across byte-identical copies), `secret_in_multiple_
+  repositories` (the same leak, by gitleaks fingerprint, in another
+  repository's `--json` output via `--correlate-with [LABEL=]FILE`),
+  `conflict_marker_breaks_tests` (one marker as the root cause of N
+  unrunnable tests, same-file attribution only), and
+  `doc_count_contradicted_by_run` (a documented test count against the
+  measured collected/passing numbers).
+- **`Finding.attributes`**, a `str -> str` map of machine-readable join
+  keys per detector (gitleaks fingerprint, content hash, pytest node id,
+  documented count). Connectors join on these, never on summary prose: a
+  reworded summary would switch a connector off silently. Deliberately not
+  part of the finding id, so adding a key never renumbers a committed
+  baseline; round-trips through `--json`.
+- Correlations are additive (inputs are kept and named by id in the
+  correlation's detail), never recursive (connectors do not read their own
+  output), and never built from `REASONED` findings.
+- **Two path-portability defects found and fixed while building it.**
+  `Evidence.related_files` was written straight from the scan's absolute
+  paths while every other path was project-relative, so baselines carried
+  a home directory and a leaked file could not be joined against its own
+  twin; it is now put through `_portable_path` like `evidence.file`, for
+  every detector. `duplicate_file`'s summary named absolute paths too,
+  which put the checkout location inside a finding id -- the exact defect
+  `_portable_path` exists to prevent. **`duplicate_file` ids change once
+  as a result; re-accept the baseline.** A test pins that the same two
+  files scanned from two checkout locations now produce the same id.
+- Dogfooded on the case that motivated the layer: a committed TLS private
+  key in `sentinel_os/certs/key.pem` is also in `observe`, which vendors a
+  copy. Previously two unrelated CRITICALs in two separate scans;
+  `secret_in_multiple_repositories` now matches them on fingerprint, and
+  four `secret_in_duplicated_file` correlations fired within `observe`.
+- 35 tests and `Tests/test_correlate_mutants.py` (20 mutants, all killed).
+  Three exploratory survivors were investigated rather than assumed: two
+  were real gaps (an eligibility rule with no direct seam, and an
+  asymmetric `.get()` default that made an empty-fingerprint collision
+  unreachable) and were fixed in the code and the tests; the third is a
+  cost guard whose removal changes nothing observable, and is documented
+  rather than forced.
+- Tests: 353 -> 519.
 
 ## 0.9.0 (2026-09-09)
 
