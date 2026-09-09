@@ -1,5 +1,55 @@
 # Changelog
 
+## 0.10.0 (2026-09-09)
+
+### ghost_buster
+- **New repository-level check `--tests`** (`ghost_buster/testsuite.py`,
+  detector `test_status`, category `TEST_STATUS`): runs the project's
+  pytest suite and reports every test that did not pass, classified by
+  what the outcome means. Failing (MAJOR); flaky, meaning it fails in the
+  suite and passes when rerun alone up to `--tests-reruns` times, default
+  3, stopping at the first pass (MAJOR); blocked by a named missing
+  dependency, not rerun (MINOR); skipped without a reason naming a
+  dependency (MAJOR); skipped for a dependency that is present, probed
+  for modules and environment variables only (MAJOR); skipped for an
+  absent one (INFORMATIONAL); an `xfail` that passes (MAJOR). Opt-in
+  because it executes the project's code. Never installs, starts, or
+  sets anything; writes no cache or bytecode into the project.
+  `--tests-python` runs the suite with the project's own interpreter;
+  `--tests-timeout` bounds each pytest invocation.
+- Outcomes are read through a temporary pytest plugin recording one JSON
+  line per test phase (node id, phase, outcome, location, text), run with
+  `--continue-on-collection-errors` so one uncollectable module does not
+  hide the rest of the suite.
+- The dependency vocabulary was calibrated on four real suites before
+  shipping (herald 390 tests, observe-perceive 565, gsa-815 19 modules,
+  sentinel_os 968 in its own virtualenv), each change measured:
+  - A failure naming a module that exists as a file inside the scanned
+    project is a path defect (MAJOR, with the location), not a missing
+    dependency. gsa-815, where 17 of 19 test modules cannot be collected
+    for modules with repository-local names, first looked like this case
+    and is not: its `DEPENDENCIES.md` lists those modules as owed by a
+    sibling repository, so blocked is the correct reading there and the
+    rule stays silent. It is pinned by a fixture with a real
+    repository-local module.
+  - "X checkout not available" and similar name a resource: 47 of
+    observe-perceive's 52 skips read as naming nothing before this.
+  - A missing executable at an absolute path under a system bin
+    directory is a tool: sentinel_os's 18 `test_twin_live.py` setup
+    errors on `/usr/local/bin/twin_ensure_services` read as failing
+    before this. A missing relative file still reads as failing; that is
+    the repository's own defect.
+  - Failure text is classified from its error lines only (pytest's `E`
+    lines and the final `path:line: Exception` line), never the source
+    walked to reach them.
+- 54 tests (`Tests/test_testsuite.py`, real pytest projects in
+  `tmp_path`) and `Tests/test_testsuite_mutants.py` (22 mutants, all
+  killed). The first exploratory mutant run found one survivor, a fixture
+  that could not tell whole-traceback classification from error-line
+  classification; the discriminating shape was added to the fixture, not
+  the mutant dropped.
+- Tests: 353 -> 429.
+
 ## 0.9.0 (2026-09-09)
 
 ### ghost_buster
