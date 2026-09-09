@@ -20,7 +20,7 @@ import ast
 import hashlib
 import re
 from pathlib import Path
-from typing import Callable, Dict, Iterable, List, Optional, Set
+from typing import Callable, Dict, Iterable, List, Optional, Set, Tuple
 
 from .schema import Category, Evidence, Finding, Layer, Severity, Status
 
@@ -272,16 +272,101 @@ def _block_fingerprint(stmts: List[ast.stmt]) -> str:
     ).hexdigest()
 
 
+def _is_test_file(path: Path) -> bool:
+    """A test module by the same convention mutation.py uses, plus a
+    tests/ or test/ directory component."""
+    name = path.name
+    if name.startswith("test_") or name.endswith("_test.py"):
+        return True
+    return any(part.lower() in ("tests", "test") for part in path.parts[:-1])
+
+
+def _identical_file_groups(files: List[Path]) -> List[List[Path]]:
+    """Groups of 2+ scanned files with byte-identical content. Measured on
+    the first whole-library run (37 repositories): 31 such groups, almost
+    all a module vendored verbatim from a sibling repo (sentinel_os and
+    gsa-815 share queue_staffing_bayes_integration.py; sentinel_os and
+    observe-perceive share perceive_consolidated.py). Every function in
+    such a file fingerprinted identically to its twin, so one duplicated
+    file was surfacing as N near_duplicate_function findings that said
+    nothing about the real event -- the whole file is a copy."""
+    by_hash: Dict[str, List[Path]] = {}
+    for path in files:
+        try:
+            content = path.read_bytes()
+        except OSError:
+            continue
+        if not content:
+            # Two empty __init__.py files are not a duplication; measured:
+            # 4 of the first 35 groups on the library were exactly that.
+            continue
+        by_hash.setdefault(hashlib.sha256(content).hexdigest(), []).append(path)
+    return [group for group in by_hash.values() if len(group) > 1]
+
+
+@register("duplicate_file")
+def detect_duplicate_files(files: List[Path]) -> List[Finding]:
+    """One finding per group of byte-identical scanned files -- the
+    signal near_duplicate_function was drowning in until v0.9 (see
+    _identical_file_groups). A vendored verbatim copy of a sibling repo's
+    module is the "parallel unreconciled implementation" risk in its
+    purest form: two copies, one of which will be fixed and the other
+    won't. MAJOR for that reason. A file that appears twice only because
+    a symlinked directory was scanned twice is not this -- the CLI
+    collects each real path once, so it never reaches here."""
+    findings: List[Finding] = []
+    for group in _identical_file_groups(files):
+        group = sorted(group)
+        names = ", ".join(str(p) for p in group)
+        size = group[0].stat().st_size
+        findings.append(Finding(
+            detector="duplicate_file",
+            category=Category.DUPLICATION,
+            layer=Layer.MECHANICAL,
+            severity=Severity.MAJOR,
+            status=Status.CONFIRMED,
+            summary=f"{len(group)} files are byte-identical ({size} bytes): {names}",
+            detail=(
+                "Same content, byte for byte. Typical real cause: a module copied "
+                "verbatim from a sibling repository, or a whole directory duplicated "
+                "instead of imported. Whichever copy gets the next fix, the other "
+                "won't."
+            ),
+            evidence=Evidence(file=str(group[0]), related_files=[str(p) for p in group[1:]]),
+        ))
+    return findings
+
+
 @register("near_duplicate_function")
-def detect_near_duplicate_functions(files: List[Path], min_lines: int = 6) -> List[Finding]:
+def detect_near_duplicate_functions(files: List[Path], min_lines: int = 10) -> List[Finding]:
     """Groups functions by structural fingerprint; any group with 2+
     members is a near-duplicate cluster. min_lines guards against every
     trivial one-line getter/setter fingerprinting identically and
     burying real findings -- small functions are supposed to look alike;
     that's not a ghost.
+
+    Three calibrations from the first whole-library run (37 repositories,
+    v0.9), each measured before it was adopted:
+      - files that are byte-identical to another scanned file are
+        represented once here (duplicate_file reports the file itself):
+        625 findings became 418;
+      - min_lines 6 became 10: 418 became 248. Nothing in the dropped
+        band, sampled by hand, was more than two short functions that
+        happened to share a shape;
+      - a cluster made only of test functions is INFORMATIONAL, never
+        MAJOR: test functions sharing a setup/assert shape is what a test
+        suite looks like, and the README had already disclosed it as the
+        detector's dominant noise. MAJOR findings went from 42 to 27.
     """
+    representatives: List[Path] = []
+    seen_twins = set()
+    for group in _identical_file_groups(files):
+        for path in sorted(group)[1:]:
+            seen_twins.add(path)
+    representatives = [p for p in files if p not in seen_twins]
+
     by_fingerprint: Dict[str, List[tuple]] = {}
-    for path in files:
+    for path in representatives:
         tree = _parse(path)
         if tree is None:
             continue
@@ -312,11 +397,17 @@ def detect_near_duplicate_functions(files: List[Path], min_lines: int = 6) -> Li
         # future case can silently lose an occurrence this way again.
         names = [f"{p.name}:{n.lineno}:{n.name}" for p, n in occurrences]
         primary_path, primary_node = occurrences[0]
+        if all(_is_test_file(p) for p, _ in occurrences):
+            severity = Severity.INFORMATIONAL
+        elif len(occurrences) > 2:
+            severity = Severity.MAJOR
+        else:
+            severity = Severity.MINOR
         findings.append(Finding(
             detector="near_duplicate_function",
             category=Category.DUPLICATION,
             layer=Layer.MECHANICAL,
-            severity=Severity.MAJOR if len(occurrences) > 2 else Severity.MINOR,
+            severity=severity,
             status=Status.CONFIRMED,
             summary=(
                 f"{len(occurrences)} functions share identical AST structure "
@@ -407,26 +498,33 @@ def _node_count(node: ast.AST) -> int:
 
 def _stmt_candidates(
     func_node: ast.AST, min_statements: int, min_complexity: int
-) -> Iterable[List[ast.stmt]]:
-    """Every comparison unit worth fingerprinting inside one function:
-    whole sibling blocks of >= min_statements statements (a duplicated
+) -> Iterable[Tuple[int, List[ast.stmt]]]:
+    """Every comparison unit worth fingerprinting inside one function,
+    tagged with the index of the statement list it came from: whole
+    sibling blocks of >= min_statements statements (a duplicated
     multi-statement branch body), AND individual statements whose own
     subtree has >= min_complexity nodes (a duplicated single complex
     statement -- see module comment above detect_intra_function_
     duplicate_blocks for why this second case was added: it is not an
     edge case, it is the shape the real motivating bug actually had).
+
+    The block index is what lets the detector tell "the same statement in
+    two different branches" (the gate.py shape) from "several similar
+    statements in a row in one block" (an __init__ assigning seven
+    attributes, a dict built one entry per line) -- see
+    detect_intra_function_duplicate_blocks.
     """
-    for block in _stmt_blocks(func_node):
+    for block_index, block in enumerate(_stmt_blocks(func_node)):
         if len(block) >= min_statements:
-            yield block
+            yield block_index, block
         for stmt in block:
             if _node_count(stmt) >= min_complexity:
-                yield [stmt]
+                yield block_index, [stmt]
 
 
 @register("intra_function_duplicate_block")
 def detect_intra_function_duplicate_blocks(
-    files: List[Path], min_statements: int = 3, min_complexity: int = 15
+    files: List[Path], min_statements: int = 3, min_complexity: int = 20
 ) -> List[Finding]:
     """Within each function independently, groups statement-list blocks
     (if/elif/else bodies, try/except/finally bodies, for/while bodies,
@@ -453,6 +551,23 @@ def detect_intra_function_duplicate_blocks(
     functions happen to share a sub-shape" is a much weaker signal than
     "this one function repeats itself" -- left for a future version if
     it turns out to matter.
+
+    Two calibrations from the first whole-library run (37 repositories,
+    v0.9), each measured before it was adopted:
+      - a single statement counts as repeated only across DISTINCT
+        statement lists (different branch bodies), never within one.
+        The motivating case was six branches each building the same
+        object; what the detector was actually reporting, 643 times out
+        of 655, was several similar statements in a row in one block --
+        an __init__ assigning seven attributes, a dict built one entry
+        per line. Those are how code is written, not a ghost. Findings
+        went from 1,300 to 421 on the library;
+      - min_complexity 15 became 20. The original gate.py's four branch
+        returns measured 41, 26, 33 and 22 nodes, so 20 keeps every one
+        of them (25 would have lost one); 421 became 221, MAJOR from 89
+        to 46.
+    Multi-statement blocks are unchanged: 30 findings on the library
+    before and after, every one a real repeated branch body.
     """
     findings: List[Finding] = []
     for path in files:
@@ -463,13 +578,17 @@ def detect_intra_function_duplicate_blocks(
             if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
             by_fingerprint: Dict[str, List[List[ast.stmt]]] = {}
-            for unit in _stmt_candidates(func, min_statements, min_complexity):
+            blocks_of: Dict[str, Set[int]] = {}
+            for block_index, unit in _stmt_candidates(func, min_statements, min_complexity):
                 fp = _block_fingerprint(unit)
                 by_fingerprint.setdefault(fp, []).append(unit)
+                blocks_of.setdefault(fp, set()).add(block_index)
 
             for fp, units in by_fingerprint.items():
                 if len(units) < 2:
                     continue
+                if len(units[0]) == 1 and len(blocks_of[fp]) < 2:
+                    continue  # one block repeating a statement is a list, not a ghost
                 spans = [f"{u[0].lineno}-{u[-1].lineno}" for u in units]
                 first = units[0]
                 shape_note = (

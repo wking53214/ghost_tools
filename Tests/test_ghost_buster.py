@@ -15,8 +15,8 @@ import pytest
 
 from ghost_buster.baseline import Baseline
 from ghost_buster.mechanical import (
-    _next_matching, detect_dead_code, detect_doc_test_count_drift,
-    detect_intra_function_duplicate_blocks, detect_long_functions,
+    _is_test_file, _next_matching, _node_count, detect_dead_code, detect_doc_test_count_drift,
+    detect_duplicate_files, detect_intra_function_duplicate_blocks, detect_long_functions,
     detect_merge_conflict_markers, detect_near_duplicate_functions, run_all,
 )
 from ghost_buster.schema import (
@@ -146,6 +146,151 @@ def test_near_duplicate_ignores_trivial_short_functions(tmp_path):
     f2 = _write(tmp_path, "b.py", "def get_y(self):\n    return self.y\n")
     findings = detect_near_duplicate_functions([f1, f2], min_lines=6)
     assert findings == []
+
+
+def test_near_duplicate_default_floor_ignores_a_short_pair(tmp_path):
+    # v0.9: the default min_lines is 10. A pair of 7-line functions that
+    # share a shape is two short functions, not a ghost (measured: nothing
+    # in the 6-9 line band sampled from the library was more than that).
+    body = "\n".join(f"    y = y + {i}" for i in range(6))
+    f1 = _write(tmp_path, "a.py", f"def alpha(y):\n{body}\n    return y\n")
+    f2 = _write(tmp_path, "b.py", f"def beta(y):\n{body}\n    return y\n")
+    assert detect_near_duplicate_functions([f1, f2]) == []
+    assert len(detect_near_duplicate_functions([f1, f2], min_lines=6)) == 1
+
+
+def test_near_duplicate_cluster_of_only_test_functions_is_informational(tmp_path):
+    body = "\n".join(f"    y = y + {i}" for i in range(12))
+    t1 = _write(tmp_path, "test_a.py", f"def test_alpha(y):\n{body}\n    assert y\n")
+    t2 = _write(tmp_path, "test_b.py", f"def test_beta(y):\n{body}\n    assert y\n")
+    t3 = _write(tmp_path, "test_c.py", f"def test_gamma(y):\n{body}\n    assert y\n")
+    findings = detect_near_duplicate_functions([t1, t2, t3])
+    assert len(findings) == 1
+    assert findings[0].severity == Severity.INFORMATIONAL
+    # One non-test member is enough to make it a real cluster again.
+    src = _write(tmp_path, "m.py", f"def real(y):\n{body}\n    assert y\n")
+    findings = detect_near_duplicate_functions([t1, t2, t3, src])
+    assert findings[0].severity == Severity.MAJOR
+
+
+def test_is_test_file_recognizes_name_and_directory_conventions(tmp_path):
+    assert _is_test_file(Path("pkg/test_x.py"))
+    assert _is_test_file(Path("pkg/x_test.py"))
+    assert _is_test_file(Path("pkg/tests/helpers.py"))
+    assert _is_test_file(Path("Tests/conftest.py"))
+    assert not _is_test_file(Path("pkg/testing_utils.py"))
+    assert not _is_test_file(Path("pkg/latest.py"))
+
+
+def test_duplicate_file_reports_one_finding_per_identical_group(tmp_path):
+    body = "\n".join(f"    y = y + {i}" for i in range(12))
+    content = f"def f(y):\n{body}\n    return y\n\n\ndef g(y):\n{body}\n    return -y\n"
+    a = _write(tmp_path, "a.py", content)
+    b = _write(tmp_path, "vendored_a.py", content)
+    other = _write(tmp_path, "c.py", "def h():\n    return 1\n")
+    findings = detect_duplicate_files([a, b, other])
+    assert len(findings) == 1
+    assert findings[0].detector == "duplicate_file"
+    assert findings[0].severity == Severity.MAJOR
+    assert findings[0].category == Category.DUPLICATION
+    assert "a.py" in findings[0].summary and "vendored_a.py" in findings[0].summary
+
+
+def test_duplicate_file_ignores_empty_files(tmp_path):
+    a = _write(tmp_path, "pkg_a__init__.py", "")
+    b = _write(tmp_path, "pkg_b__init__.py", "")
+    assert detect_duplicate_files([a, b]) == []
+
+
+def test_duplicate_file_summary_carries_the_size(tmp_path):
+    a = _write(tmp_path, "a.md", "same text\n")
+    b = _write(tmp_path, "a-1.md", "same text\n")
+    findings = detect_duplicate_files([a, b])
+    assert len(findings) == 1
+    assert "(10 bytes)" in findings[0].summary
+
+
+def test_near_duplicate_does_not_report_functions_of_a_byte_identical_twin(tmp_path):
+    # Before v0.9 a vendored copy of a file surfaced as one
+    # near_duplicate_function finding PER FUNCTION in it. The file itself
+    # is the finding (duplicate_file); its functions are represented once.
+    body = "\n".join(f"    y = y + {i}" for i in range(12))
+    content = f"def f(y):\n{body}\n    return y\n\n\ndef g(y):\n{body}\n    return -y\n"
+    a = _write(tmp_path, "a.py", content)
+    b = _write(tmp_path, "vendored_a.py", content)
+    # f and g differ in shape (return y vs return -y), so the only
+    # function-level matches possible are f-with-its-twin and g-with-its-
+    # twin. Byte-identical twins are represented once: nothing to report.
+    assert detect_near_duplicate_functions([a, b]) == []
+    # One byte of difference and it is no longer the same file, so both
+    # function pairs are real near-duplicates again.
+    b.write_text(content + "# not quite the same\n")
+    findings = detect_near_duplicate_functions([a, b])
+    assert len(findings) == 2
+    assert all("vendored_a.py" in f.summary for f in findings)
+
+
+def test_intra_function_duplicate_single_statement_needs_distinct_blocks(tmp_path):
+    # Seven similar complex statements in a row inside ONE block: how an
+    # __init__ or a dict literal is written, not a ghost. 643 of 655
+    # library findings were this shape before v0.9.
+    call = "compute(alpha=self.a, beta=self.b, gamma=[self.c, self.d], delta={'k': self.e})"
+    rows = "\n".join(f"    self.x{i} = {call}" for i in range(7))
+    same_block = _write(tmp_path, "m.py", f"def build(self):\n{rows}\n")
+    assert detect_intra_function_duplicate_blocks([same_block]) == []
+
+    # The same statement once per sibling branch IS the gate.py shape.
+    branches = "\n".join(
+        f"    {'if' if i == 0 else 'elif'} self.kind == {i}:\n        return {call}" for i in range(3)
+    )
+    sibling = _write(tmp_path, "n.py", f"def build(self):\n{branches}\n")
+    findings = detect_intra_function_duplicate_blocks([sibling])
+    assert len(findings) == 1
+    assert "3 times" in findings[0].summary
+
+
+def test_intra_function_duplicate_complexity_floor_is_twenty(tmp_path):
+    # A statement just under the floor, repeated across branches, is
+    # ignored; one at the floor is caught. The floor is 20 because the
+    # original gate.py branch returns measured 41, 26, 33 and 22 nodes --
+    # 25 would have lost one of them.
+    import ast
+    small = "return make(a, b, c, d, e, f)"
+    big = "return make(a, b, c, d, e, f, g, h)"
+    n_small = _node_count(ast.parse(small).body[0])
+    n_big = _node_count(ast.parse(big).body[0])
+    # small sits inside the old floor and below the new one, so this test
+    # distinguishes 15 from 20, not merely "some floor exists".
+    assert 15 <= n_small < 20 <= n_big, (n_small, n_big)
+    def module(stmt):
+        branches = "\n".join(
+            f"    {'if' if i == 0 else 'elif'} k == {i}:\n        {stmt}" for i in range(3)
+        )
+        return f"def pick(k, a, b, c, d, e, f, g, h):\n{branches}\n"
+    assert detect_intra_function_duplicate_blocks([_write(tmp_path, "s.py", module(small))]) == []
+    assert len(detect_intra_function_duplicate_blocks([_write(tmp_path, "b.py", module(big))])) == 1
+
+
+def test_collect_files_scans_a_symlinked_file_once(tmp_path):
+    # Path.rglob does not descend into a symlinked directory, but it does
+    # list a symlinked file under its own name -- so the same module can
+    # arrive twice, and every function in it would fingerprint against
+    # itself. Measured on OBSERVE, which keeps genuine symlinks.
+    (tmp_path / "m.py").write_text("x = 1\n")
+    (tmp_path / "alias.py").symlink_to(tmp_path / "m.py")
+    files = _collect_files(tmp_path)
+    assert len(files) == 1
+    assert files[0].name == "alias.py" or files[0].name == "m.py"
+
+
+def test_collect_files_skips_build_output(tmp_path):
+    (tmp_path / "m.py").write_text("x = 1\n")
+    for d in ("build/lib/pkg", "dist", "pkg.egg-info"):
+        (tmp_path / d).mkdir(parents=True)
+        (tmp_path / d / "m.py").write_text("x = 1\n")
+    files = _collect_files(tmp_path)
+    assert [f.name for f in files] == ["m.py"]
+    assert files[0].parent == tmp_path
 
 
 def test_run_all_handles_unparseable_file_without_crashing(tmp_path):

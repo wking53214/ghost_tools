@@ -1,5 +1,50 @@
 # Changelog
 
+## 0.9.0 (2026-09-09)
+
+### ghost_buster
+The duplication heuristics, recalibrated on the first whole-library run
+(37 repositories). Every change below was measured on the library before
+it was adopted; the numbers are in each detector's docstring and the
+README.
+- **`intra_function_duplicate_block`**: a single statement now counts as
+  repeated only across distinct statement lists (different branch
+  bodies), never within one block. 643 of 655 findings on the library
+  were runs of similar statements in one block -- an `__init__` assigning
+  seven attributes, a dict built one entry per line -- not the six-branch
+  shape the detector was built for. The single-statement complexity floor
+  is 20, not 15: the original gate.py's four branch returns measured 41,
+  26, 33 and 22 nodes, so 20 keeps all four (25 would have lost one).
+  1,300 findings became 221, MAJOR 215 became 46. Multi-statement block
+  findings are unchanged.
+- **New detector `duplicate_file`**: one MAJOR finding per group of
+  byte-identical scanned files, with the size in the summary. Sampling
+  `near_duplicate_function`'s pairs by hand found this was the dominant
+  case -- a module vendored verbatim from a sibling repo, a committed
+  `-1`/` (1)` download copy -- reported once per function instead of once
+  per file. 31 groups on the library. Empty files never form a group.
+- **`near_duplicate_function`**: fingerprints each byte-identical group's
+  functions once; default `min_lines` 10 (was 6); a cluster made only of
+  test functions is INFORMATIONAL, never MAJOR. 625 findings became 248,
+  MAJOR 77 became 27.
+- **CLI file collection** collects each real path once (a symlinked file
+  was listed under both names, measured on OBSERVE) and skips `build/`,
+  `dist/` and `*.egg-info/` (a stray wheel-build `build/` on this repo's
+  own checkout produced 113 near-duplicate findings, every module against
+  a copy of itself).
+- Across the library, all detectors: 1,368 new findings became 570, MAJOR
+  193 became 98. `dead_code`, `doc_test_count_drift` and `unmerged_branch`
+  counts did not move.
+- Baselines: `near_duplicate_function` and `intra_function_duplicate_block`
+  finding ids include the occurrence list, so a committed baseline will
+  show the recalibrated findings as new and the old ones as stale on the
+  first run after upgrading. Re-accept once.
+- 12 tests and `Tests/test_duplication_mutants.py` (13 mutants, one per
+  rule, each killed only by the test that pins that rule). Two of those
+  mutants caught tests that could not discriminate as first written and
+  were fixed before this shipped.
+- Tests: 328 -> 353.
+
 ## 0.8.1 (2026-09-09)
 
 ### ghost_buster

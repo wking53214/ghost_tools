@@ -39,6 +39,10 @@ _EXCLUDED_DIRS = frozenset({
     ".tox", ".nox", ".eggs",
     ".mypy_cache", ".pytest_cache", ".ruff_cache", ".hypothesis",
     ".ipynb_checkpoints",
+    # Build output. Measured on ghost_tools itself: a stray `build/` from a
+    # wheel build made every module in the package byte-identical to a copy
+    # of itself, 16 duplicate_file groups of pure noise.
+    "build", "dist",
 })
 
 
@@ -56,10 +60,22 @@ def _collect_files(root: Path, extra_excludes: Iterable[str] = ()) -> List[Path]
     `venv/` would also come back empty; scan the project root.
     """
     excluded = _EXCLUDED_DIRS | set(extra_excludes)
-    return sorted(
-        p for p in list(root.rglob("*.py")) + list(root.rglob("*.md"))
-        if excluded.isdisjoint(p.parts) and not p.name.startswith(".")
-    )
+    # Each real path once: a symlinked file is otherwise listed under both
+    # names, and every function in it becomes its own near-duplicate.
+    # Measured on OBSERVE, which keeps genuine symlinks.
+    seen_real = set()
+    out = []
+    for p in sorted(list(root.rglob("*.py")) + list(root.rglob("*.md"))):
+        if not excluded.isdisjoint(p.parts) or p.name.startswith("."):
+            continue
+        if any(part.endswith(".egg-info") for part in p.parts[:-1]):
+            continue
+        real = p.resolve()
+        if real in seen_real:
+            continue
+        seen_real.add(real)
+        out.append(p)
+    return out
 
 
 def _print_report(new: List[Finding], known: List[Finding]) -> None:
