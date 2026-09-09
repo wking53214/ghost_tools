@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.7.0 (2026-09-09)
+
+### ghost_buster
+- **New check: unmerged branches** (`ghost_buster/branches.py`,
+  `--branches` / `--branches-base REF`). Neither mechanical (no file to
+  parse) nor semantic (no judgment call, no API) in the usual sense, but
+  deterministic and `Status.CONFIRMED` like the mechanical layer: it flags
+  a local or remote-tracking branch whose commits are not reflected in
+  the base branch, via read-only `git` plumbing against the checkout as
+  it sits. Never fetches, pushes, or writes a ref.
+- **Solves the squash-merge false positive directly**, not by accident:
+  an ancestor-only check flags every squash-merged branch as unmerged
+  forever, since a squash rewrites a branch's history into one new commit
+  on base and the branch tip is never an ancestor of anything again.
+  Confirmed against this project's own history before the fix existed:
+  four already-squash-merged ghost_tools branches would have been false
+  positives. The fix compares the whole branch-to-merge-base diff, as one
+  patch-id, against every commit base picked up since -- a squash
+  commit's diff is exactly the union of what the branch changed, so its
+  patch-id matches.
+- **Two blind spots, disclosed rather than fixed**, because fixing either
+  means the network access this whole layer of the tool exists to avoid:
+  it cannot see a branch's pull-request state (open, rejected, or never
+  opened all look identical here), and a remote-tracking ref already
+  deleted on GitHub still reads as unmerged until the checkout re-fetches
+  with `--prune` -- also measured directly against this project's own
+  checkout, where four already-deleted branches, fetched once outside the
+  checkout's configured refspec, kept showing up because neither an
+  ordinary fetch nor `--prune` touches a ref outside that refspec.
+- `Tests/test_branches.py` (15 tests) builds real git repositories in
+  `tmp_path`; `ghost-buster --mutate` finds no candidate in it, so
+  `Tests/test_branches_mutants.py` breaks the detector twelve ways in a
+  scratch copy and requires each to fail a test, naming two mutants from
+  its own exploratory run that turned out not to be real gaps (a
+  documented-redundant fast path, and a no-op from `git merge-base`'s
+  documented argument symmetry) rather than forcing tests for them.
+- New `Category.UNMERGED_BRANCH`.
+- Tests: 272 -> 300.
+
 ## 0.6.3 (2026-09-09)
 
 ### ghost_writer

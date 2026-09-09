@@ -80,6 +80,7 @@ class Category(str, Enum):
     DOC_DRIFT = "doc_drift"
     ARCHITECTURE = "architecture"
     VACUOUS_CHECK = "vacuous_check"    # a test that passes with the thing it names broken
+    UNMERGED_BRANCH = "unmerged_branch"  # commits git's own graph says aren't on the base branch
     OTHER = "other"
 
 
