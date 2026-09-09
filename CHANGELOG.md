@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.6.2 (2026-09-09)
+
+### Tests
+- The three mutants 0.6.1 recorded as surviving `Tests/test_polish.py` are
+  killed and in `Tests/test_polish_mutants.py` (now 28), one test added per
+  gap:
+  - **The signature did not have to use the key.** The stability test
+    compared two runs sharing one key, so replacing the key with an empty
+    one changed nothing. A second test signs the same validated content
+    under two different secrets and requires the signatures to differ.
+  - **The retry prompt was never read.** No test looked at what the second
+    call received, so dropping the recalibration feedback was invisible.
+    A test now asserts the first prompt carries no feedback, and the retry
+    names both the violation that rejected attempt one and the caller's
+    original prompt.
+  - **Whitespace normalization was uncovered** (recorded as such since the
+    source repo's own provenance). A test feeds runs of spaces, newlines
+    and a tab, and requires the validated content to come back collapsed to
+    single spaces.
+- No mutant written for `ghost_writer/polish` is now held back as a known
+  survivor.
+
 ## 0.6.1 (2026-09-09)
 
 ### Tests
