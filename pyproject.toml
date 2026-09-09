@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ghost-tools"
-version = "0.5.2"
+version = "0.6.0"
 description = "Codebase integrity toolkit: finds structural ghosts, proves vacuous tests by mutation, outlines missing code, and turns human-triaged findings into accurate docs"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -35,7 +35,10 @@ ghost-triage = "ghost_writer.triage:main"
 blackhole-extrapolator = "blackhole_extrapolator.cli:main"
 
 [tool.setuptools]
-packages = ["ghost_buster", "ghost_writer", "blackhole_extrapolator"]
+packages = ["ghost_buster", "ghost_writer", "ghost_writer.polish", "blackhole_extrapolator"]
+
+[tool.setuptools.package-data]
+"ghost_writer.polish" = ["LICENSE"]
 
 [project.optional-dependencies]
 semantic = ["anthropic"]

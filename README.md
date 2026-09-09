@@ -1,4 +1,4 @@
-# ghost_tools -- v0.5
+# ghost_tools -- v0.6
 
 Four commands, one pipeline. `ghost-buster` hunts down structural problems
 in code and, with `--mutate`, proves which tests pass without checking
@@ -235,6 +235,38 @@ findings, report = detect_parallel_implementations(client, {
   a `CorrectionProposal` -- a suggestion with reasoning and a confidence
   score. **Nothing in this module writes to a file.** Applying a proposal
   is a human decision, always, outside this module.
+- `ghost_writer/polish/` -- the quality gate around that one LLM call, the
+  only place in `ghost_writer` that generates new text rather than
+  templating a human's own decision. Vendored from `content-polish-pipeline`
+  (MIT; origin, commit and every change to the copy are recorded in
+  `PROVENANCE.md`) when that repo was retired into this one. Three filters
+  and one retry loop. Every response is checked before it becomes a
+  proposal: no first-person pronoun and no hedging word (`might`, `may`,
+  `could`, `probably`, ...) in the replacement or the reasoning, and at
+  least one evidence marker (a percentage, `data`, `evidence`, `showed`,
+  ...) in the reasoning. The evidence check is scoped to the reasoning on
+  purpose: a minimal doc replacement is not an empirical claim, and one
+  that happens to carry an evidence word does not excuse a reasoning that
+  cites nothing. A rejected response is not discarded silently: its
+  violations are appended to the prompt, after the fenced untrusted block
+  and never inside it, and the model is asked again, three attempts in
+  total by default (`max_attempts`), each one a paid call. Empty,
+  malformed and client-failed responses are not retried; they stay the
+  single-shot fail-closed paths they were before. When every attempt fails
+  the result is the same `(None, report)` every other no-proposal outcome
+  produces, with the violations in `report.reason`. `report.py` is not
+  gated: it renders a human's own triage note, which is allowed to say
+  "I think". The checks are regular expressions over a fixed vocabulary:
+  `may` in its permissive sense ("may be repeated") is rejected like any
+  other hedge, and the evidence check is satisfied by the vocabulary, not
+  by the citation being true. `Tests/test_ghost_writer.py` covers each
+  filter against each field, the retry with its feedback placement, the
+  attempt ceiling and the untouched fail-closed paths;
+  `Tests/test_gate_mutants.py` breaks the gate fourteen ways in a scratch
+  copy (each check forced true, the loop cut to one attempt, the feedback
+  dropped, the verdict ignored, the patterns emptied) and requires each
+  mutant to fail at least one of those tests. `ghost-buster --mutate`
+  reports no candidate in either file: none of them has a shape it mutates.
 
 ### Usage
 
@@ -287,10 +319,12 @@ test suite runs.
 python -m pytest Tests/ -v
 ```
 
-134 tests, 0 network calls, 0 API key required -- the semantic-layer tests
+220 tests, 0 network calls, 0 API key required -- the semantic-layer tests
 verify the real parsing/fail-closed/injection-fencing logic via
 `StubModelClient`, the same technique `sentinel_os`'s own `interpretation/`
-package uses for its model-client tests.
+package uses for its model-client tests. `test_mutation.py` and
+`test_gate_mutants.py` run pytest in subprocesses against scratch copies of
+the project; they account for most of the suite's wall-clock time.
 
 ## Changelog
 

@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.6.0 (2026-09-09)
+
+### ghost_writer
+- **Quality gate on `correct.py`.** The one LLM call in `ghost_writer` that
+  generates new text is now wrapped in a retry loop that rejects a response
+  containing a first-person pronoun or a hedging word in either the
+  proposed replacement or the reasoning, or no evidence marker in the
+  reasoning, feeds the violations back into the prompt (after the fenced
+  untrusted block) and asks again, three attempts by default
+  (`propose_correction(..., max_attempts=3)`). Exhausting the attempts
+  yields the existing `(None, report)` outcome with the violations in
+  `report.reason`; empty, malformed and client-failed responses are not
+  retried and behave as before. `CorrectionProposal` is unchanged.
+  `report.py` is not gated.
+- **`ghost_writer/polish/`**, vendored from `content-polish-pipeline` at
+  commit `44bf225` (MIT, notice kept beside the files) when that repo was
+  retired into this one. The copy differs from the source in an unused
+  `asyncio` import removed (ruff gate), the standalone import fallback
+  removed, and the logger renamed to `ghost_writer.polish`; `PROVENANCE.md`
+  records it. Its 23 tests are ported as `Tests/test_polish.py`.
+- `Tests/test_gate_mutants.py`: fourteen hand-made mutants of the gate, each
+  required to fail a gate test. `ghost-buster --mutate` finds no candidate
+  in the gate's tests (none has a shape it mutates), so this is the proof
+  that they are not vacuous.
+- The `correct.py` happy-path fixture's reasoning changed from `why` to a
+  sentence that names its evidence, the one existing test the gate
+  rejects as written. No caller changed.
+- Setuptools now lists `ghost_writer.polish`; `pip install .` was not
+  installing subpackages by discovery.
+
 ## 0.5.2 (2026-09-08)
 
 ### blackhole_extrapolator
