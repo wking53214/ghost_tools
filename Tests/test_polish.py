@@ -194,6 +194,38 @@ class TestContentPolishPipeline(unittest.IsolatedAsyncioTestCase):
             any("Duplicate generation detected" in v for v in result["violations"])
         )
 
+    async def test_recalibration_feedback_names_the_violation(self):
+        responses = [
+            "This is better.",                        # no evidence marker
+            "Analysis shows a 30% improvement.",
+        ]
+        mock_llm = AsyncMock(side_effect=responses)
+
+        pipeline = ContentPolishPipeline(execution_gateway=mock_llm, max_attempts=3)
+        result = await pipeline.execute("Summarize the results.")
+
+        self.assertEqual(result["execution_status"], "SUCCESS")
+        first_prompt = mock_llm.call_args_list[0].args[0]
+        retry_prompt = mock_llm.call_args_list[1].args[0]
+        # The first call is the caller's prompt untouched; the retry carries
+        # the violation that rejected the first response, so the model is
+        # told what to avoid rather than merely asked again.
+        self.assertNotIn("RECALIBRATION FEEDBACK", first_prompt)
+        self.assertIn("[RECALIBRATION FEEDBACK - Attempt 1]", retry_prompt)
+        self.assertIn("Missing empirical support", retry_prompt)
+        self.assertIn("Summarize the results.", retry_prompt)
+
+    async def test_whitespace_is_normalized_in_validated_content(self):
+        mock_llm = AsyncMock(return_value="  Research   data\n\ndemonstrated a 25%\tgain.  ")
+
+        pipeline = ContentPolishPipeline(execution_gateway=mock_llm, max_attempts=1)
+        result = await pipeline.execute("Summarize the results.")
+
+        self.assertEqual(result["execution_status"], "SUCCESS")
+        self.assertEqual(
+            result["validated_content"], "Research data demonstrated a 25% gain.",
+        )
+
     async def test_signature_stable_for_same_input(self):
         mock_llm = AsyncMock(return_value="Research data demonstrated a 25% gain.")
         key = b"secret-test-key"
@@ -204,6 +236,19 @@ class TestContentPolishPipeline(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(r1["execution_status"], "SUCCESS")
         self.assertEqual(r1["payload_signature"], r2["payload_signature"])
         self.assertEqual(len(r1["payload_signature"]), 96)  # SHA-384 hex
+
+    async def test_signature_depends_on_the_signing_key(self):
+        # Same validated content, two different secrets: a signature that
+        # does not use the key would be identical in both.
+        mock_llm = AsyncMock(return_value="Research data demonstrated a 25% gain.")
+
+        r1 = await ContentPolishPipeline(mock_llm, signing_key=b"key-one").execute("x")
+        r2 = await ContentPolishPipeline(mock_llm, signing_key=b"key-two").execute("x")
+
+        self.assertEqual(r1["execution_status"], "SUCCESS")
+        self.assertEqual(r2["execution_status"], "SUCCESS")
+        self.assertEqual(r1["validated_content"], r2["validated_content"])
+        self.assertNotEqual(r1["payload_signature"], r2["payload_signature"])
 
     def test_max_attempts_must_be_positive(self):
         mock_llm = AsyncMock(return_value="ok")

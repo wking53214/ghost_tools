@@ -5,14 +5,14 @@ and run only that file. Every mutant here must be killed.
 ghost_buster --mutate reported zero candidates in test_polish.py (no test
 in it has a shape the tool mutates), so this is the hand-made complement,
 the same arrangement test_gate_mutants.py has for the gate tests. The list
-is only what test_polish.py kills on its own. Mutants that file does not
-kill are deliberately absent, not hidden: as of 0.6.1 they are the
-signature's dependence on the key, the recalibration feedback text
-(covered by test_ghost_writer.py instead), and whitespace normalization.
-Three more survived the ported suite as received (the speculation filter's
-is_clean alias, and the pipeline's pronoun and speculation checks taken
-singly: every fixture that tripped one also tripped another filter) and
-are here now because 0.6.1 added the tests that kill them. Adding a mutant
+is only what test_polish.py kills on its own, and as of 0.6.2 that is
+every mutant written for this code: nothing is held back as a known
+survivor. Six of them survived the ported suite as received -- the
+speculation filter's is_clean alias, the pipeline's pronoun and
+speculation checks taken singly (every fixture that tripped one also
+tripped another filter), the signature's dependence on the key, the
+recalibration feedback text, and whitespace normalization -- and are here
+because 0.6.1 and 0.6.2 added the tests that kill them. Adding a mutant
 here without a test that kills it turns this file red.
 
 A mutant that survives is a test-suite defect, reported as a failure with
@@ -116,6 +116,16 @@ MUTANTS = [
     ("pipeline: violations list emptied on exhaustion", _P,
      '            "violations": failures,\n',
      '            "violations": [],\n'),
+    ("pipeline: signature ignores the key", _P,
+     '            self._signing_key, text.encode("utf-8"), hashlib.sha384\n',
+     '            b"", text.encode("utf-8"), hashlib.sha384\n'),
+    ("pipeline: recalibration feedback dropped", _P,
+     '                f"{input_prompt}\\n\\n"\n'
+     '                f"[RECALIBRATION FEEDBACK - Attempt {iteration}]:\\n"\n',
+     '                f"{input_prompt}\\n\\n"\n'),
+    ("pipeline: whitespace normalization disabled", _P,
+     '        return " ".join(text.split())\n',
+     '        return text\n'),
 ]
 
 

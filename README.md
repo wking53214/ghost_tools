@@ -267,7 +267,7 @@ findings, report = detect_parallel_implementations(client, {
   dropped, the verdict ignored, the patterns emptied) and requires each
   mutant to fail at least one of those tests, and
   `Tests/test_polish_mutants.py` does the same for the vendored code against
-  its own ported suite, twenty-five ways. `ghost-buster --mutate` reports no
+  its own ported suite, twenty-eight ways. `ghost-buster --mutate` reports no
   candidate in any of these files: none of them has a shape it mutates.
 
 ### Usage
@@ -321,7 +321,7 @@ test suite runs.
 python -m pytest Tests/ -v
 ```
 
-249 tests, 0 network calls, 0 API key required -- the semantic-layer tests
+255 tests, 0 network calls, 0 API key required -- the semantic-layer tests
 verify the real parsing/fail-closed/injection-fencing logic via
 `StubModelClient`, the same technique `sentinel_os`'s own `interpretation/`
 package uses for its model-client tests. `test_mutation.py`,
