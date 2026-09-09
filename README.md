@@ -1,4 +1,4 @@
-# ghost_tools -- v0.8
+# ghost_tools -- v0.9
 
 Four commands, one pipeline. `ghost-buster` hunts down structural problems
 in code and, with `--mutate`, proves which tests pass without checking
@@ -60,10 +60,10 @@ same `Finding` shape (`ghost_buster/schema.py`):
 
 - **Mechanical** (`ghost_buster/mechanical.py`) -- deterministic, AST-based,
   stdlib only. Every finding is `Status.CONFIRMED`; there's nothing to
-  doubt about a deterministic check. Six detectors as of v0.8:
+  doubt about a deterministic check. Seven detectors as of v0.9:
   `dead_code`, `long_function`, `near_duplicate_function`,
   `intra_function_duplicate_block`, `doc_test_count_drift`,
-  `merge_conflict_marker`.
+  `merge_conflict_marker`, `duplicate_file`.
 
   `dead_code` was calibrated against a real, previously-unseen repo
   (ANVIL) and found two real false-positive classes on the first run:
@@ -94,11 +94,42 @@ same `Finding` shape (`ghost_buster/schema.py`):
   even though it's one statement). Scoped to one function at a time,
   deliberately -- matching a block in function A against one in function
   B is a different, noisier claim, left for later if it turns out to
-  matter. In practice, on a real test suite, most of what this flags is
-  low-severity (`MINOR`, 2 occurrences) pairs of near-identical
-  `assert` lines inside adversarial test scaffolding -- a disclosed,
-  expected pattern, the same kind `near_duplicate_function` already
-  disclosed for whole functions, not a bug.
+  matter. Until v0.9, most of what this flagged was pairs and runs of
+  similar statements inside ONE block -- an `__init__` assigning seven
+  attributes, a dict built one entry per line, adjacent `assert` lines in
+  a test: 643 of 655 findings on the first whole-library run (37
+  repositories). That is how code is written, not a ghost, and it is not
+  the shape the detector was built for. Two calibrations, each measured
+  on the library before adoption: a single statement now counts as
+  repeated only across DISTINCT statement lists (different branch
+  bodies), and the single-statement complexity floor is 20 nodes rather
+  than 15 -- the original gate.py's four branch returns measured 41, 26,
+  33 and 22 nodes, so 20 keeps all four where 25 would have lost one.
+  Library findings went from 1,300 to 221, MAJOR from 215 to 46;
+  multi-statement block findings were unchanged (30 before and after,
+  every one a real repeated branch body).
+
+  `near_duplicate_function` was recalibrated on the same run. Sampling
+  its pairs by hand found the dominant case was not two similar functions
+  but one file present twice -- a module vendored verbatim from a sibling
+  repo (sentinel_os and gsa-815 share `queue_staffing_bayes_integration.py`;
+  sentinel_os and observe-perceive share `perceive_consolidated.py`), a
+  committed `-1` or ` (1)` download copy, or a symlinked file listed under
+  both names -- so every function in the file fingerprinted against its
+  own twin. Three changes: `duplicate_file` (v0.9) reports a byte-identical
+  group ONCE, as the MAJOR finding it is (whichever copy gets the next
+  fix, the other won't), and `near_duplicate_function` fingerprints each
+  such group's functions once; `min_lines` is 10, not 6 (nothing sampled
+  in the dropped band was more than two short functions sharing a shape);
+  and a cluster made only of test functions is `INFORMATIONAL`, never
+  `MAJOR`, since test functions sharing a setup/assert shape is what a
+  suite looks like. Library findings went from 625 to 248, MAJOR from 77
+  to 27, plus 31 `duplicate_file` findings that had been hiding inside
+  them. Empty files are never a `duplicate_file` group (4 of the first 35
+  were pairs of empty `__init__.py`). The CLI also now collects each real
+  path once and skips `build/`, `dist/` and `*.egg-info/` -- a stray
+  wheel-build `build/` on this repo's own checkout had been producing 113
+  near-duplicate findings, every module against a copy of itself.
 
   `doc_test_count_drift` (v0.3) is the first detector that reads `.md`
   files (the CLI's file collection now scans `*.md` alongside `*.py`;
@@ -410,7 +441,7 @@ test suite runs.
 python -m pytest Tests/ -v
 ```
 
-328 tests, 0 network calls, 0 API key required -- the semantic-layer tests
+353 tests, 0 network calls, 0 API key required -- the semantic-layer tests
 verify the real parsing/fail-closed/injection-fencing logic via
 `StubModelClient`, the same technique `sentinel_os`'s own `interpretation/`
 package uses for its model-client tests; `test_branches.py` builds real,
