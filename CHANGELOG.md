@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.7.0 (2026-09-09)
+
+### ghost_buster
+- **New mechanical detector: `merge_conflict_marker`.** Flags an
+  unresolved `<<<<<<< / ======= / >>>>>>>` conflict-marker triplet left
+  in a committed file. The one detector in `mechanical.py` that
+  deliberately does not go through `ast.parse()`: a file with a real,
+  unresolved marker in it is almost never valid Python, so an AST-based
+  version would find nothing in exactly the files most likely to have
+  the problem. Requires the full triplet, in order, not any one marker
+  line alone -- a lone `=======` is a real false-positive risk against a
+  Setext-style Markdown H1 underline, the same reason the widely-used
+  `pre-commit-hooks` project's own check-merge-conflict hook requires the
+  same shape. `Severity.CRITICAL`, `Status.CONFIRMED`. New
+  `Category.MERGE_CONFLICT_MARKER`.
+- Confirmed by running the finished detector against its own module and
+  test files: it does not self-flag on its own documentation, which
+  discusses the marker strings extensively in prose.
+- `Tests/test_ghost_buster.py` gained 13 tests, including one pinning
+  that a nested, unresolved second start-marker inside an already-found
+  triplet's span is not double-counted, and one for a file that is not
+  valid UTF-8. `ghost-buster --mutate` finds no candidate in the new
+  tests; `Tests/test_merge_conflict_marker_mutants.py` breaks the
+  detector ten ways in a scratch copy and requires each to fail a test,
+  naming the one mutant from its own exploratory run that was not a real
+  gap (starting a lookup one line earlier than necessary is inert,
+  because the two marker patterns it searches are mutually exclusive) --
+  though the underlying helper's own off-by-one contract still gets a
+  direct, caller-independent test.
+- Tests: 272 -> 295.
+
 ## 0.6.3 (2026-09-09)
 
 ### ghost_writer

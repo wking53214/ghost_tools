@@ -20,7 +20,7 @@ import ast
 import hashlib
 import re
 from pathlib import Path
-from typing import Callable, Dict, Iterable, List, Set
+from typing import Callable, Dict, Iterable, List, Optional, Set
 
 from .schema import Category, Evidence, Finding, Layer, Severity, Status
 
@@ -619,6 +619,112 @@ def detect_doc_test_count_drift(
                 ),
                 evidence=Evidence(file=str(path), line_start=line, line_end=line),
             ))
+    return findings
+
+
+# ---------------------------------------------------------------------------
+# Detector: merge_conflict_marker -- an unresolved git conflict marker
+# (<<<<<<< / ======= / >>>>>>>) left in a committed file.
+# ---------------------------------------------------------------------------
+
+_CONFLICT_OURS = re.compile(r"^<{7}(?:\s.*)?$")
+_CONFLICT_SEP = re.compile(r"^={7}$")
+_CONFLICT_THEIRS = re.compile(r"^>{7}(?:\s.*)?$")
+
+
+def _next_matching(lines: List[str], pattern: "re.Pattern[str]", start: int) -> Optional[int]:
+    """Index of the first line at or after `start` matching `pattern`, or
+    None. Shared by both marker lookups below -- they are the same
+    operation ("find the next line of this shape") against two different
+    patterns, not two independent pieces of logic."""
+    return next((j for j in range(start, len(lines)) if pattern.match(lines[j])), None)
+
+
+@register("merge_conflict_marker")
+def detect_merge_conflict_markers(files: List[Path]) -> List[Finding]:
+    """Flags an unresolved conflict-marker triplet: a `<<<<<<<` line,
+    followed later by a `=======` line, followed later by a `>>>>>>>`
+    line, in that order, anywhere in the same file.
+
+    THE ONE DETECTOR HERE THAT DOES NOT CALL _parse(), ON PURPOSE
+    -------------------------------------------------------------------
+    Every other detector in this module starts from an AST. A file that
+    genuinely still has an unresolved conflict marker in it is, in
+    virtually every real case, no longer valid Python -- the marker lines
+    are not legal syntax, so `ast.parse()` raises and `_parse()` fails
+    closed to None. Going through `_parse()` here would mean this
+    detector finds nothing in exactly the files most likely to have the
+    problem. So this one reads the file as plain text and never touches
+    `ast` at all.
+
+    WHY A TRIPLET, NOT ANY ONE MARKER LINE BY ITSELF
+    -----------------------------------------------------
+    `=======` alone is a real false-positive risk: a Setext-style Markdown
+    H1 underline is any run of `=` characters, and one that happens to be
+    exactly 7 long is indistinguishable from git's separator line on its
+    own. Requiring the full shape in order -- the same discipline the
+    widely-used `pre-commit-hooks` project's own check-merge-conflict hook
+    uses, for the same reason -- means a lone `=======` proves nothing,
+    but the triplet essentially never occurs by coincidence. A stray
+    `<<<<<<<` with no `=======`/`>>>>>>>` after it (a truncated file, or a
+    doc showing one marker line as an isolated example) is deliberately
+    not flagged either, for the same reason.
+
+    Each marker line must be the WHOLE line: exactly 7 of the character,
+    then nothing or a space and a label, never "at least 7" and never
+    "somewhere in the line". This is what keeps this detector from firing
+    on prose that mentions `<<<<<<<` inline, in backticks, in the middle
+    of a sentence -- text like that never starts a physical source line
+    with the bare marker, so it never matches. Confirmed by running this
+    detector against mechanical.py itself, this docstring included, after
+    it was written.
+
+    A diff3-style conflict (`git config merge.conflictstyle diff3`) adds
+    a fourth marker line, `|||||||`, between `<<<<<<<` and `=======` --
+    already handled without special-casing it, since finding `=======`
+    only requires it to appear somewhere after `<<<<<<<`, not immediately
+    after.
+    """
+    findings: List[Finding] = []
+    for path in files:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        lines = text.splitlines()
+        i = 0
+        while i < len(lines):
+            if not _CONFLICT_OURS.match(lines[i]):
+                i += 1
+                continue
+            ours_line = i
+            sep_line = _next_matching(lines, _CONFLICT_SEP, ours_line + 1)
+            theirs_line = (
+                _next_matching(lines, _CONFLICT_THEIRS, sep_line + 1)
+                if sep_line is not None else None
+            )
+            if sep_line is None or theirs_line is None:
+                i = ours_line + 1
+                continue
+            findings.append(Finding(
+                detector="merge_conflict_marker",
+                category=Category.MERGE_CONFLICT_MARKER,
+                layer=Layer.MECHANICAL,
+                severity=Severity.CRITICAL,
+                status=Status.CONFIRMED,
+                summary=f"unresolved merge conflict marker in {path.name}",
+                detail=(
+                    f"lines {ours_line + 1}-{theirs_line + 1}: a <<<<<<< / ======= / "
+                    ">>>>>>> triplet is still in this file. Whatever is between the "
+                    "markers is almost certainly not the intended content, and in a "
+                    ".py file this line shape alone is very likely a syntax error."
+                ),
+                evidence=Evidence(
+                    file=str(path), line_start=ours_line + 1, line_end=theirs_line + 1,
+                    snippet=lines[ours_line][:200],
+                ),
+            ))
+            i = theirs_line + 1
     return findings
 
 

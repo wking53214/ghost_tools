@@ -8,14 +8,16 @@ AnthropicModelClient would.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
 
 from ghost_buster.baseline import Baseline
 from ghost_buster.mechanical import (
-    detect_dead_code, detect_doc_test_count_drift, detect_intra_function_duplicate_blocks,
-    detect_long_functions, detect_near_duplicate_functions, run_all,
+    _next_matching, detect_dead_code, detect_doc_test_count_drift,
+    detect_intra_function_duplicate_blocks, detect_long_functions,
+    detect_merge_conflict_markers, detect_near_duplicate_functions, run_all,
 )
 from ghost_buster.schema import (
     Category, Evidence, Finding, FindingSet, Layer, Severity, Status,
@@ -150,6 +152,114 @@ def test_run_all_handles_unparseable_file_without_crashing(tmp_path):
     f = _write(tmp_path, "broken.py", "def this is not valid python(((\n")
     findings = run_all([f])
     assert findings == []  # fails closed, does not raise
+
+
+# ------------------------------------------------------------- merge_conflict_marker
+
+def test_merge_conflict_marker_flags_full_triplet(tmp_path):
+    f = _write(tmp_path, "m.py", "<<<<<<< HEAD\nours()\n=======\ntheirs()\n>>>>>>> feature\n")
+    findings = detect_merge_conflict_markers([f])
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding.category == Category.MERGE_CONFLICT_MARKER
+    assert finding.severity == Severity.CRITICAL
+    assert finding.status == Status.CONFIRMED
+    assert finding.evidence.line_start == 1
+    assert finding.evidence.line_end == 5
+
+
+def test_merge_conflict_marker_ignores_lone_separator_line(tmp_path):
+    # The Setext-header false positive this detector is designed to avoid:
+    # a bare run of 7 "=" with no <<<<<<< / >>>>>>> anywhere near it.
+    f = _write(tmp_path, "m.md", "Title\n=======\n\nSome body text.\n")
+    assert detect_merge_conflict_markers([f]) == []
+
+
+def test_merge_conflict_marker_ignores_a_lone_start_marker(tmp_path):
+    f = _write(tmp_path, "m.py", "<<<<<<< HEAD\nx = 1\n")
+    assert detect_merge_conflict_markers([f]) == []
+
+
+def test_merge_conflict_marker_requires_the_exact_marker_length(tmp_path):
+    six = _write(tmp_path, "six.py", "<<<<<<\nx\n======\ny\n>>>>>>\n")
+    eight = _write(tmp_path, "eight.py", "<<<<<<<<\nx\n========\ny\n>>>>>>>>\n")
+    assert detect_merge_conflict_markers([six, eight]) == []
+
+
+def test_merge_conflict_marker_does_not_require_valid_python(tmp_path):
+    # The core design point: this is the one detector that must NOT go
+    # through ast.parse(), because a file with a real conflict marker is
+    # not valid Python in the first place -- an AST-based version of this
+    # check would find nothing in exactly the files most likely to have
+    # the problem.
+    f = _write(tmp_path, "m.py", "def f(:\n<<<<<<< HEAD\n    return 1\n=======\n    return 2\n>>>>>>> other\n")
+    assert run_all([f]) != []
+    findings = detect_merge_conflict_markers([f])
+    assert len(findings) == 1
+
+
+def test_merge_conflict_marker_detects_diff3_base_marker_style(tmp_path):
+    f = _write(
+        tmp_path, "m.py",
+        "<<<<<<< HEAD\nours()\n||||||| merged common ancestors\nbase()\n=======\ntheirs()\n>>>>>>> feature\n",
+    )
+    findings = detect_merge_conflict_markers([f])
+    assert len(findings) == 1
+    assert findings[0].evidence.line_start == 1
+    assert findings[0].evidence.line_end == 7
+
+
+def test_merge_conflict_marker_detects_multiple_conflicts_in_one_file(tmp_path):
+    f = _write(
+        tmp_path, "m.py",
+        "<<<<<<< HEAD\na()\n=======\nb()\n>>>>>>> f1\n"
+        "ok = 1\n"
+        "<<<<<<< HEAD\nc()\n=======\nd()\n>>>>>>> f2\n",
+    )
+    findings = detect_merge_conflict_markers([f])
+    assert len(findings) == 2
+    assert (findings[0].evidence.line_start, findings[0].evidence.line_end) == (1, 5)
+    assert (findings[1].evidence.line_start, findings[1].evidence.line_end) == (7, 11)
+
+
+def test_merge_conflict_marker_flags_in_markdown_too(tmp_path):
+    f = _write(tmp_path, "m.md", "# Title\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> branch\n")
+    findings = detect_merge_conflict_markers([f])
+    assert len(findings) == 1
+
+
+def test_merge_conflict_marker_ignores_marker_text_inside_a_sentence(tmp_path):
+    # A marker mentioned in prose, never at the start of its own physical
+    # line, must never match -- this is what keeps the detector's own
+    # docstring in mechanical.py from self-flagging.
+    f = _write(
+        tmp_path, "m.md",
+        "The three lines are `<<<<<<<`, `=======`, and `>>>>>>>`, always in that order.\n",
+    )
+    assert detect_merge_conflict_markers([f]) == []
+
+
+def test_merge_conflict_marker_does_not_double_count_a_nested_start_marker(tmp_path):
+    # A second <<<<<<<-shaped line landing between the real ours-line and
+    # its own resolution must not be re-scanned as the start of a second,
+    # overlapping finding once the first triplet is already resolved.
+    f = _write(tmp_path, "m.py", "<<<<<<< HEAD\n<<<<<<< nested\n=======\ntheirs\n>>>>>>> feature\n")
+    findings = detect_merge_conflict_markers([f])
+    assert len(findings) == 1
+
+
+def test_merge_conflict_marker_skips_a_file_that_is_not_valid_utf8(tmp_path):
+    f = tmp_path / "m.py"
+    f.write_bytes(b"\xff\xfe not valid utf-8\n")
+    assert detect_merge_conflict_markers([f]) == []  # fails closed, does not raise
+
+
+def test_next_matching_never_returns_an_index_before_start():
+    lines = ["=======", "=======", "not it", "======="]
+    # Index 0 also matches; a correct implementation must not return it
+    # when start=1 -- the exact contract both merge-marker lookups rely on.
+    assert _next_matching(lines, re.compile(r"^=+$"), 1) == 1
+    assert _next_matching(lines, re.compile(r"^=+$"), 2) == 3
 
 
 # ------------------------------------------------------------------ semantic

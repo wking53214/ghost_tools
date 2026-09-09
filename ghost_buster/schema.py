@@ -80,6 +80,7 @@ class Category(str, Enum):
     DOC_DRIFT = "doc_drift"
     ARCHITECTURE = "architecture"
     VACUOUS_CHECK = "vacuous_check"    # a test that passes with the thing it names broken
+    MERGE_CONFLICT_MARKER = "merge_conflict_marker"  # an unresolved <<<<<<< / ======= / >>>>>>> triplet
     OTHER = "other"
 
 
