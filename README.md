@@ -55,8 +55,8 @@ gate is enforced in code (`ghost_writer/report.py`'s
 
 ## ghost_buster
 
-Two independent layers, plus two repository-level checks, all producing the
-same `Finding` shape (`ghost_buster/schema.py`):
+Two independent layers, plus three repository-level checks, all producing
+the same `Finding` shape (`ghost_buster/schema.py`):
 
 - **Mechanical** (`ghost_buster/mechanical.py`) -- deterministic, AST-based,
   stdlib only. Every finding is `Status.CONFIRMED`; there's nothing to
@@ -310,6 +310,75 @@ same `Finding` shape (`ghost_buster/schema.py`):
   survivor (classifying the whole traceback instead of its error lines
   changed nothing the fixture project could see), fixed by adding the
   discriminating shape to the fixture before this shipped.
+- **Committed secrets** (`ghost_buster/secrets.py`, `--secrets`) --
+  shells out to [gitleaks](https://github.com/gitleaks/gitleaks) (must be
+  installed separately; nothing here installs it) against the checked-out
+  branch's git history, the same repository-level-check shape as
+  `--branches`: no file content to parse on its own terms, but
+  deterministic, so `Layer.MECHANICAL` / `Status.CONFIRMED` like every
+  other detector here. Every finding is `Severity.CRITICAL`: a leaked
+  credential is dangerous the moment it exists, full stop.
+
+  Scans history, not just current file content, on purpose: a secret
+  "removed" in a later commit by deleting the line is still sitting in
+  the repository's history, readable by anyone who can clone it. Only
+  rewriting history (and rotating the credential) removes it; scanning
+  current files the way every mechanical.py detector does would pass a
+  repository clean that leaked a key three commits ago and "fixed" it by
+  deleting the line. Only the checked-out branch's own history is
+  scanned, not every branch -- the same read-only, no-fetch scope
+  `--branches` already commits to.
+
+  The secret value itself never reaches a finding. gitleaks is run with
+  `--redact` (confirmed directly: its `Secret` and `Match` fields come
+  back as the literal text `REDACTED`), and this module goes one step
+  further and never reads either field at all -- only the rule id,
+  description, file, line, column, commit, and gitleaks' own fingerprint
+  ever reach a `Finding`. This matters beyond caution: a finding is
+  written into `.ghost_baseline.json` the moment someone runs `--accept`,
+  and that file is meant to be committed, so a secret reaching a finding
+  would mean committing the leak a second time inside the file whose
+  whole purpose is to make findings inert.
+
+  A non-git directory is a hard stop, not a clean scan -- measured
+  directly: gitleaks itself, given one, logs an error to stderr but still
+  exits 0 and writes an empty report, indistinguishable by exit code or
+  content from a real clean scan. This module checks `git rev-parse
+  --git-dir` itself before ever invoking gitleaks, the same defense
+  `branches.py`'s non-UTF-8-diff history exists to demonstrate the need
+  for. A repository's own `.gitleaksignore` or `.gitleaks.toml`, if
+  either exists, is honored by gitleaks exactly as it would running
+  standalone (confirmed directly: a fingerprint listed in
+  `.gitleaksignore` drops that finding before this module ever sees it);
+  no suppression logic beyond the shared baseline lives here.
+
+  Dogfooded across 33 repositories before shipping. One real defect
+  found and fixed the same way: the first pass gave gitleaks `--source
+  <root>` while also setting the subprocess's own working directory to
+  `root`, so a relative root resolved twice (`root/root`) and the scan
+  failed outright for several repos instead of silently misreading them
+  -- still a real bug, fixed by resolving the root to an absolute path
+  once at the top of `scan()` and dropping the redundant `cwd`. After the
+  fix, 31 of the 33 scanned (two transcript archives exceeded the ad hoc
+  180-second sweep timeout; the shipped default is 300), 25 were clean and
+  6 had findings: 31 `generic-api-key` matches, almost all inside test
+  fixtures and a training corpus, and 2 `private-key` matches -- one
+  genuine committed TLS private key (`sentinel_os/certs/key.pem`, also
+  present in a second repository that vendors a copy of it) -- exactly the
+  shape this detector exists to catch, not a hypothetical.
+
+  `Tests/test_secrets.py` builds real git repositories in `tmp_path`
+  against the real gitleaks binary (skipped if it is not on PATH; CI
+  installs a pinned version) covering a secret still exposed after
+  removal from HEAD, deduplication of an untouched line across later
+  commits, two distinct commits of the same secret value staying two
+  findings, two distinct secrets on one line staying two findings
+  (gitleaks' own fingerprint does not include column, so this collided
+  without it), `.gitleaksignore` suppression, and the relative-root
+  regression above. `Tests/test_secrets_mutants.py` breaks the wrapper
+  fourteen ways and requires each to fail a test; one mutant from its own
+  exploratory run (dropping `--redact`) is documented, not forced, since
+  no field it touches is ever read into a finding regardless.
 
 ### Usage
 
@@ -342,6 +411,12 @@ python -m ghost_buster.cli /path/to/repo --branches --branches-base origin/devel
 # stale skip). Executes the project's tests; never installs or starts anything.
 python -m ghost_buster.cli /path/to/repo --tests
 python -m ghost_buster.cli /path/to/repo --tests --tests-python /path/to/repo/.venv/bin/python --tests-reruns 5
+# scan the checked-out branch's git history for committed secrets with
+# gitleaks (must be installed separately; never installed by this tool).
+# Read-only: never rewrites history, rotates a credential, or writes into
+# the target repository.
+python -m ghost_buster.cli /path/to/repo --secrets
+python -m ghost_buster.cli /path/to/repo --secrets --secrets-binary /opt/gitleaks/gitleaks
 ```
 
 ### `--mutate`: the proof a check is vacuous
@@ -517,17 +592,19 @@ test suite runs.
 python -m pytest Tests/ -v
 ```
 
-429 tests, 0 network calls, 0 API key required -- the semantic-layer tests
-verify the real parsing/fail-closed/injection-fencing logic via
+464 tests, 0 network calls, 0 API key required -- the semantic-layer
+tests verify the real parsing/fail-closed/injection-fencing logic via
 `StubModelClient`, the same technique `sentinel_os`'s own `interpretation/`
-package uses for its model-client tests; `test_branches.py` builds real,
-local git repositories in `tmp_path` instead, the only honest way to test
-a ref-graph check, and `test_testsuite.py` builds real pytest projects the
-same way. `test_mutation.py`, `test_gate_mutants.py`,
-`test_polish_mutants.py`, `test_branches_mutants.py`,
-`test_duplication_mutants.py` and `test_testsuite_mutants.py` run pytest
-in subprocesses against scratch copies of the project; they account for
-most of the suite's wall-clock time.
+package uses for its model-client tests. `test_branches.py`,
+`test_secrets.py` and `test_testsuite.py` build real, local git
+repositories and pytest projects in `tmp_path` instead, the only honest
+way to test a ref-graph, git-history or suite-execution check (the secrets
+suite against a real gitleaks binary, skipped if one is not on PATH).
+`test_mutation.py`, `test_gate_mutants.py`, `test_polish_mutants.py`,
+`test_branches_mutants.py`, `test_duplication_mutants.py`,
+`test_testsuite_mutants.py` and `test_secrets_mutants.py` run pytest in
+subprocesses against scratch copies of the project; they account for most
+of the suite's wall-clock time.
 
 ## Changelog
 

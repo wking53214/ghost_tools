@@ -22,6 +22,7 @@ from .testsuite import render_report as render_test_report, scan as scan_tests
 from .mechanical import run_all
 from .mutation import render_run, run_mutations
 from .schema import Finding, FindingSet, Severity
+from .secrets import render_report as render_secrets_report, scan as scan_secrets
 
 
 # Directory names never descended into. `site-packages` is the load-bearing
@@ -168,6 +169,17 @@ def main(argv: List[str] = None) -> int:
                              "at the project's own virtualenv to run with its dependencies")
     parser.add_argument("--tests-timeout", type=float, default=900.0, metavar="SECONDS",
                         help="timeout for each pytest invocation, the full run included (default 900)")
+    parser.add_argument(
+        "--secrets", action="store_true",
+        help="scan the checked-out branch's git history for committed secrets with "
+             "gitleaks (must be installed separately; never installed by this tool). "
+             "Read-only: never rewrites history, rotates a credential, or writes into "
+             "the target repository. The secret value itself never appears in a finding.",
+    )
+    parser.add_argument("--secrets-binary", default=None, metavar="PATH",
+                        help="path to the gitleaks executable (default: gitleaks on PATH)")
+    parser.add_argument("--secrets-timeout", type=float, default=300.0, metavar="SECONDS",
+                        help="timeout for the gitleaks run (default 300)")
     args = parser.parse_args(argv)
 
     if not args.path.is_dir():
@@ -213,6 +225,13 @@ def main(argv: List[str] = None) -> int:
         )
         print(render_test_report(test_report), file=sys.stderr)
         findings.extend(test_findings)
+
+    if args.secrets:
+        secrets_findings, secrets_report = scan_secrets(
+            args.path, gitleaks_path=args.secrets_binary, timeout=args.secrets_timeout,
+        )
+        print(render_secrets_report(secrets_report), file=sys.stderr)
+        findings.extend(secrets_findings)
 
     try:
         baseline = Baseline(baseline_path)
