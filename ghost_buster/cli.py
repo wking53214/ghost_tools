@@ -18,6 +18,7 @@ from typing import Iterable, List
 
 from .baseline import Baseline
 from .branches import scan as scan_branches
+from .testsuite import render_report as render_test_report, scan as scan_tests
 from .mechanical import run_all
 from .mutation import render_run, run_mutations
 from .schema import Finding, FindingSet, Severity
@@ -151,6 +152,24 @@ def main(argv: List[str] = None) -> int:
              "origin/master, main, master that resolves)",
     )
     parser.add_argument(
+        "--tests", action="store_true",
+        help="run the project's pytest suite and report every test that did not pass: "
+             "failing (MAJOR), flaky (fails in the suite, passes rerun alone; MAJOR), "
+             "blocked by a missing service/module/variable (MINOR, says what), skipped "
+             "without a reason naming a dependency (MAJOR), skipped for a dependency "
+             "that is actually present (MAJOR), skipped for an absent one "
+             "(INFORMATIONAL). Executes the project's tests; never installs or starts "
+             "anything.",
+    )
+    parser.add_argument("--tests-reruns", type=int, default=3, metavar="N",
+                        help="isolated reruns per failing test before it is called failing "
+                             "rather than flaky (default 3)")
+    parser.add_argument("--tests-python", default=None, metavar="PATH",
+                        help="interpreter to run the suite with (default: this one); point it "
+                             "at the project's own virtualenv to run with its dependencies")
+    parser.add_argument("--tests-timeout", type=float, default=900.0, metavar="SECONDS",
+                        help="timeout for each pytest invocation, the full run included (default 900)")
+    parser.add_argument(
         "--secrets", action="store_true",
         help="scan the checked-out branch's git history for committed secrets with "
              "gitleaks (must be installed separately; never installed by this tool). "
@@ -198,6 +217,15 @@ def main(argv: List[str] = None) -> int:
         else:
             print(f"ghost_buster: branch scan did not run: {branch_report.reason}", file=sys.stderr)
         findings.extend(branch_findings)
+
+    test_report = None
+    if args.tests:
+        test_findings, test_report = scan_tests(
+            args.path, python=args.tests_python, reruns=args.tests_reruns,
+            timeout=args.tests_timeout,
+        )
+        print(render_test_report(test_report), file=sys.stderr)
+        findings.extend(test_findings)
 
     if args.secrets:
         secrets_findings, secrets_report = scan_secrets(
