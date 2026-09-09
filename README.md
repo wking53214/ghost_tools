@@ -239,15 +239,24 @@ findings, report = detect_parallel_implementations(client, {
   only place in `ghost_writer` that generates new text rather than
   templating a human's own decision. Vendored from `content-polish-pipeline`
   (MIT; origin, commit and every change to the copy are recorded in
-  `PROVENANCE.md`) when that repo was retired into this one. Three filters
-  and one retry loop. Every response is checked before it becomes a
+  `PROVENANCE.md`) when that repo was retired into this one. Three filters,
+  a bounded-history repetition detector, and one retry loop. Every response is checked before it becomes a
   proposal: no first-person pronoun and no hedging word (`might`, `may`,
   `could`, `probably`, ...) in the replacement or the reasoning, and at
   least one evidence marker (a percentage, `data`, `evidence`, `showed`,
   ...) in the reasoning. The evidence check is scoped to the reasoning on
   purpose: a minimal doc replacement is not an empirical claim, and one
   that happens to carry an evidence word does not excuse a reasoning that
-  cites nothing. A rejected response is not discarded silently: its
+  cites nothing. An exact repeat of an earlier attempt in the same call is
+  rejected too: `OscillationDetector` (adapted from a second, previously
+  unmerged branch of the source repo -- see `PROVENANCE.md`) tracks the
+  last 32 attempts and flags a recurrence, surfaced as
+  `oscillation_detected` in the result and as the same "Duplicate
+  generation detected" violation text the pipeline always used. It
+  compares exactly what the pipeline's own whitespace-collapse
+  normalization gives it -- no case-folding of its own, unlike the source
+  branch, so a correction that differs only in case is not treated as a
+  repeat. A rejected response is not discarded silently: its
   violations are appended to the prompt, after the fenced untrusted block
   and never inside it, and the model is asked again, three attempts in
   total by default (`max_attempts`), each one a paid call. Empty,
@@ -266,9 +275,12 @@ findings, report = detect_parallel_implementations(client, {
   copy (each check forced true, the loop cut to one attempt, the feedback
   dropped, the verdict ignored, the patterns emptied) and requires each
   mutant to fail at least one of those tests, and
-  `Tests/test_polish_mutants.py` does the same for the vendored code against
-  its own ported suite, twenty-eight ways. `ghost-buster --mutate` reports no
-  candidate in any of these files: none of them has a shape it mutates.
+  `Tests/test_polish_mutants.py` does the same for the vendored code
+  (including `OscillationDetector`) against its own ported suite,
+  thirty-six ways. `ghost-buster --mutate` reports no candidate in
+  `Tests/test_ghost_writer.py`, and one unjudged (not a finding) candidate
+  in `Tests/test_polish.py` -- a list-literal assertion with no enum to
+  extend, so the tool cannot try a mutant against it either.
 
 ### Usage
 
@@ -321,7 +333,7 @@ test suite runs.
 python -m pytest Tests/ -v
 ```
 
-255 tests, 0 network calls, 0 API key required -- the semantic-layer tests
+272 tests, 0 network calls, 0 API key required -- the semantic-layer tests
 verify the real parsing/fail-closed/injection-fencing logic via
 `StubModelClient`, the same technique `sentinel_os`'s own `interpretation/`
 package uses for its model-client tests. `test_mutation.py`,

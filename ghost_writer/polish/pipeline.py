@@ -19,6 +19,7 @@ from .filters import (
     PersonalPronounFilter,
     SpeculativeLanguageFilter,
 )
+from .oscillation import OscillationDetector
 
 logger = logging.getLogger("ghost_writer.polish")
 
@@ -64,6 +65,7 @@ class ContentPolishPipeline:
         self.pronoun_filter = PersonalPronounFilter()
         self.speculation_filter = SpeculativeLanguageFilter()
         self.empirical_filter = EmpiricalValidationFilter()
+        self.oscillation_detector = OscillationDetector(max_history=32)
 
     def _compute_signature(self, text: str) -> str:
         """Generate HMAC-SHA384 signature for the output."""
@@ -90,11 +92,14 @@ class ContentPolishPipeline:
                 "violations": list[str] (constraint violations on last attempt),
                 "latency_duration_ms": float,
                 "payload_signature": str,
+                "oscillation_detected": bool (True if any attempt repeated
+                    a prior attempt's output within this execute() call),
             }
         """
         active_prompt = input_prompt
         start_time = time.time()
-        historical_hashes: set[str] = set()
+        self.oscillation_detector.reset()
+        oscillation_detected = False
 
         for iteration in range(1, self.max_attempts + 1):
             logger.debug(
@@ -113,6 +118,7 @@ class ContentPolishPipeline:
                     "violations": [f"LLM gateway error: {type(e).__name__}"],
                     "latency_duration_ms": round((time.time() - start_time) * 1000, 2),
                     "payload_signature": None,
+                    "oscillation_detected": oscillation_detected,
                 }
 
             normalized_response = self._normalize(raw_response)
@@ -124,18 +130,17 @@ class ContentPolishPipeline:
             )
             empirical_check = self.empirical_filter.passes(normalized_response)
 
-            # Check for duplicates (infinite loop prevention).
-            response_hash = hashlib.sha256(
-                normalized_response.encode("utf-8")
-            ).hexdigest()
-            duplicate_detected = response_hash in historical_hashes
+            # Check for repetition (infinite loop prevention).
+            repeated = self.oscillation_detector.observe(normalized_response)
+            if repeated:
+                oscillation_detected = True
 
             # All checks pass: success.
             if (
                 pronoun_check
                 and speculation_check
                 and empirical_check
-                and not duplicate_detected
+                and not repeated
             ):
                 total_latency_ms = (time.time() - start_time) * 1000.0
                 signature = self._compute_signature(normalized_response)
@@ -150,10 +155,10 @@ class ContentPolishPipeline:
                     "violations": [],
                     "latency_duration_ms": round(total_latency_ms, 2),
                     "payload_signature": signature,
+                    "oscillation_detected": oscillation_detected,
                 }
 
             # Validation failed: collect reasons and retry with feedback.
-            historical_hashes.add(response_hash)
             failures = []
 
             if not pronoun_check:
@@ -173,7 +178,7 @@ class ContentPolishPipeline:
                     "Missing empirical support (metrics, evidence, or citations)"
                 )
 
-            if duplicate_detected:
+            if repeated:
                 failures.append("Duplicate generation detected (infinite loop risk)")
 
             # Build recalibration feedback for next iteration.
@@ -198,4 +203,5 @@ class ContentPolishPipeline:
             "violations": failures,
             "latency_duration_ms": round((time.time() - start_time) * 1000, 2),
             "payload_signature": None,
+            "oscillation_detected": oscillation_detected,
         }
