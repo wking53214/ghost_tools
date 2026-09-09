@@ -82,6 +82,10 @@ class TestSpeculativeLanguageFilter(unittest.TestCase):
         result = self.filter.violations(text)
         self.assertEqual(result, sorted(result))
 
+    def test_is_clean_is_alias_of_passes(self):
+        for text in ("The system improved.", "This might work.", "I think so, probably."):
+            self.assertEqual(self.filter.is_clean(text), self.filter.passes(text))
+
 
 class TestEmpiricalValidationFilter(unittest.TestCase):
     def setUp(self):
@@ -137,6 +141,26 @@ class TestContentPolishPipeline(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["execution_status"], "SUCCESS")
         self.assertEqual(result["retry_attempts"], 2)
         self.assertIn("good result with 30% improvement", result["validated_content"])
+
+    async def test_pronoun_alone_is_rejected(self):
+        # Evidence present, no hedge: only the pronoun check can reject this.
+        mock_llm = AsyncMock(return_value="We measured a 25% improvement.")
+
+        pipeline = ContentPolishPipeline(execution_gateway=mock_llm, max_attempts=1)
+        result = await pipeline.execute("Summarize the results.")
+
+        self.assertEqual(result["execution_status"], "CRITICAL_FAILURE")
+        self.assertEqual(result["violations"], ["First-person pronouns detected: We"])
+
+    async def test_hedge_alone_is_rejected(self):
+        # Evidence present, no pronoun: only the speculation check can reject this.
+        mock_llm = AsyncMock(return_value="The data might show a 25% improvement.")
+
+        pipeline = ContentPolishPipeline(execution_gateway=mock_llm, max_attempts=1)
+        result = await pipeline.execute("Summarize the results.")
+
+        self.assertEqual(result["execution_status"], "CRITICAL_FAILURE")
+        self.assertEqual(result["violations"], ["Speculative language detected: might"])
 
     async def test_max_attempts_exhausted(self):
         mock_llm = AsyncMock(return_value="I think this might be good.")
