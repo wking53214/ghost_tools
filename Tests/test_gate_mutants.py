@@ -14,15 +14,10 @@ with the mutant named. The working tree is never modified.
 """
 from __future__ import annotations
 
-import pathlib
-import shutil
-import subprocess
-import sys
-import tempfile
-
 import pytest
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+from mutant_harness import assert_killed, run_tests_with_mutation
+
 GATE_TESTS = "Tests/test_ghost_writer.py"
 
 # (label, file, exact text to replace, replacement)
@@ -72,34 +67,14 @@ MUTANTS = [
 ]
 
 
-def _run_gate_tests_with(rel: str, old: str, new: str) -> subprocess.CompletedProcess:
-    with tempfile.TemporaryDirectory() as tmp:
-        copy = pathlib.Path(tmp) / "ghost_tools"
-        shutil.copytree(
-            ROOT, copy,
-            ignore=shutil.ignore_patterns(".git", "__pycache__", ".pytest_cache", ".ruff_cache", ".venv"),
-        )
-        target = copy / rel
-        source = target.read_text()
-        assert source.count(old) == 1, f"mutation site not found exactly once in {rel}: {old!r}"
-        target.write_text(source.replace(old, new))
-        return subprocess.run(
-            [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", GATE_TESTS],
-            cwd=copy, capture_output=True, text=True, timeout=120,
-        )
-
-
 @pytest.mark.parametrize("label,rel,old,new", MUTANTS, ids=[m[0] for m in MUTANTS])
 def test_gate_mutant_is_killed(label, rel, old, new):
-    result = _run_gate_tests_with(rel, old, new)
-    assert result.returncode != 0, (
-        f"mutant survived: {label}\nevery test in {GATE_TESTS} passed with the gate broken\n"
-        + result.stdout[-2000:]
-    )
-    assert "failed" in result.stdout, result.stdout[-2000:]
+    assert_killed(label, GATE_TESTS, run_tests_with_mutation(GATE_TESTS, rel, old, new))
 
 
 def test_gate_tests_pass_unmutated():
     """A mutant is only judged against a suite that passes as written."""
-    result = _run_gate_tests_with("ghost_writer/correct.py", "DEFAULT_MAX_ATTEMPTS = 3\n", "DEFAULT_MAX_ATTEMPTS = 3\n")
+    result = run_tests_with_mutation(
+        GATE_TESTS, "ghost_writer/correct.py", "DEFAULT_MAX_ATTEMPTS = 3\n", "DEFAULT_MAX_ATTEMPTS = 3\n",
+    )
     assert result.returncode == 0, result.stdout[-2000:]

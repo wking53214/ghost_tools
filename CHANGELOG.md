@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.6.1 (2026-09-09)
+
+### Tests
+- `Tests/test_polish_mutants.py`: 25 hand-made mutants of
+  `ghost_writer/polish` (each filter's pattern emptied, `passes()` forced
+  true, `violations()` unsorted, the empirical contract inverted, the retry
+  loop cut to one attempt, duplicate detection disabled, the gateway
+  exception uncaught, the `max_attempts` check removed, the result dict's
+  status, attempt count, content and violations falsified, the signature
+  hash downgraded), each required to fail a test in `Tests/test_polish.py`.
+  `ghost-buster --mutate --mutate-only test_polish.py` reports zero
+  candidates in that file, as it does for `test_ghost_writer.py`: no test in
+  either has a shape it mutates, so these suites are the complement.
+- The scratch-copy harness both mutant suites use is one module,
+  `Tests/mutant_harness.py`; `test_gate_mutants.py` no longer carries its
+  own copy.
+- Three mutants survived the ported `test_polish.py` as received: the
+  speculation filter's `is_clean` alias had no alias test (the other two
+  filters did), and no pipeline fixture tripped the pronoun check or the
+  speculation check alone, so forcing either to pass changed nothing.
+  Three tests added, one per gap; the three mutants are in the suite.
+- Three mutants `test_polish.py` still does not kill are recorded in the
+  new file's docstring and left out of it rather than papered over: the
+  signature's dependence on the key, the recalibration feedback text
+  (covered by `test_ghost_writer.py`), and whitespace normalization.
+
 ## 0.6.0 (2026-09-09)
 
 ### ghost_writer
