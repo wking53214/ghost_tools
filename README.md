@@ -1,4 +1,4 @@
-# ghost_tools -- v0.6
+# ghost_tools -- v0.8
 
 Four commands, one pipeline. `ghost-buster` hunts down structural problems
 in code and, with `--mutate`, proves which tests pass without checking
@@ -60,9 +60,10 @@ same `Finding` shape (`ghost_buster/schema.py`):
 
 - **Mechanical** (`ghost_buster/mechanical.py`) -- deterministic, AST-based,
   stdlib only. Every finding is `Status.CONFIRMED`; there's nothing to
-  doubt about a deterministic check. Five detectors as of v0.3:
+  doubt about a deterministic check. Six detectors as of v0.8:
   `dead_code`, `long_function`, `near_duplicate_function`,
-  `intra_function_duplicate_block`, `doc_test_count_drift`.
+  `intra_function_duplicate_block`, `doc_test_count_drift`,
+  `merge_conflict_marker`.
 
   `dead_code` was calibrated against a real, previously-unseen repo
   (ANVIL) and found two real false-positive classes on the first run:
@@ -122,6 +123,22 @@ same `Finding` shape (`ghost_buster/schema.py`):
   both required), never a documented count that looks high relative to
   the static floor -- that direction isn't confidently wrong and would
   false-positive on ordinary parametrize use.
+
+  `merge_conflict_marker` (v0.8) is the one detector here that deliberately
+  does NOT go through `ast.parse()`. A file with a genuine, unresolved
+  `<<<<<<< / ======= / >>>>>>>` triplet still in it is, in almost every
+  case, no longer valid Python -- the marker lines are not legal syntax --
+  so an AST-based version of this check would find nothing in exactly the
+  files most likely to have the problem. It reads the file as plain text
+  instead, `Severity.CRITICAL` on a match, and requires the full triplet
+  in order rather than any one marker line alone: a lone `=======` is a
+  real false-positive risk against a Setext-style Markdown H1 underline
+  (any run of `=`, coincidentally 7 long often enough to matter), the
+  same reason the widely-used `pre-commit-hooks` project's own
+  check-merge-conflict hook requires the same shape. Confirmed by running
+  it against its own module and test files after writing them: it does
+  not self-flag on its own documentation, which discusses the marker
+  strings in prose throughout.
 - **Semantic** (`ghost_buster/semantic.py`) -- backed by a real Claude API
   call (`AnthropicModelClient`, model `claude-sonnet-5`), for the class of
   ghost no static pass can see: two modules solving the same problem two
@@ -388,7 +405,7 @@ test suite runs.
 python -m pytest Tests/ -v
 ```
 
-300 tests, 0 network calls, 0 API key required -- the semantic-layer tests
+323 tests, 0 network calls, 0 API key required -- the semantic-layer tests
 verify the real parsing/fail-closed/injection-fencing logic via
 `StubModelClient`, the same technique `sentinel_os`'s own `interpretation/`
 package uses for its model-client tests; `test_branches.py` builds real,

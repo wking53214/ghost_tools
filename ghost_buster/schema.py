@@ -81,6 +81,7 @@ class Category(str, Enum):
     ARCHITECTURE = "architecture"
     VACUOUS_CHECK = "vacuous_check"    # a test that passes with the thing it names broken
     UNMERGED_BRANCH = "unmerged_branch"  # commits git's own graph says aren't on the base branch
+    MERGE_CONFLICT_MARKER = "merge_conflict_marker"  # an unresolved <<<<<<< / ======= / >>>>>>> triplet
     OTHER = "other"
 
 
