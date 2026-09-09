@@ -55,8 +55,8 @@ gate is enforced in code (`ghost_writer/report.py`'s
 
 ## ghost_buster
 
-Two independent layers, both producing the same `Finding` shape
-(`ghost_buster/schema.py`):
+Two independent layers, plus one repository-level check, all producing the
+same `Finding` shape (`ghost_buster/schema.py`):
 
 - **Mechanical** (`ghost_buster/mechanical.py`) -- deterministic, AST-based,
   stdlib only. Every finding is `Status.CONFIRMED`; there's nothing to
@@ -138,6 +138,55 @@ Two independent layers, both producing the same `Finding` shape
   required shape) fails closed to an empty finding list plus a
   `SemanticRunReport` explaining why -- never a crash, never a fabricated
   finding.
+- **Unmerged branches** (`ghost_buster/branches.py`, `--branches`) --
+  neither mechanical nor semantic in the file-content sense (there is no
+  file to parse and no judgment call to make), but deterministic and
+  `Status.CONFIRMED` like the mechanical layer, so it produces the same
+  category of finding through a different modality: read-only `git`
+  plumbing against the checkout as it sits, never a fetch, a push, or a
+  write. Flags a local or remote-tracking branch whose commits are not
+  reflected in the base branch.
+
+  The obvious approach -- is the branch an ancestor of base? -- is wrong
+  by itself: a squash merge (GitHub's default merge button) rewrites a
+  branch's whole history into one new commit on base, so the branch tip
+  is never an ancestor of anything again, even though every line it
+  changed landed. An ancestor-only check flags every squash-merged branch
+  as unmerged forever. Confirmed directly against this project's own
+  history before this detector existed: four of ghost_tools' own,
+  already-squash-merged branches would have been false positives. The fix
+  is a whole-branch patch-id comparison (see the module docstring for the
+  exact mechanism) against every commit base picked up since the branch's
+  merge-base -- a squash commit's diff is exactly the union of what the
+  branch changed, so its patch-id matches.
+
+  Two disclosed blind spots, not fixed because fixing them means the
+  network calls this whole layer exists to avoid: it cannot see a
+  branch's pull-request state at all (open, rejected, or never opened all
+  look identical to a flagged branch here), and a remote-tracking ref
+  already deleted on GitHub still reads as unmerged until the checkout
+  re-fetches with `--prune` -- measured directly: this project's own four
+  already-squash-merged branches, fetched once outside the checkout's
+  configured refspec, kept showing up as findings because neither an
+  ordinary fetch nor `--prune` touches a ref outside that refspec.
+  Findings flow through the same `Finding`/baseline pipeline as every
+  other detector, so a long-lived branch someone wants to keep can be
+  accepted into the baseline like any other finding.
+
+  `Tests/test_branches.py` builds real git repositories in `tmp_path` (a
+  ref-graph check has no honest way to be tested against parsed strings)
+  covering fast-forward merges, squash merges, a squash merge with
+  further commits on base afterward, a branch that diverges further after
+  its own squash landed, a branch whose commits net to zero diff, local
+  and remote-tracking copies of the same branch, and an explicit
+  `--branches-base` override. `ghost-buster --mutate` finds no candidate
+  in it (the same "well-shaped, therefore unexamined" situation the other
+  hand-mutant suites exist for); `Tests/test_branches_mutants.py` breaks
+  the detector twelve ways in a scratch copy and requires each mutant to
+  fail a test, naming the two mutants from its own exploratory run that
+  turned out not to be real gaps (a documented-redundant fast path, and a
+  no-op from `git merge-base`'s documented argument symmetry) rather than
+  forcing tests to exist for them.
 
 ### Usage
 
@@ -158,6 +207,12 @@ python -m ghost_buster.cli /path/to/repo --exclude some_vendored_dir
 # tree is never touched). --mutate-only narrows to test files matching a string.
 python -m ghost_buster.cli /path/to/repo --mutate --mutate-verbose
 python -m ghost_buster.cli /path/to/repo --mutate --mutate-only test_policy --json > findings.json
+
+# flag branches with commits not reflected in the base branch (read-only git
+# plumbing; never fetches). Defaults to the first of origin/main, origin/master,
+# main, master that resolves; --branches-base overrides.
+python -m ghost_buster.cli /path/to/repo --branches
+python -m ghost_buster.cli /path/to/repo --branches --branches-base origin/develop
 ```
 
 ### `--mutate`: the proof a check is vacuous
@@ -333,11 +388,13 @@ test suite runs.
 python -m pytest Tests/ -v
 ```
 
-272 tests, 0 network calls, 0 API key required -- the semantic-layer tests
+300 tests, 0 network calls, 0 API key required -- the semantic-layer tests
 verify the real parsing/fail-closed/injection-fencing logic via
 `StubModelClient`, the same technique `sentinel_os`'s own `interpretation/`
-package uses for its model-client tests. `test_mutation.py`,
-`test_gate_mutants.py` and `test_polish_mutants.py` run pytest in
+package uses for its model-client tests; `test_branches.py` builds real,
+local git repositories in `tmp_path` instead, the only honest way to test
+a ref-graph check. `test_mutation.py`, `test_gate_mutants.py`,
+`test_polish_mutants.py` and `test_branches_mutants.py` run pytest in
 subprocesses against scratch copies of the project; they account for most
 of the suite's wall-clock time.
 
