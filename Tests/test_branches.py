@@ -234,6 +234,55 @@ def test_remote_only_branch_with_no_local_copy_is_flagged(tmp_path):
     assert "origin/topic" in findings[0].summary
 
 
+def test_clone_shaped_checkout_does_not_count_origin_head_as_a_branch(tmp_path):
+    # A real `git clone` sets refs/remotes/origin/HEAD, which git shortens
+    # to the bare word "origin". Measured on the first whole-library run:
+    # every one of 37 repos reported one phantom branch because of it.
+    upstream = _init_repo(tmp_path / "upstream")
+    _git(tmp_path, "clone", "-q", str(upstream), str(tmp_path / "clone"))
+    clone = tmp_path / "clone"
+    assert (clone / ".git").exists()
+
+    findings, report = scan(clone)
+
+    assert findings == []
+    assert report.branches_scanned == 0
+
+
+def test_branch_whose_diff_is_not_valid_utf8_is_still_scanned(tmp_path):
+    # `git diff` output with a byte that is not UTF-8 (a Windows-1252 smart
+    # quote in a transcript dump, measured on the first whole-library run)
+    # must not raise out of a read-only scan, and the branch must still be
+    # classified: here, squash-absorbed, so not flagged.
+    repo = _init_repo(tmp_path / "repo")
+    _git(repo, "checkout", "-q", "-b", "feature")
+    (repo / "b.txt").write_bytes(b"smart quote \x93here\x94\n")
+    _git(repo, "add", "b.txt")
+    _git(repo, "commit", "-q", "-m", "add b with cp1252 bytes")
+    _git(repo, "checkout", "-q", "main")
+    _git(repo, "merge", "-q", "--squash", "feature")
+    _git(repo, "commit", "-q", "-m", "squash feature")
+
+    findings, report = scan(repo)
+
+    assert report.ran is True
+    assert findings == []
+
+
+def test_unmerged_branch_whose_diff_is_not_valid_utf8_is_still_flagged(tmp_path):
+    repo = _init_repo(tmp_path / "repo")
+    _git(repo, "checkout", "-q", "-b", "orphan")
+    (repo / "b.txt").write_bytes(b"\x93\x94\n")
+    _git(repo, "add", "b.txt")
+    _git(repo, "commit", "-q", "-m", "orphan with cp1252 bytes")
+    _git(repo, "checkout", "-q", "main")
+
+    findings, _ = scan(repo)
+
+    assert len(findings) == 1
+    assert "orphan" in findings[0].summary
+
+
 def test_explicit_base_branch_is_honored_over_the_default_candidates(tmp_path):
     repo = _init_repo(tmp_path / "repo")
     _git(repo, "checkout", "-q", "-b", "release")

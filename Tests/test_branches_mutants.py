@@ -33,6 +33,14 @@ deleting it) had no test, and the code path that decides "nothing to
 compare, treat as absorbed" for that exact case had no test pinning it
 either. Both mutants are included below and both are now killed.
 
+Two more were added after the first whole-library run (37 repositories),
+which found both: a transcript-dump repo whose diff contained a
+Windows-1252 byte crashed the scan outright (and, with only the exception
+swallowed, would have read as silently absorbed instead -- a false
+negative, worse than the crash), and every clone-shaped checkout counted
+refs/remotes/origin/HEAD as a phantom branch because git shortens that
+ref to the bare word "origin".
+
 The working tree is never modified.
 """
 from __future__ import annotations
@@ -71,14 +79,20 @@ MUTANTS = [
      '            if sha in seen_shas:\n                continue\n            seen_shas.add(sha)\n',
      '            seen_shas.add(sha)\n'),
     ("base branch not excluded from its own scan list", _B,
-     '            if name.endswith("/HEAD") or _short_name(name) == base_name:\n                continue\n',
-     '            if name.endswith("/HEAD"):\n                continue\n'),
+     '            if name == "origin/HEAD" or _short_name(name) == base_name:\n                continue\n',
+     '            if name == "origin/HEAD":\n                continue\n'),
     ("severity hardcoded to MINOR instead of MAJOR", _B,
      '        severity=Severity.MAJOR,\n', '        severity=Severity.MINOR,\n'),
     ("category hardcoded wrong", _B,
      '        category=Category.UNMERGED_BRANCH,\n', '        category=Category.OTHER,\n'),
     ("git-repository check always true (masks a non-git directory)", _B,
      '    return _run(root, ["rev-parse", "--git-dir"]) is not None\n', '    return True\n'),
+    ("decode errors no longer replaced (a non-UTF-8 diff silently reads as absorbed)", _B,
+     '            capture_output=True, text=True, errors="replace", timeout=timeout,\n',
+     '            capture_output=True, text=True, timeout=timeout,\n'),
+    ("origin/HEAD counted as a branch on every clone-shaped checkout", _B,
+     '            if name == "origin/HEAD" or _short_name(name) == base_name:\n',
+     '            if _short_name(name) == base_name:\n'),
     ("base-branch resolution never fails (masks a missing base branch)", _B,
      '    for candidate in candidates:\n'
      '        if candidate and _run(root, ["rev-parse", "--verify", "--quiet", candidate]) is not None:\n'
