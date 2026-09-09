@@ -188,7 +188,12 @@ same `Finding` shape (`ghost_buster/schema.py`):
   ordinary fetch nor `--prune` touches a ref outside that refspec.
   Findings flow through the same `Finding`/baseline pipeline as every
   other detector, so a long-lived branch someone wants to keep can be
-  accepted into the baseline like any other finding.
+  accepted into the baseline like any other finding. The first run across
+  the whole library (37 repositories, v0.8.1) found two defects in this
+  check and fixed them the same day: a non-UTF-8 diff crashed the scan,
+  and `refs/remotes/origin/HEAD` was counted as a phantom branch on every
+  clone-shaped checkout. Both are in the CHANGELOG with the measurement
+  that found them.
 
   `Tests/test_branches.py` builds real git repositories in `tmp_path` (a
   ref-graph check has no honest way to be tested against parsed strings)
@@ -405,7 +410,7 @@ test suite runs.
 python -m pytest Tests/ -v
 ```
 
-323 tests, 0 network calls, 0 API key required -- the semantic-layer tests
+328 tests, 0 network calls, 0 API key required -- the semantic-layer tests
 verify the real parsing/fail-closed/injection-fencing logic via
 `StubModelClient`, the same technique `sentinel_os`'s own `interpretation/`
 package uses for its model-client tests; `test_branches.py` builds real,

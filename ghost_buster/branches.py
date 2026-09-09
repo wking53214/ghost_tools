@@ -102,12 +102,17 @@ def _run(root: Path, args: List[str], *, input_text: Optional[str] = None,
     the same discipline semantic.py's _run_json_check uses for its own
     external call. Never raises into a caller that didn't ask for git's
     own error handling."""
+    # errors="replace": a diff or `git show` of a file that is not valid
+    # UTF-8 (a Windows-1252 smart quote in a transcript dump, measured on
+    # the first whole-library run) must not raise out of a read-only scan.
+    # A replaced byte still yields a deterministic patch-id for the same
+    # input, which is all the squash check needs.
     try:
         result = subprocess.run(
             ["git", *args], cwd=root, input=input_text,
-            capture_output=True, text=True, timeout=timeout,
+            capture_output=True, text=True, errors="replace", timeout=timeout,
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except (OSError, subprocess.TimeoutExpired, ValueError):
         return None
     if result.returncode != 0:
         return None
@@ -155,17 +160,23 @@ def _list_branches(root: Path, base: str) -> List[str]:
     base_name = _short_name(base)
     seen_shas: Set[str] = set()
     names: List[str] = []
-    for ref_root, prefix in (("refs/heads", ""), ("refs/remotes/origin", "origin/")):
-        out = _run(root, ["for-each-ref", "--format=%(refname:short) %(objectname)", ref_root])
+    # Full refnames, shortened here, not by git: `%(refname:short)` renders
+    # refs/remotes/origin/HEAD as the bare word "origin", which slipped past
+    # an endswith("/HEAD") filter and was counted as a branch on every
+    # clone-shaped checkout (measured: 37 of 37 repos on the first
+    # whole-library run reported one phantom branch each).
+    for ref_root, prefix in (("refs/heads/", ""), ("refs/remotes/origin/", "origin/")):
+        out = _run(root, ["for-each-ref", "--format=%(refname) %(objectname)", ref_root.rstrip("/")])
         if out is None:
             continue
         for line in out.splitlines():
             if not line.strip():
                 continue
-            name, _, sha = line.rpartition(" ")
-            if not name or not sha:
+            refname, _, sha = line.rpartition(" ")
+            if not refname.startswith(ref_root) or not sha:
                 continue
-            if name.endswith("/HEAD") or _short_name(name) == base_name:
+            name = prefix + refname[len(ref_root):]
+            if name == "origin/HEAD" or _short_name(name) == base_name:
                 continue
             if sha in seen_shas:
                 continue

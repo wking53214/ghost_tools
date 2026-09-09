@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.8.1 (2026-09-09)
+
+### ghost_buster
+Two defects in `--branches`, both found by the first run across the whole
+library (37 repositories) and both fixed the same day:
+- **A non-UTF-8 diff crashed the scan.** A transcript-dump repo's branch
+  diff carried a Windows-1252 smart quote; `git diff` output decoded as
+  UTF-8 raised out of the subprocess call, taking every other detector's
+  findings for that repo down with it. Git output is now decoded with
+  `errors="replace"`, which is deterministic for the same input and so
+  still yields a stable patch-id. The exception is also caught as
+  defense-in-depth, but note what that alone would have done: an
+  unreadable diff would have read as "nothing to compare, absorbed" -- a
+  false negative, worse than the crash. The regression test pins the
+  branch being *flagged*, not merely the scan not raising.
+- **Every clone-shaped checkout counted one phantom branch.** A real
+  `git clone` sets `refs/remotes/origin/HEAD`, which `%(refname:short)`
+  renders as the bare word `origin`, slipping past an `endswith("/HEAD")`
+  filter. It was always an ancestor of base, so it never produced a
+  finding, but it was compared on every run (37 of 37 repos reported
+  "compared 1 branch" on a checkout with only `main`). Refs are now read
+  in full and shortened by the detector itself.
+- Three tests added; two mutants added to `Tests/test_branches_mutants.py`,
+  one per fix, each confirmed killed only by its new test.
+- Tests: 323 -> 328.
+
 ## 0.7.0 (2026-09-09)
 
 ### ghost_buster
