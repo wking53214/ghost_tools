@@ -37,6 +37,9 @@ blackhole-extrapolator = "blackhole_extrapolator.cli:main"
 [tool.setuptools]
 packages = ["ghost_buster", "ghost_writer", "ghost_writer.polish", "blackhole_extrapolator"]
 
+[tool.setuptools.package-data]
+"ghost_writer.polish" = ["LICENSE"]
+
 [project.optional-dependencies]
 semantic = ["anthropic"]
 dev = ["pytest>=8"]
