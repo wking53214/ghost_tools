@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Iterable, List
 
 from .baseline import Baseline
+from .branches import scan as scan_branches
 from .mechanical import run_all
 from .mutation import render_run, run_mutations
 from .schema import Finding, FindingSet, Severity
@@ -118,6 +119,20 @@ def main(argv: List[str] = None) -> int:
                         help="restrict mutation to test files whose path contains this")
     parser.add_argument("--mutate-verbose", action="store_true",
                         help="also list killed mutants and candidates that could not be judged")
+    parser.add_argument(
+        "--branches", action="store_true",
+        help="flag local/remote-tracking branches with commits not reflected in the "
+             "base branch (fast-forward, ordinary merge, or squash all recognized). "
+             "Read-only git plumbing against the checkout as it sits: never fetches, "
+             "never pushes, never queries GitHub, so it cannot see a branch's "
+             "pull-request state, and a remote-tracking ref already deleted upstream "
+             "still reads as unmerged until this checkout re-fetches with --prune.",
+    )
+    parser.add_argument(
+        "--branches-base", default=None, metavar="REF",
+        help="base branch to compare against (default: first of origin/main, "
+             "origin/master, main, master that resolves)",
+    )
     args = parser.parse_args(argv)
 
     if not args.path.is_dir():
@@ -144,6 +159,17 @@ def main(argv: List[str] = None) -> int:
             timeout=args.mutate_timeout, only=args.mutate_only,
         )
         findings.extend(mutation_run.findings)
+
+    if args.branches:
+        branch_findings, branch_report = scan_branches(args.path, args.branches_base)
+        if branch_report.ran:
+            print(
+                f"ghost_buster: branch scan compared {branch_report.branches_scanned} "
+                f"branch(es) against '{branch_report.base_branch}'", file=sys.stderr,
+            )
+        else:
+            print(f"ghost_buster: branch scan did not run: {branch_report.reason}", file=sys.stderr)
+        findings.extend(branch_findings)
 
     try:
         baseline = Baseline(baseline_path)
