@@ -82,6 +82,7 @@ class Category(str, Enum):
     VACUOUS_CHECK = "vacuous_check"    # a test that passes with the thing it names broken
     UNMERGED_BRANCH = "unmerged_branch"  # commits git's own graph says aren't on the base branch
     MERGE_CONFLICT_MARKER = "merge_conflict_marker"  # an unresolved <<<<<<< / ======= / >>>>>>> triplet
+    COMMITTED_SECRET = "committed_secret"  # a live-looking credential gitleaks found in git history
     OTHER = "other"
 
 

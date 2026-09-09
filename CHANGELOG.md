@@ -1,5 +1,63 @@
 # Changelog
 
+## 0.10.0 (2026-09-09)
+
+### ghost_buster
+- **New repository-level check `--secrets`** (`ghost_buster/secrets.py`,
+  detector `committed_secret`, category `COMMITTED_SECRET`): shells out to
+  gitleaks against the checked-out branch's git history and reports every
+  committed credential as `Severity.CRITICAL`. gitleaks must be installed
+  separately -- nothing here installs it, and a missing binary reports
+  "did not run" with an install pointer rather than a clean scan.
+  `--secrets-binary` points at a non-PATH install; `--secrets-timeout`
+  bounds the run (default 300s).
+- **History, not the working tree.** A secret "removed" by deleting the
+  line in a later commit is still in history and still readable by anyone
+  who can clone the repo. Scanning current file content the way every
+  mechanical.py detector does would pass that repository clean.
+- **The secret value never reaches a finding.** gitleaks runs with
+  `--redact` (confirmed: its `Secret` and `Match` fields come back as the
+  literal text `REDACTED`), and this module never reads either field
+  anyway -- only rule id, description, file, line, column, commit and
+  fingerprint. This is load-bearing, not caution: `--accept` writes
+  findings into `.ghost_baseline.json`, which is meant to be committed, so
+  a secret in a finding would mean committing the leak a second time
+  inside the file whose purpose is to make findings inert.
+- **A non-git directory is a hard stop, not a clean scan.** Measured
+  directly: gitleaks given a directory with no `.git` logs an error to
+  stderr but still exits 0 and writes an empty report, indistinguishable
+  by exit code or content from a real clean scan. `scan()` runs `git
+  rev-parse --git-dir` itself before ever invoking gitleaks. Genuine
+  gitleaks failures (bad path, bad flag, unwritable report path) were
+  confirmed to still exit non-zero even with `--exit-code 0` in effect,
+  and are reported as "did not run" with gitleaks' own stderr.
+- **A real bug the dogfood run caught, fixed before shipping.** The first
+  pass passed gitleaks `--source <root>` while also setting the
+  subprocess's own working directory to `root`, so a relative root
+  resolved twice (`root/root`) and the scan failed outright on five
+  repositories. Fixed by resolving the root once at the top of `scan()`
+  and dropping the redundant `cwd`; `Tests/test_secrets.py` pins it with a
+  relative-root regression test.
+- **Library sweep, 33 repositories.** 31 scanned (two transcript-archive
+  repos exceeded the ad hoc 180-second timeout used for the sweep; the
+  shipped default is 300). 25 clean. 33 findings across 6 repositories:
+  31 `generic-api-key` matches, almost all inside test fixtures and a
+  training corpus, and 2 `private-key` matches -- one genuine committed
+  TLS private key at `sentinel_os/certs/key.pem`, present in a second
+  repository that vendors a copy of it. Placeholder and already-rotated
+  fixture values are silenced at the source with a `.gitleaksignore`
+  entry, which gitleaks honors before this module ever sees the finding
+  (confirmed directly); no suppression logic beyond the shared baseline
+  lives here.
+- CI installs a pinned gitleaks (8.21.2) so `Tests/test_secrets.py` and
+  `Tests/test_secrets_mutants.py` actually run instead of skipping; both
+  skip themselves when the binary is absent locally.
+- 20 tests and `Tests/test_secrets_mutants.py` (14 mutants, all killed).
+  One mutant from the exploratory run is documented rather than forced:
+  dropping `--redact` changes nothing observable through `scan()`, since
+  no field it touches is ever read into a finding.
+- Tests: 353 -> 387.
+
 ## 0.9.0 (2026-09-09)
 
 ### ghost_buster
