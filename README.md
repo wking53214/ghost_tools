@@ -55,8 +55,8 @@ gate is enforced in code (`ghost_writer/report.py`'s
 
 ## ghost_buster
 
-Two independent layers, plus two repository-level checks, all producing the
-same `Finding` shape (`ghost_buster/schema.py`):
+Two independent layers, plus three repository-level checks, all producing
+the same `Finding` shape (`ghost_buster/schema.py`):
 
 - **Mechanical** (`ghost_buster/mechanical.py`) -- deterministic, AST-based,
   stdlib only. Every finding is `Status.CONFIRMED`; there's nothing to
@@ -240,6 +240,76 @@ same `Finding` shape (`ghost_buster/schema.py`):
   turned out not to be real gaps (a documented-redundant fast path, and a
   no-op from `git merge-base`'s documented argument symmetry) rather than
   forcing tests to exist for them.
+- **Test status** (`ghost_buster/testsuite.py`, `--tests`) -- runs the
+  project's own pytest suite and reports every test that did not pass,
+  classified by what the outcome means rather than by pytest's four
+  words for it. Opt-in, because it executes the project's code; it never
+  installs a package, starts a service, or sets a variable, and the scan
+  itself writes nothing into the project (no cache, no bytecode -- the
+  project's tests may still have their own side effects; sentinel_os's
+  leave a `fortress_audit.log` behind).
+
+  A test that fails every time is a **failing test** (MAJOR). A test that
+  fails in the suite and passes when rerun alone, up to `--tests-reruns`
+  times (default 3, stopping at the first pass), is **flaky** (MAJOR):
+  order-dependent, polluted by another test, or intermittent, and either
+  way not believed when it fails. A test that fails because the
+  environment lacks something it needs is **blocked** (MINOR), and the
+  finding names what: a service that refused the connection, a module
+  that is not installed, an environment variable that is not set, an
+  executable that is not on the machine. Blocked tests are not rerun; a
+  missing service does not appear between attempts. A skipped test has
+  nothing to rerun, so its reason is read instead: a reason naming an
+  external dependency is recorded as INFORMATIONAL so the count stays
+  visible; a skip with no reason, or a reason like "TODO" or "broken"
+  that names nothing the environment could provide, is MAJOR (a test
+  switched off, not a test waiting); and a skip whose named module or
+  variable is actually present when the scan runs is a **stale skip**,
+  MAJOR (the dependency arrived and the test never came back). An
+  `xfail` that passes is a stale expectation, MAJOR. A test module that
+  cannot be collected is reported like a failing test, or as blocked when
+  the import names a missing dependency.
+
+  Outcomes are read through a small pytest plugin (written to a temporary
+  directory, loaded with `-p`) that records one JSON line per test
+  phase, the same hook pytest's junit writer uses; the terminal summary
+  is never parsed and the junit XML does not carry node ids, which the
+  reruns need. `--tests-python` points the run at the project's own
+  virtualenv so it executes with its own dependencies.
+
+  Whether a failure is "external" is a heuristic over text, and the
+  vocabulary was calibrated on four real suites before this shipped,
+  each change measured: a named module that exists as a file inside the
+  project reads as a **path defect** (MAJOR, with the file's location)
+  rather than a missing dependency -- gsa-815's 17 uncollectable test
+  modules first looked like that case and turned out not to be (its
+  `DEPENDENCIES.md` lists the missing modules as owed by a sibling
+  repository, so blocked is the right reading and the rule correctly
+  stays silent there; it is pinned by a fixture with a real
+  repository-local module instead); observe-perceive's 47 skips of the
+  form "AUGUR checkout not available"
+  read as naming nothing until a resource pattern existed; sentinel_os's
+  18 setup errors on a missing `/usr/local/bin/twin_ensure_services` read
+  as failing until an absolute path under a system executable directory
+  counted as a tool (a missing relative fixture file still does not: that
+  is the repository's own defect). Failure text is classified only from
+  its error lines, never the source pytest walked to reach them, because
+  a genuine assertion failure in `test_server.py` mentions "server" on
+  every line. The remaining blind spots are stated in every finding that
+  depends on them: a failure reported as a bare assertion whose real
+  cause is a missing service reads as failing, a named service cannot be
+  probed for reachability and is not, and a skip condition is not parsed
+  (only its reason is read).
+
+  `Tests/test_testsuite.py` builds real pytest projects in `tmp_path`
+  covering every shape above, plus the did-not-run cases (no tests, an
+  interpreter without pytest, a suite that exceeds `--tests-timeout`) and
+  a check that the scan leaves no cache or bytecode behind.
+  `Tests/test_testsuite_mutants.py` breaks the scanner twenty-two ways and
+  requires each to fail a test; its first exploratory run found one
+  survivor (classifying the whole traceback instead of its error lines
+  changed nothing the fixture project could see), fixed by adding the
+  discriminating shape to the fixture before this shipped.
 - **Committed secrets** (`ghost_buster/secrets.py`, `--secrets`) --
   shells out to [gitleaks](https://github.com/gitleaks/gitleaks) (must be
   installed separately; nothing here installs it) against the checked-out
@@ -336,6 +406,11 @@ python -m ghost_buster.cli /path/to/repo --mutate --mutate-only test_policy --js
 python -m ghost_buster.cli /path/to/repo --branches
 python -m ghost_buster.cli /path/to/repo --branches --branches-base origin/develop
 
+# run the project's pytest suite and classify every test that did not pass
+# (failing / flaky / blocked by a named dependency / skipped without cause /
+# stale skip). Executes the project's tests; never installs or starts anything.
+python -m ghost_buster.cli /path/to/repo --tests
+python -m ghost_buster.cli /path/to/repo --tests --tests-python /path/to/repo/.venv/bin/python --tests-reruns 5
 # scan the checked-out branch's git history for committed secrets with
 # gitleaks (must be installed separately; never installed by this tool).
 # Read-only: never rewrites history, rotates a credential, or writes into
@@ -517,15 +592,17 @@ test suite runs.
 python -m pytest Tests/ -v
 ```
 
-387 tests, 0 network calls, 0 API key required -- the semantic-layer tests
-verify the real parsing/fail-closed/injection-fencing logic via
+464 tests, 0 network calls, 0 API key required -- the semantic-layer
+tests verify the real parsing/fail-closed/injection-fencing logic via
 `StubModelClient`, the same technique `sentinel_os`'s own `interpretation/`
-package uses for its model-client tests; `test_branches.py` and
-`test_secrets.py` build real, local git repositories in `tmp_path` instead,
-the only honest way to test a ref-graph or git-history check (the latter
-against a real gitleaks binary, skipped if one is not on PATH).
+package uses for its model-client tests. `test_branches.py`,
+`test_secrets.py` and `test_testsuite.py` build real, local git
+repositories and pytest projects in `tmp_path` instead, the only honest
+way to test a ref-graph, git-history or suite-execution check (the secrets
+suite against a real gitleaks binary, skipped if one is not on PATH).
 `test_mutation.py`, `test_gate_mutants.py`, `test_polish_mutants.py`,
-`test_branches_mutants.py` and `test_secrets_mutants.py` run pytest in
+`test_branches_mutants.py`, `test_duplication_mutants.py`,
+`test_testsuite_mutants.py` and `test_secrets_mutants.py` run pytest in
 subprocesses against scratch copies of the project; they account for most
 of the suite's wall-clock time.
 
