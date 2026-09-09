@@ -44,3 +44,59 @@ Not copied: `README.md`, `pyproject.toml`, `.gitignore`, that repo's
 - **Verification at the time of vendoring:** the source suite (23) passed
   at commit `44bf225`; the ported suite passes here; ghost_tools went from
   167 to 220 tests (23 ported, 15 gate tests, 15 mutant checks).
+
+## `ghost_writer/polish/oscillation.py` (2026-09-09)
+
+- **Source:** `wking53214/content-polish-pipeline`, branch
+  `claude/ats-oscillation-detection-qs1k74`, commit
+  `b0740bf3d827a30c339c5f54e1a14432548d2689` (2026-08-30, "Integrate
+  OscillationDetector: bounded-history repetition detection"). This branch
+  was never merged and had no pull request against that repo; it sat
+  alongside `main` when the repo was retired and archived, and was found
+  during a branch audit after the fact.
+- **Why:** it refactors the same duplicate-generation check the vendored
+  pipeline already carried (an unbounded `set` of response hashes) into a
+  reusable, independently-testable `OscillationDetector` class with a
+  bounded history. The pipeline's own retry loop never needed the bound
+  (`ghost_writer.correct` caps attempts at 3), but the class is a real
+  improvement over an inline hash set for any other caller, and the source
+  package (`max_attempts` default of 5, and reusable outside this one
+  gate) is exactly that kind of caller. `ghost_writer/polish/pipeline.py`
+  now uses it in place of the inline `historical_hashes` set it had.
+- **Deliberate deviation from the branch, not carried forward:** the
+  source's `observe()` normalized its input itself (`.strip().lower()`)
+  before comparing. The vendored pipeline already normalizes a response
+  (whitespace-collapse only, case-preserving) before any duplicate check
+  ever sees it; stacking a second, case-insensitive normalization on top
+  would make two proposals that differ only in capitalization count as
+  the same output, a real behavior change nothing asked for and nothing
+  in the source branch's own tests argued for. The vendored detector
+  compares exactly what it is given; normalization stays the caller's
+  decision, as it already was.
+
+| Source file | Copied to | Changes in the copy |
+|---|---|---|
+| `content_polish_pipeline/oscillation.py` | `ghost_writer/polish/oscillation.py` | attribution header added; internal `.strip().lower()` normalization removed (see above); `deque[str]` type hint added; docstring rewritten to explain the deviation and reference this entry |
+
+`ghost_writer/polish/pipeline.py` and `__init__.py` were edited, not
+replaced: the inline `historical_hashes: set[str]` block and its
+`hashlib.sha256` hashing are gone, replaced by an
+`OscillationDetector(max_history=32)` instance, reset once per
+`execute()` call; every result path gained an `oscillation_detected`
+field; the "Duplicate generation detected" violation text is unchanged.
+
+`content_polish_pipeline/__init__.py`'s export of `OscillationDetector`
+and the source branch's README changes were not carried over -- the class
+is exported from `ghost_writer/polish/__init__.py` instead, and this repo's
+own README documents it in place of that branch's README.
+
+Verification at the time of vendoring: the ported pipeline suite
+(`Tests/test_polish.py`) passed unchanged before this change (proving the
+refactor is behavior-preserving where it should be), then gained new
+tests for `OscillationDetector` itself and for the new
+`oscillation_detected` field; `Tests/test_polish_mutants.py` gained eight
+mutants for the new code and the rewired pipeline wiring, all killed.
+ghost_tools went from 255 to 272 tests.
+
+The branch itself was left in place on the (now archived) source repo as
+part of its frozen history; it was not deleted.

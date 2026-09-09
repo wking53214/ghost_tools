@@ -2,18 +2,29 @@
 break ghost_writer/polish one way at a time in a scratch copy of the project
 and run only that file. Every mutant here must be killed.
 
-ghost_buster --mutate reported zero candidates in test_polish.py (no test
-in it has a shape the tool mutates), so this is the hand-made complement,
-the same arrangement test_gate_mutants.py has for the gate tests. The list
-is only what test_polish.py kills on its own, and as of 0.6.2 that is
-every mutant written for this code: nothing is held back as a known
-survivor. Six of them survived the ported suite as received -- the
-speculation filter's is_clean alias, the pipeline's pronoun and
-speculation checks taken singly (every fixture that tripped one also
-tripped another filter), the signature's dependence on the key, the
-recalibration feedback text, and whitespace normalization -- and are here
-because 0.6.1 and 0.6.2 added the tests that kill them. Adding a mutant
-here without a test that kills it turns this file red.
+ghost_buster --mutate reports one candidate in test_polish.py --
+test_history_is_bounded's list-literal assertion -- and reports it
+unjudged, not a finding: it has no enum or collection to extend, so it
+cannot try a mutant. Every other test in the file has no shape the tool
+examines at all. Either way the tool cannot vouch for this code, so this
+is the hand-made complement, the same arrangement test_gate_mutants.py
+has for the gate tests.
+
+The list is only what test_polish.py kills on its own, and as of 0.6.3
+that is every mutant written for this code: nothing is held back as a
+known survivor. Six of the pre-0.6.3 mutants survived the ported suite as
+received -- the speculation filter's is_clean alias, the pipeline's
+pronoun and speculation checks taken singly (every fixture that tripped
+one also tripped another filter), the signature's dependence on the key,
+the recalibration feedback text, and whitespace normalization -- and are
+here because 0.6.1 and 0.6.2 added the tests that kill them. 0.6.3 added
+ghost_writer/polish/oscillation.py, a bounded-history repetition detector
+adapted from a second, previously unmerged branch of the source repo
+(content-polish-pipeline#claude/ats-oscillation-detection-qs1k74; see
+PROVENANCE.md), replacing the pipeline's inline duplicate-hash set; its
+mutants and the pipeline-wiring mutants that replaced the old
+duplicate-detection mutant are new in this version. Adding a mutant here
+without a test that kills it turns this file red.
 
 A mutant that survives is a test-suite defect, reported as a failure with
 the mutant named. The working tree is never modified.
@@ -26,6 +37,7 @@ from mutant_harness import assert_killed, run_tests_with_mutation
 
 POLISH_TESTS = "Tests/test_polish.py"
 _F = "ghost_writer/polish/filters.py"
+_O = "ghost_writer/polish/oscillation.py"
 _P = "ghost_writer/polish/pipeline.py"
 
 # (label, file, exact text to replace, replacement)
@@ -87,9 +99,34 @@ MUTANTS = [
     ("pipeline: empirical check forced true", _P,
      "            empirical_check = self.empirical_filter.passes(normalized_response)\n",
      "            empirical_check = True\n"),
-    ("pipeline: duplicate detection disabled", _P,
-     "            duplicate_detected = response_hash in historical_hashes\n",
-     "            duplicate_detected = False\n"),
+    ("pipeline: repetition check forced false", _P,
+     "            repeated = self.oscillation_detector.observe(normalized_response)\n",
+     "            repeated = False\n            self.oscillation_detector.observe(normalized_response)\n"),
+    ("pipeline: oscillation_detected never latches", _P,
+     "            if repeated:\n                oscillation_detected = True\n",
+     "            if repeated:\n                pass\n"),
+    ("pipeline: detector not reset between execute() calls", _P,
+     "        self.oscillation_detector.reset()\n",
+     ""),
+    ("oscillation: observe() never reports a repeat", _O,
+     "        repeated = value in self.history\n",
+     "        repeated = False\n"),
+    ("oscillation: observe() does not grow history", _O,
+     "        self.history.append(value)\n        return repeated\n",
+     "        return repeated\n"),
+    ("oscillation: reset() does not clear history", _O,
+     "        self.history.clear()\n",
+     "        pass\n"),
+    ("oscillation: max_history validation removed", _O,
+     "        if max_history < 1:\n"
+     "            raise ValueError(f\"max_history must be >= 1, got {max_history}\")\n",
+     ""),
+    ("oscillation: history bound not enforced", _O,
+     "        self.history: deque[str] = deque(maxlen=max_history)\n",
+     "        self.history: deque[str] = deque()\n"),
+    ("oscillation: get_history() returns the live deque", _O,
+     "        return list(self.history)\n",
+     "        return self.history\n"),
     ("pipeline: gateway exception no longer caught", _P,
      "            try:\n                raw_response = await self.gateway(active_prompt)\n"
      "            except Exception as e:\n",

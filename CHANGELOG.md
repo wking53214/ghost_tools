@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.6.3 (2026-09-09)
+
+### ghost_writer
+- **`OscillationDetector`**, a bounded-history repetition check, replaces
+  the vendored pipeline's inline `set` of response hashes for detecting a
+  repeated proposal within one `propose_correction` call. Adapted from a
+  second, previously unmerged branch of `content-polish-pipeline`
+  (`claude/ats-oscillation-detection-qs1k74`, never opened as a pull
+  request there, found during a branch audit after the repo's retirement
+  and archival). `PROVENANCE.md` records the source commit and the one
+  deliberate deviation: the source's detector lowercased its input before
+  comparing, and this copy does not -- the vendored pipeline already
+  normalizes a response before any duplicate check sees it, and stacking
+  a second, case-insensitive normalization on top would treat two
+  proposals differing only in capitalization as the same output, a real
+  behavior change nothing asked for.
+- Every `ContentPolishPipeline.execute()` result now carries an
+  `oscillation_detected` field. The "Duplicate generation detected"
+  violation text, `correct.py`'s consumption of the result, and
+  `CorrectionProposal`'s shape are all unchanged.
+- `Tests/test_polish.py` gained a unit-test class for `OscillationDetector`
+  and two pipeline tests for the new field, including one that would fail
+  if `execute()` reset only its own `oscillation_detected` flag and not
+  the detector's own history between calls.
+  `Tests/test_polish_mutants.py` gained eight mutants for the new class
+  and the rewired pipeline code, replacing the one mutant that targeted
+  the now-removed inline hash set; all are killed. `ghost-buster --mutate`
+  now reports one candidate in `test_polish.py` (a list-literal assertion
+  in the new detector tests) and reports it unjudged, not a finding.
+- Tests: 255 -> 272.
+
 ## 0.6.2 (2026-09-09)
 
 ### Tests

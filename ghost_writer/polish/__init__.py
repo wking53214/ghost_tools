@@ -6,10 +6,12 @@ retired into this one. The MIT notice is in LICENSE beside this file; the
 record of what was copied and what changed is in PROVENANCE.md at the
 ghost_tools root.
 
-Three filters, each exposing ``passes(text) -> bool``, and a retry loop
-(``ContentPolishPipeline``) that calls an async gateway, runs the filters,
-and feeds the violations back into the prompt until the output passes or
-``max_attempts`` is spent. ghost_writer.correct is the only consumer.
+Three filters, each exposing ``passes(text) -> bool``, an
+``OscillationDetector`` that flags a repeated output within a bounded
+history, and a retry loop (``ContentPolishPipeline``) that calls an async
+gateway, runs the filters and the detector, and feeds the violations back
+into the prompt until the output passes or ``max_attempts`` is spent.
+ghost_writer.correct is the only consumer.
 """
 
 from .filters import (
@@ -17,11 +19,13 @@ from .filters import (
     PersonalPronounFilter,
     SpeculativeLanguageFilter,
 )
+from .oscillation import OscillationDetector
 from .pipeline import ContentPolishPipeline
 
 __all__ = [
     "ContentPolishPipeline",
     "EmpiricalValidationFilter",
+    "OscillationDetector",
     "PersonalPronounFilter",
     "SpeculativeLanguageFilter",
 ]
