@@ -103,6 +103,7 @@ class ModuleFacts:
     boundaries: List[str] = field(default_factory=list)
     module_state: List[str] = field(default_factory=list)   # mutable top-level bindings
     bindings: List[str] = field(default_factory=list)       # public top-level names bound
+    guarded: List[str] = field(default_factory=list)        # imported inside try/except ImportError
     data_models: List[str] = field(default_factory=list)
     entry_points: List[str] = field(default_factory=list)   # main(), __main__ guard
     raises: List[str] = field(default_factory=list)
@@ -261,6 +262,18 @@ def analyse_module(path: Path, root: Path, package_roots: Set[str]) -> Optional[
             if node.name == "main":
                 facts.entry_points.append(f"{dotted}:main")
 
+    # An import written with a fallback is a boundary its author declared,
+    # not a name that might be invented. Recorded here so the slopsquat
+    # check can tell the two apart -- see derive_findings.
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Try) and any(
+                _catches_import(h) for h in node.handlers):
+            for inner in ast.walk(node):
+                if isinstance(inner, ast.Import):
+                    facts.guarded.extend(a.name.split(".", 1)[0] for a in inner.names)
+                elif isinstance(inner, ast.ImportFrom) and inner.module and not inner.level:
+                    facts.guarded.append(inner.module.split(".", 1)[0])
+
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
@@ -304,10 +317,23 @@ def analyse_module(path: Path, root: Path, package_roots: Set[str]) -> Optional[
 
     facts.boundaries = sorted(set(facts.boundaries))
     facts.bindings = sorted(set(facts.bindings))
+    facts.guarded = sorted(set(facts.guarded))
     facts.imports_internal = sorted(set(facts.imports_internal))
     facts.imports_external = sorted(set(facts.imports_external))
     facts.unresolved = sorted(set(facts.unresolved))
     return facts
+
+
+def _catches_import(handler: ast.ExceptHandler) -> bool:
+    t = handler.type
+    if t is None:
+        return True
+    names = [t] if not isinstance(t, ast.Tuple) else list(t.elts)
+    for n in names:
+        name = n.attr if isinstance(n, ast.Attribute) else getattr(n, "id", "")
+        if name in ("ImportError", "ModuleNotFoundError", "Exception", "BaseException"):
+            return True
+    return False
 
 
 def _record_import(facts: ModuleFacts, module: str, package_roots: Set[str]) -> None:
@@ -461,6 +487,61 @@ def derive_findings(model: StructuralModel) -> List[Finding]:
             imported.setdefault(top.lower().replace("_", "-"), []).append(facts.dotted)
 
     mapping = _import_to_distribution()
+
+    # 3. A name that refers to nothing real -- the slopsquat surface.
+    #
+    # The 2026 attack, and the one this toolkit was closest to catching
+    # without actually catching it. A model asked for working code emits an
+    # import for a package it has invented: USENIX tested 16 models over
+    # 576,000 samples and found 38% of hallucinated names are conflations
+    # of two real packages, 13% typo variants, 51% pure fabrication. The
+    # names are PREDICTABLE, so attackers register them and wait.
+    #
+    # `undeclared dependency` above asks whether an import is declared.
+    # This asks something harder and more useful: whether the name refers
+    # to anything at all. A package that is not standard library, not
+    # installed here, not provided by this repository or any joined one,
+    # and not declared anywhere is a name with nothing behind it. Today it
+    # is an ImportError. The day somebody registers it, it is theirs.
+    # Every package anyone reached for behind a fallback. Its author knew it
+    # might be absent and wrote code for that case, which is the opposite of
+    # a name a model invented believing it was real. boundary.py reports
+    # these as `boundary provider absent`; repeating them here at MAJOR
+    # would be the same fact twice, louder.
+    guarded = {g.lower().replace("_", "-") for m in model.modules for g in m.guarded}
+    local = {m.dotted.split(".", 1)[0] for m in model.modules}
+    unresolvable = sorted(
+        pkg for pkg in imported
+        if pkg not in declared and pkg not in mapping and pkg not in guarded
+        and pkg.replace("-", "_") not in local
+    )
+    for package in unresolvable:
+        out.append(_finding(
+            model, "unresolvable dependency", Severity.MAJOR,
+            str(Path(model.root)),
+            f"'{package}' is imported but is not standard library, not installed "
+            f"here, not provided by this repository, and declared nowhere",
+            "This name refers to nothing that can be found. Two readings, and "
+            "the tool cannot tell them apart, which is exactly why it says so "
+            "rather than choosing:\n\n"
+            "  * The environment is incomplete -- the package is real and simply "
+            "not installed where this scan ran. Install it, or declare it, and "
+            "this finding goes away.\n"
+            "  * The name was invented. A model asked for working code emitted "
+            "an import for a package that does not exist. Measured across 16 "
+            "models and 576,000 samples: 38% of such names are conflations of "
+            "two real packages, 13% are typo variants, 51% are pure fabrication. "
+            "Because the names are predictable, they get registered by people "
+            "who want you to install them -- a hallucinated npm package spread "
+            "through 237 repositories in January 2026 with nobody planting it, "
+            "and a fabricated 'huggingface-cli' with no code was downloaded "
+            "30,000 times in three months.\n\n"
+            "Both readings are cheap to resolve and expensive to ignore. Look "
+            "the name up in the registry before the next `pip install` does it "
+            "for you.",
+            {"package": package, "imported_by": ", ".join(sorted(imported[package])[:5])},
+        ))
+
     if model.dependency_sources:
         for package, users in sorted(imported.items()):
             if package in declared:

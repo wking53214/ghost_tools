@@ -181,6 +181,77 @@ def test_an_unmappable_import_is_unresolved_not_a_finding(tmp_path):
     assert any("could not be mapped" in u for u in m.unresolved)
 
 
+# -------------------------------------------- the slopsquat surface (v0.17)
+
+def test_an_invented_package_is_reported(tmp_path):
+    """The 2026 attack. A model asked for working code emits an import for a
+    package that does not exist; 38% of such names are conflations of two
+    real packages, and `express_mongoose` is the canonical example."""
+    root = _repo(tmp_path, files={"demo/uses.py": "import express_mongoose\n"})
+    findings = derive_findings(_model(root))
+    unresolvable = [f for f in findings if f.attributes["kind"] == "unresolvable dependency"]
+    assert len(unresolvable) == 1
+    assert unresolvable[0].severity == Severity.MAJOR
+    assert "express-mongoose" in unresolvable[0].summary
+
+
+def test_a_guarded_import_is_not_an_invented_package(tmp_path):
+    """The discriminator. A hallucinated package is imported UNGUARDED,
+    because the model believes it is real. An optional dependency is wrapped
+    in try/except ImportError by an author who knew it might be absent.
+    boundary.py already reports those; repeating them here at MAJOR would be
+    the same fact twice, louder.
+
+    Measured: without this, three of observe-perceive's sibling packages
+    were reported as invented names."""
+    src = ("try:\n    import express_mongoose\n"
+           "except ImportError:\n    express_mongoose = None\n")
+    root = _repo(tmp_path, files={"demo/uses.py": src})
+    assert "unresolvable dependency" not in _kinds(derive_findings(_model(root)))
+
+
+@pytest.mark.parametrize("guard", ["ImportError", "ModuleNotFoundError"])
+def test_every_guard_spelling_excludes_it(tmp_path, guard):
+    src = (f"try:\n    from express_mongoose import thing\n"
+           f"except {guard}:\n    thing = None\n")
+    root = _repo(tmp_path, files={f"demo/u_{guard}.py": src})
+    assert "unresolvable dependency" not in _kinds(derive_findings(_model(root)))
+
+
+@pytest.mark.parametrize("src,why", [
+    ("import json\n", "standard library"),
+    ("from demo import cli\n", "provided by this repository"),
+    ("import pytest\n", "installed here"),
+])
+def test_a_resolvable_import_is_not_reported(tmp_path, src, why):
+    root = _repo(tmp_path, files={"demo/uses.py": src})
+    assert "unresolvable dependency" not in _kinds(derive_findings(_model(root))), why
+
+
+def test_a_module_in_a_directory_without_an_init_is_not_invented(tmp_path):
+    """A plain directory of modules with no __init__.py is not a package, so
+    its name is absent from the importable roots and an import of it reads as
+    EXTERNAL. This repository's own Tests/ is laid out exactly that way, and
+    without the local-module check every such import is reported as a name
+    somebody invented."""
+    root = _repo(tmp_path, files={
+        "helpers/util.py": "def go():\n    pass\n",
+        "demo/uses.py": "from helpers import util\n",
+    })
+    m = _model(root)
+    assert "helpers" not in m.packages, "the fixture only means something while this holds"
+    assert "unresolvable dependency" not in _kinds(derive_findings(m))
+
+
+def test_a_declared_package_is_not_invented_even_if_absent(tmp_path):
+    """Declaring it is a claim that it is real, made by a person."""
+    pyproject = PYPROJECT.replace('dependencies = ["requests>=2"]',
+                                  'dependencies = ["express-mongoose"]')
+    root = _repo(tmp_path, pyproject=pyproject,
+                 files={"demo/uses.py": "import express_mongoose\n"})
+    assert "unresolvable dependency" not in _kinds(derive_findings(_model(root)))
+
+
 def test_nothing_scanned_produces_no_findings(tmp_path):
     """With no modules, "this symbol does not exist" and "this symbol was
     not looked at" are indistinguishable. Reporting the first would be

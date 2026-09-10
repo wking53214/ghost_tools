@@ -380,6 +380,208 @@ def _insecure_nodes(node):
 
 
 # ---------------------------------------------------------------------------
+# Detectors: sql_injection and destructive_sql.
+#
+# WHY THESE TWO SHARE A FILE
+#
+# Both start from the same question -- is this string a SQL statement --
+# and answer opposite halves of what can go wrong with one. The first is
+# about a statement built from untrusted parts; the second about a
+# statement whose scope is unbounded.
+#
+# SQL injection is named first in every 2026 survey of AI-written code,
+# for a reason that is structural rather than moral: a model reproduces
+# the patterns in its training data, an f-string is by far the most
+# common way SQL appears in that data, and "make it work" never asks for
+# a parameterised query.
+#
+# The check is unusually clean because the safe form and the unsafe form
+# are different AST shapes, not different values:
+#
+#     execute(f"SELECT * FROM t WHERE id = {uid}")   <- one argument, built
+#     execute("SELECT * FROM t WHERE id = ?", (uid,)) <- two, parameterised
+#
+# No heuristic, no threshold, no guessing about intent. A literal with no
+# interpolation is fine however it is written; interpolation into a
+# statement is the finding.
+# ---------------------------------------------------------------------------
+
+_SQL_EXECUTORS = frozenset({
+    "execute", "executemany", "executescript", "raw", "execute_query",
+    "exec_driver_sql",
+})
+
+#: A string is treated as SQL only if it opens with a statement keyword.
+#: Matching "select" anywhere would flag every sentence containing the word.
+_SQL_START = re.compile(
+    r"^\s*(?:SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|TRUNCATE|MERGE|WITH)\b",
+    re.IGNORECASE)
+
+_DELETE_NO_WHERE = re.compile(
+    r"^\s*DELETE\s+FROM\s+[\w.\"`\[\]]+\s*(?:;|\Z)", re.IGNORECASE)
+_UPDATE_NO_WHERE = re.compile(
+    r"^\s*UPDATE\s+[\w.\"`\[\]]+\s+SET\b(?![\s\S]*\bWHERE\b)", re.IGNORECASE)
+_TRUNCATE = re.compile(r"^\s*TRUNCATE\s+(?:TABLE\s+)?[\w.\"`\[\]]+", re.IGNORECASE)
+
+
+def _static_sql(node) -> Optional[str]:
+    """The statement text, if this node is a SQL string with no runtime
+    parts. Returns None for anything interpolated -- those are the other
+    detector's business and their scope cannot be read statically."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value if _SQL_START.search(node.value) else None
+    if isinstance(node, ast.JoinedStr):
+        return None
+    return None
+
+
+def _interpolated_sql_parts(node):
+    """(how it was built, the SQL text) when this node is a SQL statement
+    assembled at runtime, else None."""
+    if isinstance(node, ast.JoinedStr):
+        literal = "".join(v.value for v in node.values
+                          if isinstance(v, ast.Constant) and isinstance(v.value, str))
+        has_expr = any(isinstance(v, ast.FormattedValue) for v in node.values)
+        if has_expr and _SQL_START.search(literal):
+            return "f-string", literal
+        return None
+    if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Mod)):
+        # Walk to the leftmost operand. `"SELECT ..." + a + b` parses as
+        # BinOp(BinOp(Constant, a), b), so checking node.left directly finds
+        # a BinOp and misses the statement entirely -- which it did, on the
+        # single most common way this bug is written by hand.
+        left = node.left
+        while isinstance(left, ast.BinOp) and isinstance(left.op, (ast.Add, ast.Mod)):
+            left = left.left
+        text = left.value if isinstance(left, ast.Constant) and isinstance(left.value, str) else ""
+        if text and _SQL_START.search(text):
+            return ("concatenation" if isinstance(node.op, ast.Add) else "%-formatting"), text
+        return None
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) \
+            and node.func.attr in ("format", "join"):
+        target = node.func.value
+        if isinstance(target, ast.Constant) and isinstance(target.value, str) \
+                and _SQL_START.search(target.value):
+            return ".format()", target.value
+    return None
+
+
+def _sql_call_arguments(node: ast.Call):
+    """Yields the argument nodes of a call that executes SQL."""
+    func = node.func
+    name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
+    if name in _SQL_EXECUTORS and node.args:
+        yield from node.args
+
+
+@register("sql_injection")
+def detect_sql_injection(files: List[Path]) -> List[Finding]:
+    """A SQL statement assembled from runtime parts and handed to a driver.
+
+    Not reported: a statement built at runtime and never executed here
+    (it may be parameterised by the caller), and a parameterised call,
+    however ugly the surrounding code. The finding is interpolation INTO
+    a statement THAT IS EXECUTED.
+    """
+    out = []
+    for path in sorted(f for f in files if f.suffix == ".py"):
+        if _looks_like_a_test(path):
+            continue
+        tree = _parse(path)
+        if tree is None:
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            for arg in _sql_call_arguments(node):
+                built = _interpolated_sql_parts(arg)
+                if built is None:
+                    continue
+                how, text = built
+                out.append(Finding(
+                    detector="sql_injection", category=Category.OTHER,
+                    layer=Layer.MECHANICAL, severity=Severity.CRITICAL,
+                    status=Status.CONFIRMED,
+                    summary=(f"{_portable_path(path)}: SQL built by {how} and then "
+                             f"executed ({text.strip()[:60]!r})"),
+                    evidence=Evidence(file=str(path),
+                                      line_start=getattr(node, "lineno", None),
+                                      line_end=getattr(node, "end_lineno", None)),
+                    detail=(
+                        "Whatever is interpolated becomes part of the statement, "
+                        "not a value in it. A single quote in the interpolated "
+                        "text ends the literal and everything after it is SQL.\n\n"
+                        "The fix is the same length as the bug: pass the values as "
+                        "the driver's second argument and let it bind them.\n\n"
+                        "    execute(\"... WHERE id = ?\", (uid,))      # sqlite, mysql\n"
+                        "    execute(\"... WHERE id = %s\", (uid,))     # psycopg\n\n"
+                        "Scope limit: a value this detector cannot see may already "
+                        "be validated or quoted upstream. That is a reason to check "
+                        "before dismissing, not a reason to assume it is safe -- "
+                        "upstream validation is one refactor away from being gone, "
+                        "and the binding is not."
+                    ),
+                    attributes={"built_by": how, "statement": text.strip()[:120]},
+                ))
+    return out
+
+
+@register("destructive_sql")
+def detect_destructive_sql(files: List[Path]) -> List[Finding]:
+    """DELETE or UPDATE with no WHERE clause, or TRUNCATE, in an executed
+    statement. Every row, every time."""
+    out = []
+    for path in sorted(f for f in files if f.suffix == ".py"):
+        if _looks_like_a_test(path):
+            continue
+        tree = _parse(path)
+        if tree is None:
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            for arg in _sql_call_arguments(node):
+                text = _static_sql(arg)
+                if text is None:
+                    continue
+                for pattern, kind, what in (
+                    (_DELETE_NO_WHERE, "unbounded delete", "DELETE with no WHERE clause"),
+                    (_UPDATE_NO_WHERE, "unbounded update", "UPDATE with no WHERE clause"),
+                    (_TRUNCATE, "truncate", "TRUNCATE"),
+                ):
+                    if not pattern.search(text):
+                        continue
+                    out.append(Finding(
+                        detector="destructive_sql", category=Category.OTHER,
+                        layer=Layer.MECHANICAL, severity=Severity.MAJOR,
+                        status=Status.CONFIRMED,
+                        summary=(f"{_portable_path(path)}: {what} is executed here "
+                                 f"({text.strip()[:60]!r})"),
+                        evidence=Evidence(file=str(path),
+                                          line_start=getattr(node, "lineno", None),
+                                          line_end=getattr(node, "end_lineno", None)),
+                        detail=(
+                            "This affects every row in the table, every time it "
+                            "runs. Nothing about the call site says so, which is "
+                            "why it survives review: the statement reads as "
+                            "ordinary maintenance until the day it runs against "
+                            "production.\n\nSometimes that is exactly what is "
+                            "wanted -- clearing a cache table, resetting a fixture "
+                            "in a script. Then say so by accepting it into the "
+                            "baseline, so the intent is recorded next to the "
+                            "statement rather than living in somebody's memory."
+                            "\n\nOnly reported for a literal statement: an "
+                            "interpolated one may carry a WHERE clause this scan "
+                            "cannot see, and sql_injection has more urgent things "
+                            "to say about it anyway."
+                        ),
+                        attributes={"kind": kind, "statement": text.strip()[:120]},
+                    ))
+                    break
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Detector: unassessable_file -- a file every AST detector silently skipped.
 #
 # BORROWED, KNOWINGLY, FROM A PEDIATRIC SEPSIS ENGINE.

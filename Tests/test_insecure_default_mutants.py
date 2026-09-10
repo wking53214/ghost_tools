@@ -68,7 +68,11 @@ MUTANTS = [
      '    "DEBUG": (\n        Severity.CRITICAL,\n',
      '    "DEBUG": (\n        Severity.MINOR,\n'),
     ("the finding stops pointing at a line", _M,
+     "                    evidence=Evidence(\n"
+     "                        file=str(path),\n"
      "                        line_start=getattr(node, \"lineno\", None),\n",
+     "                    evidence=Evidence(\n"
+     "                        file=str(path),\n"
      "                        line_start=None,\n"),
 ]
 

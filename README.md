@@ -1,4 +1,4 @@
-# ghost_tools -- v0.16
+# ghost_tools -- v0.17
 
 Four commands, one pipeline. `ghost-buster` hunts down structural problems
 in code and, with `--mutate`, proves which tests pass without checking
@@ -227,6 +227,52 @@ Duck-typed contracts. One real adapter states its own: "CCC's intake is
 structural: anything carrying .conclusion, .method, .source_material ...
 can be recorded." No static analysis resolves that, and pretending
 otherwise would be inventing evidence, so those go to `unresolved`, named.
+
+## What AI-written code gets wrong (v0.17.0)
+
+Three checks built from 2026 research into AI-generated code, where 45%
+of output carries a security flaw and agency audits find 8 to 14 issues
+per vibe-coded app.
+
+| Check | Fires when | Severity |
+|---|---|---|
+| `sql_injection` | SQL built by f-string, concatenation, %-formatting or .format() **and then executed** | CRITICAL |
+| `destructive_sql` | `DELETE`/`UPDATE` with no `WHERE`, or `TRUNCATE`, in an executed literal | MAJOR |
+| `unresolvable dependency` | a package imported unguarded that refers to nothing findable | MAJOR |
+
+### SQL injection is unusually clean to detect
+
+The safe form and the unsafe form are different AST **shapes**, not
+different values:
+
+    execute(f"SELECT * FROM t WHERE id = {uid}")     # one argument, built
+    execute("SELECT * FROM t WHERE id = ?", (uid,))  # two, parameterised
+
+No threshold, no heuristic, no guessing at intent. A literal is fine
+however it is written; interpolation into a statement that is executed is
+the finding. `execute` is not a database-only method name, so a task
+runner's `task.execute(f"step {n}")` stays silent -- the string has to
+open with a SQL statement keyword.
+
+### The slopsquat surface
+
+The 2026 attack. A model asked for working code emits an import for a
+package it invented; [USENIX tested 16 models over 576,000 samples](https://socket.dev/blog/slopsquatting-how-ai-hallucinations-are-fueling-a-new-class-of-supply-chain-attacks)
+and found 38% of hallucinated names are conflations of two real packages,
+13% typo variants, 51% pure fabrication. Because the names are
+predictable, attackers register them and wait. In January 2026 a
+hallucinated npm package spread through 237 repositories with nobody
+planting it.
+
+**The discriminator is the guard.** A hallucinated package is imported
+*unguarded*, because the model believes it is real. A genuinely optional
+dependency is wrapped in `try/except ImportError` by an author who knew it
+might be absent -- and `--join` already reports those as
+`boundary provider absent`. Without this distinction, three of one real
+repository's sibling packages were reported as invented names.
+
+Measured across five real repositories: **zero findings**, while the
+canonical `express_mongoose` conflation still fires.
 
 ## Install
 
