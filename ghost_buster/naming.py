@@ -40,6 +40,7 @@ from __future__ import annotations
 import ast
 import re
 from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Sequence, Set, Tuple
 
@@ -343,22 +344,107 @@ def _renamable(param: str, arg: str) -> bool:
 
 
 def _call_name(node: ast.Call) -> str | None:
+    """The function a call names, when that is decidable from the call alone.
+
+    `subprocess.run(cmd)` is NOT our `run`. An earlier version returned the
+    attribute of any attribute call, and `subprocess.run(cmd, ...)` was
+    matched against `PytestRunner.run(self, nodeids)` in another module --
+    reported, on 2026-09-10, as `nodeids` and `cmd` being one value under
+    two names. They are not the same function, let alone the same value.
+
+    So: a bare name, or a method reached through `self`/`cls`, and nothing
+    else. A method called on some other object could be anybody's, and the
+    receiver's type is exactly what this layer does not know.
+    """
     if isinstance(node.func, ast.Name):
         return node.func.id
-    if isinstance(node.func, ast.Attribute):
+    if (isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id in ("self", "cls")):
         return node.func.attr
     return None
 
 
-def detect_name_disagreements(files: Sequence[Path]) -> List[Finding]:
+Site = Tuple[str, int]
+
+
+@dataclass(frozen=True)
+class Disagreement:
+    """One value under two names, and every line where either name is
+    written.
+
+    The line numbers are what separates a report from an annotation. A
+    finding says "these two names are one thing"; the annotator has to put
+    that sentence on the exact line a reader will be looking at when the
+    question occurs to them, which is the signature or the call.
+    """
+
+    param: str
+    arg: str
+    definitions: Tuple[Site, ...]
+    call_sites: Tuple[Site, ...]
+
+    @property
+    def files(self) -> List[str]:
+        return sorted({f for f, _ in self.definitions + self.call_sites})
+
+
+class _Definitions:
+    """Every function the scan saw, and which one a given call names.
+
+    Kept apart from the pass that uses it because resolution is the whole
+    correctness argument and deserves to be read on its own. Two rules,
+    both measured:
+
+    SAME FILE FIRST, because that is where Python looks.
+
+    THEN THE WHOLE SCAN, but only if the name is defined exactly once in
+    it. An earlier version kept the FIRST definition of each name and
+    matched every call to it, so `run` in one module supplied the parameter
+    names for `run` in another; running this against ghost_tools itself on
+    2026-09-10 reported `nodeids` and `cmd` as one value under two names,
+    on the strength of `subprocess.run(cmd)`. Ambiguity is not a tie to be
+    broken -- it is a reason to say nothing.
+    """
+
+    def __init__(self, trees: Sequence[tuple]) -> None:
+        self.everywhere: Dict[str, List[Tuple[str, List[str], int]]] = {}
+        self.per_file: Dict[str, Dict[str, List[Tuple[List[str], int]]]] = {}
+        for path, tree in trees:
+            for node in ast.walk(tree):
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                params = [a.arg for a in node.args.args
+                          if a.arg not in ("self", "cls")]
+                self.everywhere.setdefault(node.name, []).append(
+                    (str(path), params, node.lineno))
+                self.per_file.setdefault(str(path), {}).setdefault(
+                    node.name, []).append((params, node.lineno))
+
+    def resolve(self, path: Path, name: str) -> Tuple[List[str], Site] | None:
+        here = self.per_file.get(str(path), {}).get(name)
+        if here is not None:
+            if len(here) != 1:
+                return None
+            params, line = here[0]
+            return params, (str(path), line)
+        found = self.everywhere.get(name)
+        if found is None or len(found) != 1:
+            return None
+        file, params, line = found[0]
+        return params, (file, line)
+
+
+def find_name_disagreements(files: Sequence[Path]) -> List[Disagreement]:
     """One value carried across a seam under two different names.
 
     The complaint this answers is the one every SQL join produces: a column
     called `customer_id` on one side and `recipient_id` on the other, the
     same key wearing two names, and nothing in either schema saying so.
     Measured on 2026-09-10 across a 37-repository library, the same thing
-    happens between repositories: `recipient_pub` is only ever passed
-    `cust_pub`, `enqueued_at_ms` is only ever passed `enq_ms`.
+    happens between repositories: `log_odds_value` is only ever passed
+    `raw_odds`, `obligation_ids` is only ever passed `needed_ids`. 63
+    pairs, 21 of them spanning more than one repository.
 
     ONLY 1:1, WHICH IS THE WHOLE SAFETY ARGUMENT
 
@@ -368,76 +454,86 @@ def detect_name_disagreements(files: Sequence[Path]) -> List[Finding]:
     with a name that is legitimately in use elsewhere. A bijection is the
     one case where the two names provably denote one thing, and where
     substituting one for the other cannot capture anything.
-
-    Reports; does not rename. ghost_buster has never modified a file it was
-    pointed at, and a cross-repository rename touches call sites and tests in
-    trees this scan was never asked to write to.
     """
     files = [Path(f) for f in files]
-    trees: List[tuple] = []
-    signatures: Dict[str, List[str]] = {}
-    ours: Set[str] = set()
-
-    for path in files:
-        if _is_test(path):
-            continue
-        tree = _parse(path)
-        if tree is None:
-            continue
-        trees.append((path, tree))
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                ours.add(node.name)
-                signatures.setdefault(
-                    node.name,
-                    [a.arg for a in node.args.args if a.arg not in ("self", "cls")])
+    trees = [(p, t) for p in files if not _is_test(p)
+             for t in (_parse(p),) if t is not None]
+    known = _Definitions(trees)
 
     to_arg: Dict[str, Counter] = {}
     to_param: Dict[str, Counter] = {}
-    seen_in: Dict[tuple, Set[str]] = {}
+    call_sites: Dict[tuple, Set[Site]] = {}
+    declared: Dict[tuple, Set[Site]] = {}
 
-    def note(param: str, arg: str, path: Path) -> None:
+    def note(param: str, arg: str, definition: Site, site: Site) -> None:
         to_arg.setdefault(param, Counter())[arg] += 1
         to_param.setdefault(arg, Counter())[param] += 1
-        seen_in.setdefault((param, arg), set()).add(str(path))
+        call_sites.setdefault((param, arg), set()).add(site)
+        declared.setdefault((param, arg), set()).add(definition)
 
     for path, tree in trees:
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
             called = _call_name(node)
-            # A function this scan never saw defined belongs to somebody
-            # else, and its parameter names are not ours to reconcile.
-            if not called or called not in ours:
+            if not called:
                 continue
+            resolved = known.resolve(path, called)
+            # A name this scan cannot pin to exactly one definition belongs
+            # to somebody else, or to two of ours at once. Either way its
+            # parameter names are not ours to reconcile.
+            if resolved is None:
+                continue
+            params, definition = resolved
+            site = (str(path), node.lineno)
             for kw in node.keywords:
                 if kw.arg and isinstance(kw.value, ast.Name):
-                    note(kw.arg, kw.value.id, path)
-            params = signatures.get(called) or []
+                    note(kw.arg, kw.value.id, definition, site)
             for index, arg in enumerate(node.args):
                 if isinstance(arg, ast.Name) and index < len(params):
-                    note(params[index], arg.id, path)
+                    note(params[index], arg.id, definition, site)
 
-    findings: List[Finding] = []
+    out: List[Disagreement] = []
     for param, args in sorted(to_arg.items()):
         if len(args) != 1:
             continue
         arg = next(iter(args))
         if not _renamable(param, arg) or len(to_param[arg]) != 1:
             continue
-        sites = args[arg]
-        where = sorted(seen_in[(param, arg)])
+        key = (param, arg)
+        out.append(Disagreement(
+            param=param,
+            arg=arg,
+            definitions=tuple(sorted(declared[key])),
+            call_sites=tuple(sorted(call_sites[key])),
+        ))
+    return out
+
+
+def detect_name_disagreements(files: Sequence[Path]) -> List[Finding]:
+    """The 1:1 disagreements above, as findings.
+
+    Reports; does not rename. ghost_buster has never modified a file it was
+    pointed at on its own account, and a cross-repository rename touches
+    call sites and tests in trees this scan was never asked to write to.
+    `--annotate-names` is the one path that writes, it is opt-in, and it
+    writes comments and a README table rather than code.
+    """
+    findings: List[Finding] = []
+    for d in find_name_disagreements(files):
+        where = sorted({f for f, _ in d.call_sites})
+        sites = len(d.call_sites)
         findings.append(Finding(
             detector=DISAGREEMENT_DETECTOR,
             category=Category.NAMING,
             layer=Layer.MECHANICAL,
             severity=Severity.MINOR,
             status=Status.CONFIRMED,
-            summary=(f"`{param}` and `{arg}` are one value under two names, "
+            summary=(f"`{d.param}` and `{d.arg}` are one value under two names, "
                      f"across {len(where)} file(s)"),
             detail=(
-                f"The parameter `{param}` is only ever passed a variable named "
-                f"`{arg}`, and `{arg}` is only ever passed to `{param}` -- "
+                f"The parameter `{d.param}` is only ever passed a variable named "
+                f"`{d.arg}`, and `{d.arg}` is only ever passed to `{d.param}` -- "
                 f"{sites} call site(s) in {', '.join(Path(w).name for w in where[:4])}"
                 + (f" (+{len(where) - 4} more)" if len(where) > 4 else "") + ".\n"
                 "A one-to-one correspondence is the only case where two names "
@@ -447,6 +543,10 @@ def detect_name_disagreements(files: Sequence[Path]) -> List[Finding]:
                 "yours to pick -- the parameter is the contract, the variable "
                 "is the caller's local, and neither is automatically right."
             ),
-            evidence=Evidence(file=where[0], related_files=where),
+            evidence=Evidence(
+                file=(d.definitions[0][0] if d.definitions else where[0]),
+                line_start=(d.definitions[0][1] if d.definitions else None),
+                related_files=d.files,
+            ),
         ))
     return findings

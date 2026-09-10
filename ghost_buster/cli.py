@@ -36,6 +36,7 @@ from .correlate import (
     run_connectors,
 )
 from .testsuite import render_report as render_test_report, scan as scan_tests
+from .annotate import annotate
 from .mechanical import run_all
 from .project import render_report as render_project_report, scan as scan_project
 from .structure import (
@@ -155,6 +156,23 @@ def _build_parser() -> argparse.ArgumentParser:
              "repo-specific vendored tree, e.g. a checked-in copy of "
              "another repo. Virtualenvs, site-packages, VCS dirs and tool "
              "caches are always skipped.",
+    )
+    parser.add_argument(
+        "--annotate-names", action="store_true",
+        help="OPT-IN, and the only thing ghost_buster does that writes to the "
+             "scanned tree. Records every 1:1 name disagreement in the two "
+             "places somebody looks: a regenerated table in the README, and a "
+             "trailing comment on each signature and each call site. Comments "
+             "only -- every edit is parsed before and after and discarded "
+             "unless the syntax tree is identical, so it cannot change what a "
+             "program means. Idempotent: the notes are stripped and rewritten "
+             "whole on each run, so they follow a rename instead of piling up "
+             "behind one, and a run that finds nothing new produces no diff.",
+    )
+    parser.add_argument(
+        "--annotate-readme", type=Path, default=None, metavar="PATH",
+        help="README to write the name-disagreement table into "
+             "(default: <path>/README.md)",
     )
     parser.add_argument(
         "--mutate", action="store_true",
@@ -432,6 +450,15 @@ def main(argv: List[str] = None) -> int:
     # facts worth remembering, not the absence of one.
     checks = {"structural": RAN}
     findings = run_all(files)
+
+    if args.annotate_names:
+        readme = args.annotate_readme or (args.path / "README.md")
+        disagreements, changed, wrote_readme = annotate(files, readme, root=args.path)
+        print(f"ghost_buster: {len(disagreements)} name disagreement(s); "
+              f"annotated {len(changed)} file(s); "
+              f"{'updated' if wrote_readme else 'no change to'} {readme}",
+              file=sys.stderr)
+
     mutation_run = None
     if args.mutate:
         mutation_run = run_mutations(
@@ -577,7 +604,7 @@ def main(argv: List[str] = None) -> int:
     else:
         _print_report(new, known)
         if mutation_run is not None:
-            print(render_run(mutation_run, verbose=args.mutate_verbose))
+            print(render_run(mutation_run, verbose=args.mutate_verbose))  # ghost_buster: name-disagreement -- `mutation_run` is `run` in the signature
 
     return 1 if any(f.severity in (Severity.CRITICAL, Severity.MAJOR) for f in new) else 0
 

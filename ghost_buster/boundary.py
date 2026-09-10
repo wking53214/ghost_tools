@@ -107,7 +107,7 @@ def guarded_imports(tree: ast.AST, repo: str, module: str) -> Tuple[List[Guarded
         if not isinstance(node, ast.Try):
             continue
         catches_import = any(
-            _handler_catches_import(h) for h in node.handlers
+            _handler_catches_import(h) for h in node.handlers  # ghost_buster: name-disagreement -- `h` is `handler` in the signature
         )
         if not catches_import:
             continue
@@ -134,7 +134,7 @@ def guarded_imports(tree: ast.AST, repo: str, module: str) -> Tuple[List[Guarded
     return out, notes
 
 
-def _handler_catches_import(handler: ast.ExceptHandler) -> bool:
+def _handler_catches_import(handler: ast.ExceptHandler) -> bool:  # ghost_buster: name-disagreement -- `handler` is `h` at every call site
     t = handler.type
     if t is None:
         return True                      # bare except: catches ImportError too

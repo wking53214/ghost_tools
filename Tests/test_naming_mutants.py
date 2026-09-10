@@ -72,10 +72,25 @@ MUTANTS = [
      "        if not _renamable(param, arg) or len(to_param[arg]) != 1:",
      "        if not _renamable(param, arg):"),
 
-    # Somebody else's API.
-    ("third-party parameter names are reconciled too", _N,
-     "            if not called or called not in ours:",
-     "            if not called:"),
+    # Somebody else's function, and two of ours sharing a name. Both were
+    # measured false positives, and the second was the worst of them.
+    ("an unresolvable call is reconciled anyway", _N,
+     "            if resolved is None:\n                continue",
+     "            if False:\n                continue"),
+    ("two definitions of a name are no longer ambiguous", _N,
+     "        found = self.everywhere.get(name)\n        if found is None or len(found) != 1:",
+     "        found = self.everywhere.get(name)\n        if found is None:"),
+    ("a same-file duplicate is resolved by picking the first", _N,
+     "            if len(here) != 1:\n                return None",
+     "            if False:\n                return None"),
+    ("a stranger's module wins over the local definition", _N,
+     "        here = self.per_file.get(str(path), {}).get(name)\n        if here is not None:",
+     "        here = None\n        if here is not None:"),
+    ("any attribute call is treated as ours", _N,
+     "    if (isinstance(node.func, ast.Attribute)\n"
+     "            and isinstance(node.func.value, ast.Name)\n"
+     "            and node.func.value.id in (\"self\", \"cls\")):",
+     "    if isinstance(node.func, ast.Attribute):"),
 
     # The three exclusions in _renamable, each an observed false positive.
     ("a constant is renamed after the parameter it is passed to", _N,
@@ -96,9 +111,9 @@ MUTANTS = [
     # Severity: a name is not a defect.
     ("a disagreement finding is raised above MINOR", _N,
      "            severity=Severity.MINOR,\n            status=Status.CONFIRMED,\n"
-     "            summary=(f\"`{param}` and `{arg}` are one value under two names, \"",
+     "            summary=(f\"`{d.param}` and `{d.arg}` are one value under two names, \"",
      "            severity=Severity.MAJOR,\n            status=Status.CONFIRMED,\n"
-     "            summary=(f\"`{param}` and `{arg}` are one value under two names, \""),
+     "            summary=(f\"`{d.param}` and `{d.arg}` are one value under two names, \""),
     ("a naming finding is raised above MINOR", _N,
      "                severity=Severity.MINOR,\n                status=Status.CONFIRMED,\n"
      "                summary=(f\"{path.name} carries",

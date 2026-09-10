@@ -152,7 +152,7 @@ _IMPORT_ALIASES = {
 }
 
 
-def _import_names(dist: str) -> set[str]:
+def _import_names(dist: str) -> set[str]:  # ghost_buster: name-disagreement -- `dist` is `token` at every call site
     """Top-level module names a declared distribution plausibly provides."""
     name = _normalise_dist(dist)
     return {name, name.split("_", 1)[0], _IMPORT_ALIASES.get(name, name)}
@@ -192,7 +192,7 @@ def _declared_dependencies(root: Path) -> set[str]:
                 continue
             token = re.split(r"[<>=!~;\[\s]", line, 1)[0]
             if token:
-                names |= _import_names(token)
+                names |= _import_names(token)  # ghost_buster: name-disagreement -- `token` is `dist` in the signature
     pyproject = root / "pyproject.toml"
     if pyproject.is_file():
         text = pyproject.read_text(errors="replace")
@@ -204,7 +204,7 @@ def _declared_dependencies(root: Path) -> set[str]:
             blocks += re.findall(r"=\s*\[(.*?)\]", optional.group(1), re.S)
         for block in blocks:
             for token in re.findall(r"[\"']([A-Za-z0-9_.\-]+)", block):
-                names |= _import_names(token)
+                names |= _import_names(token)  # ghost_buster: name-disagreement -- `token` is `dist` in the signature
     return names
 
 
@@ -853,7 +853,7 @@ def detect_dangling_in_debris(path: Path, source: str | None = None
         )
 
 
-def detect_orphaned_tests(test_paths: Iterable[Path],
+def detect_orphaned_tests(test_paths: Iterable[Path],  # ghost_buster: name-disagreement -- `test_paths` is `tests` at every call site
                           search_roots: Sequence[Path],
                           providers: dict[str, str] | None = None
                           ) -> Iterator[NegativeEvidence]:
@@ -936,7 +936,7 @@ def scan(root: Path, siblings: Sequence[Path] = ()) -> list[NegativeEvidence]:
         evidence.extend(detect_dangling_names(path, text))
         evidence.extend(detect_dangling_in_debris(path, text))
         evidence.extend(detect_missing_imports(path, [root], text, providers))
-    evidence.extend(detect_orphaned_tests(tests, [root], providers))
+    evidence.extend(detect_orphaned_tests(tests, [root], providers))  # ghost_buster: name-disagreement -- `tests` is `test_paths` in the signature
     from .rename import detect_rename_candidates
     evidence.extend(detect_rename_candidates(sources, evidence))
     return evidence

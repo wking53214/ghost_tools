@@ -747,6 +747,118 @@ python -m ghost_buster.cli /path/to/other --secrets --json > /tmp/other.json
 python -m ghost_buster.cli /path/to/repo --secrets --correlate-with other=/tmp/other.json
 ```
 
+### `--annotate-names`: one value, two names, written down twice
+
+The complaint this answers is the one every SQL join produces. A column is
+`customer_id` on one side and `recipient_id` on the other, the same key
+wearing two names, and nothing in either schema saying so. Measured across
+a 37-repository library on 2026-09-10, the same thing happens between
+repositories: `log_odds_value` is only ever passed `raw_odds`,
+`current_state` is only ever passed `current_state_variable`,
+`obligation_ids` is only ever passed `needed_ids`. 63 pairs, 21 of them
+spanning more than one repository.
+
+**Only a bijection is reported, and that is the whole safety argument.** A
+parameter that receives several different variables is not a naming
+disagreement, it is a parameter doing its job. A variable passed to several
+different parameters is the same. Renaming either would collide with a name
+that is legitimately in use somewhere else. A one-to-one correspondence is
+the only case where the two names provably denote one thing.
+
+A call resolves to a definition in its own file first, then to a
+library-wide one only if that name is defined exactly once, and a method
+counts only when it is reached through `self` or `cls`. Ambiguity is not a
+tie to be broken. Both rules came from false positives this produced
+against ghost_tools itself: `subprocess.run(cmd)` in one module was taking
+its parameter names from `PytestRunner.run(self, nodeids)` in another.
+
+Three more exclusions, each an observed false positive in the unfiltered
+pass of 271 pairs:
+
+| excluded | why | example |
+| --- | --- | --- |
+| a CONSTANT | it has a role of its own | `dependencies <- INGRESS_GUARDS` |
+| a leading underscore on one side only | privacy is part of the name | `create_fn <- _create` |
+| camelCase in a snake_case library | somebody else's API | `parse_all <- parseAll` |
+
+`ghost_buster` reports these by default and changes nothing.
+`--annotate-names` is opt-in, and is the only thing in the toolkit that
+writes into the tree it was pointed at. It records each disagreement in the
+two places somebody actually looks:
+
+- **the README**, as a table regenerated between a pair of HTML-comment
+  markers (see the block further down this file, which this tool wrote
+  about itself). One sorted list, countable, readable by somebody who is not
+  in the code.
+- **the code**, as a trailing comment on the signature and on each call
+  site. The moment the question actually occurs to a reader is while they
+  are looking at one or the other, wondering whether `cust_pub` is the same
+  thing as `recipient_pub`.
+
+Four properties, and the last one is checked rather than promised:
+
+1. **Comments only.** Nothing it writes is code.
+2. **Trailing, never inserted.** A note appended to an existing line changes
+   no line's number, so a second disagreement's recorded line is still
+   right and a re-run can find what the last run wrote.
+3. **Idempotent.** Notes are stripped and rewritten whole on every run, so
+   they follow a rename instead of piling up behind one, and neither record
+   carries a timestamp -- a run that finds nothing new produces no diff.
+4. **It cannot change what a program means.** Every edit is parsed before
+   and after and the two syntax trees compared; if they differ by a single
+   node the edit is discarded and the file is left exactly as it was. A
+   backslash continuation, a line that turns out to be inside a triple-
+   quoted string, a marker that is really part of a string literal: all fail
+   closed, one line at a time, so a bad line costs that line and not the
+   file.
+
+```bash
+# report only -- the default, writes nothing
+python -m ghost_buster.cli /path/to/repo
+
+# write both records
+python -m ghost_buster.cli /path/to/repo --annotate-names
+python -m ghost_buster.cli /path/to/repo --annotate-names --annotate-readme docs/NAMES.md
+```
+
+It reports; it does not rename. Which of the two names should win is a
+judgement: the parameter is the contract, the variable is the caller's
+local, and neither is automatically right.
+
+<!-- ghost_buster:name-disagreements:begin -->
+## Name disagreements
+
+One value carried under two names. Every row is a bijection: the
+parameter receives that variable and no other, and the variable reaches
+that parameter and no other. That is the only case where the two names
+provably denote one thing, and the only case where substituting one for
+the other cannot capture a name that is legitimately in use elsewhere.
+
+Nothing here has been renamed. Which name should win is a judgement:
+the parameter is the contract, the variable is the caller's local, and
+neither is automatically right.
+
+| parameter | variable | call sites | files |
+| --- | --- | --- | --- |
+| `cap` | `max_mutants_per_candidate` | 1 | `ghost_buster/mutation.py` |
+| `dist` | `token` | 2 | `blackhole_extrapolator/detect.py` |
+| `dotted` | `mod` | 5 | `ghost_buster/mutation.py` |
+| `entry` | `e` | 1 | `ghost_buster/secrets.py` |
+| `explicit` | `base_branch` | 1 | `ghost_buster/branches.py` |
+| `handler` | `h` | 2 | `ghost_buster/boundary.py`, `ghost_buster/structure.py` |
+| `input_text` | `diff_out` | 1 | `ghost_buster/branches.py` |
+| `paths` | `req_files` | 1 | `ghost_buster/structure.py` |
+| `run` | `mutation_run` | 1 | `ghost_buster/cli.py`, `ghost_buster/mutation.py` |
+| `summary` | `phase` | 2 | `ghost_buster/testsuite.py` |
+| `test_paths` | `tests` | 1 | `blackhole_extrapolator/detect.py` |
+
+11 disagreement(s).
+
+Regenerated by `ghost_buster <path> --annotate-names`, which also writes
+the same note inline on each signature and each call. Edit the code, not
+this block: it is rewritten whole every run and contains no timestamp, so
+a run that changes nothing produces no diff.
+<!-- ghost_buster:name-disagreements:end -->
 ### `--mutate`: the proof a check is vacuous
 
 The characteristic defect of an iteratively built codebase is a check that

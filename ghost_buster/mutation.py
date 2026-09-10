@@ -260,7 +260,7 @@ def _import_map(module: ast.Module) -> Dict[str, Tuple[str, Optional[str]]]:
     return out
 
 
-def _module_file(root: Path, dotted: str) -> Optional[Path]:
+def _module_file(root: Path, dotted: str) -> Optional[Path]:  # ghost_buster: name-disagreement -- `dotted` is `mod` at every call site
     rel = Path(*dotted.split("."))
     for candidate in (root / rel.with_suffix(".py"), root / rel / "__init__.py"):
         if candidate.exists():
@@ -328,7 +328,7 @@ def _resolve_targets(root: Path, test_file: Path, module: ast.Module, func: ast.
         f = n.func
         if isinstance(f, ast.Name) and f.id in imports:
             mod, attr = imports[f.id]
-            file = _module_file(root, mod)
+            file = _module_file(root, mod)  # ghost_buster: name-disagreement -- `mod` is `dotted` in the signature
             if file and attr:
                 add(file, attr)
         elif isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name):
@@ -336,16 +336,16 @@ def _resolve_targets(root: Path, test_file: Path, module: ast.Module, func: ast.
             if base in imports:
                 mod, attr = imports[base]
                 if attr is None:                       # import mod; mod.func()
-                    file = _module_file(root, mod)
+                    file = _module_file(root, mod)  # ghost_buster: name-disagreement -- `mod` is `dotted` in the signature
                     if file:
                         add(file, f.attr)
                 else:                                  # from mod import Cls; Cls.method()
-                    file = _module_file(root, mod)
+                    file = _module_file(root, mod)  # ghost_buster: name-disagreement -- `mod` is `dotted` in the signature
                     if file:
                         add(file, f"{attr}.{f.attr}")
             elif base in instance_of and instance_of[base] in imports:
                 mod, attr = imports[instance_of[base]]
-                file = _module_file(root, mod)
+                file = _module_file(root, mod)  # ghost_buster: name-disagreement -- `mod` is `dotted` in the signature
                 if file and attr:
                     add(file, f"{attr}.{f.attr}")
             else:
@@ -356,7 +356,7 @@ def _resolve_targets(root: Path, test_file: Path, module: ast.Module, func: ast.
                 for local, (mod, attr) in imports.items():
                     if attr is None:
                         continue
-                    file = _module_file(root, mod)
+                    file = _module_file(root, mod)  # ghost_buster: name-disagreement -- `mod` is `dotted` in the signature
                     if file is None:
                         continue
                     tree = _safe_parse(file)
@@ -638,7 +638,7 @@ def run_mutations(
                 run.unjudged.append((cand, f"test does not pass unmutated ({outcome}): {tail[-120:]}"))
                 continue
 
-            mutants = _plan_mutants(cand, root, file_list, operators, max_mutants_per_candidate)
+            mutants = _plan_mutants(cand, root, file_list, operators, max_mutants_per_candidate)  # ghost_buster: name-disagreement -- `max_mutants_per_candidate` is `cap` in the signature
             if not mutants:
                 reason = (
                     "no enum or literal collection in the project defines these values; nothing to extend"
@@ -690,7 +690,7 @@ def run_mutations(
     return run
 
 
-def _plan_mutants(cand: Candidate, root: Path, files: List[Path], operators: Sequence[str], cap: int) -> List[Mutant]:
+def _plan_mutants(cand: Candidate, root: Path, files: List[Path], operators: Sequence[str], cap: int) -> List[Mutant]:  # ghost_buster: name-disagreement -- `cap` is `max_mutants_per_candidate` at every call site
     plans: List[Mutant] = []
     if cand.shape == "guarded_assertion":
         for index in range(cand.guard_count):
@@ -753,7 +753,7 @@ def _finding_for(root: Path, mutant: Mutant) -> Finding:
     )
 
 
-def render_run(run: MutationRun, verbose: bool = False) -> str:
+def render_run(run: MutationRun, verbose: bool = False) -> str:  # ghost_buster: name-disagreement -- `run` is `mutation_run` at every call site
     lines = [f"\nghost_buster --mutate: {run.summary()}\n"]
     for m in run.survived:
         c = m.candidate

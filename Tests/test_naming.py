@@ -227,9 +227,9 @@ def test_a_one_to_one_disagreement_is_reported(tmp_path):
     assert f.severity is Severity.MINOR
     assert f.status is Status.CONFIRMED
     assert "recipient_pub" in f.summary and "cust_pub" in f.summary
-    # Call sites, not definitions: the disagreement is visible where the
-    # two names meet.
-    assert {Path(p).name for p in f.evidence.related_files} == {"caller.py"}
+    # Both ends: the signature that declares the parameter and the call
+    # that passes the variable.
+    assert {Path(p).name for p in f.evidence.related_files} == {"queue.py", "caller.py"}
 
 
 def test_a_keyword_argument_counts(tmp_path):
@@ -295,6 +295,77 @@ def test_a_function_this_scan_never_saw_is_left_alone(tmp_path):
     summaries = [f.summary for f in detect_name_disagreements(files)]
     assert len(summaries) == 1
     assert "cust_pub" in summaries[0]
+
+
+def test_two_functions_sharing_a_name_decide_nothing(tmp_path):
+    """The worst false positive this detector produced, on 2026-09-10:
+    `run(cmd)` in one module supplied the parameter names for `run(nodeids)`
+    in another, and the two were reported as one value under two names.
+    They are not the same function. Ambiguity is a reason to say nothing."""
+    files = _tree(tmp_path, {
+        "a.py": "def run(nodeids):\n    return nodeids\n",
+        "b.py": "def run(other):\n    return other\n",
+        "c.py": "def go(cmd):\n    return run(cmd)\n",
+    })
+    assert detect_name_disagreements(files) == []
+
+
+def test_two_classes_with_one_method_name_decide_nothing(tmp_path):
+    """`self.handle` in a module where two classes define `handle` names one
+    of them, and a walk over the syntax tree cannot say which. Picking the
+    first is how the parameter names of one class end up describing the
+    other's."""
+    files = _tree(tmp_path, {
+        "a.py":
+            "class Alpha:\n"
+            "    def handle(self, recipient_pub):\n"
+            "        return recipient_pub\n"
+            "class Beta:\n"
+            "    def handle(self, other_name):\n"
+            "        return other_name\n"
+            "    def send(self, cust_pub):\n"
+            "        return self.handle(cust_pub)\n",
+    })
+    assert detect_name_disagreements(files) == []
+
+
+def test_a_call_in_the_same_file_wins_over_a_stranger(tmp_path):
+    """Python looks in the module first, and so does this. `enqueue` here is
+    the local one, whose parameter is `local_pub` -- not the other file's."""
+    files = _tree(tmp_path, {
+        "far.py": "def enqueue(recipient_pub):\n    return recipient_pub\n",
+        "near.py":
+            "def enqueue(local_pub):\n    return local_pub\n"
+            "def send(cust_pub):\n    return enqueue(cust_pub)\n",
+    })
+    findings = detect_name_disagreements(files)
+    assert len(findings) == 1
+    assert "local_pub" in findings[0].summary
+    assert "recipient_pub" not in findings[0].summary
+
+
+def test_a_method_on_somebody_elses_object_is_not_ours(tmp_path):
+    """`subprocess.run(cmd)` is not our `run`. The receiver's type is exactly
+    what this layer does not know, so only `self`/`cls` methods count."""
+    files = _tree(tmp_path, {
+        "a.py": "def run(nodeids):\n    return nodeids\n",
+        "b.py":
+            "import subprocess\n"
+            "def go(cmd):\n    return subprocess.run(cmd)\n",
+    })
+    assert detect_name_disagreements(files) == []
+
+
+def test_a_method_reached_through_self_still_counts(tmp_path):
+    files = _tree(tmp_path, {
+        "a.py":
+            "class Sender:\n"
+            "    def enqueue(self, recipient_pub):\n"
+            "        return recipient_pub\n"
+            "    def send(self, cust_pub):\n"
+            "        return self.enqueue(cust_pub)\n",
+    })
+    assert len(detect_name_disagreements(files)) == 1
 
 
 def test_a_constant_keeps_its_role(tmp_path):

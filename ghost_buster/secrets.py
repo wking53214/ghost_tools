@@ -196,7 +196,7 @@ def _short_message(message: str, limit: int = 90) -> str:
     return first_line if len(first_line) <= limit else first_line[: limit - 1] + "…"
 
 
-def _finding(root: Path, entry: dict) -> Optional[Finding]:
+def _finding(root: Path, entry: dict) -> Optional[Finding]:  # ghost_buster: name-disagreement -- `entry` is `e` at every call site
     file = entry.get("File")
     if not file:
         return None
@@ -359,7 +359,7 @@ def scan(root: Path, *, gitleaks_path: Optional[str] = None,
         report.reason = "gitleaks report was not a JSON array"
         return [], report
 
-    findings = [f for f in (_finding(root, e) for e in entries if isinstance(e, dict)) if f]
+    findings = [f for f in (_finding(root, e) for e in entries if isinstance(e, dict)) if f]  # ghost_buster: name-disagreement -- `e` is `entry` in the signature
     report.ran = True
     report.leaks_found = len(findings)
     return findings, report

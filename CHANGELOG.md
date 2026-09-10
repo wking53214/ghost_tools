@@ -1,5 +1,64 @@
 # Changelog
 
+## 0.17.11 (2026-09-10)
+
+### ghost_buster
+`--annotate-names` writes each 1:1 name disagreement into the two places
+somebody looks: a regenerated table in the README, and a trailing comment
+on the signature and on each call site.
+
+This is the only thing in the toolkit that writes into the tree it was
+pointed at, and it is fenced for it. Notes are comments, never code. They
+are appended to existing lines rather than inserted as lines of their own,
+so no line number moves and a re-run can find what the last run wrote. They
+are stripped and rewritten whole each run, so they follow a rename instead
+of piling up behind one, and neither record carries a timestamp -- a run
+that finds nothing new produces no diff at all.
+
+The claim that a note cannot change what a program means is checked, not
+promised: every edit is parsed before and after and the syntax trees
+compared, one edit at a time. Two cases found this the hard way and are now
+tests -- a marker that was really part of a string literal (an earlier
+whole-file check cost that file every annotation it should have had), and a
+call on a backslash continuation, where a comment cannot follow.
+
+`find_name_disagreements` now returns the pairs with their line numbers,
+which is what makes an annotation possible; `detect_name_disagreements`
+builds the same findings from it.
+
+Two false-positive generators were found by running this against the
+toolkit itself and are now fixed. A call was matched to the FIRST function
+of that name anywhere in the scan, so `subprocess.run(cmd)` in one module
+took its parameter names from `PytestRunner.run(self, nodeids)` in another
+and the two were reported as one value under two names. And any attribute
+call counted, which is how a stranger's method got treated as ours. A call
+now resolves to a definition in its own file first, then to a library-wide
+one only if the name is defined exactly once; a method counts only when it
+is reached through `self` or `cls`. Ambiguity is not a tie to be broken.
+
+Measured across the 37-repository library: 63 disagreements (89 before the
+fix), 21 of them spanning more than one repository, 179 note lines across
+62 files.
+
+## 0.17.10 (2026-09-10)
+
+### blackhole_extrapolator
+`reconstruct` rebuilds a flattened Python file -- one whose newlines are
+gone and whose whole program sits on a single row -- into an editable
+draft, written as a proposal into a directory the caller names, never
+beside the original. 34 flattened files library-wide; none recovers as a
+running program, all 34 become drafts, median 1 line to 135.
+
+`parses` is not enough to call a reconstruction recovered: a flattened file
+whose single line begins with `#` is one comment that parses cleanly and
+defines nothing. The check is `bool(tree.body)`.
+
+### ghost_buster
+`name_disagreement`: one value carried across a seam under two names,
+reported only for a true bijection, because that is the only case where the
+two names provably denote one thing and a substitution cannot capture
+anything else.
+
 ## 0.10.1 (2026-09-10)
 
 ### ghost_buster
