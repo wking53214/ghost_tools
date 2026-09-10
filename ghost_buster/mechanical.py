@@ -22,7 +22,7 @@ import re
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional, Set, Tuple
 
-from .schema import Category, Evidence, Finding, Layer, Severity, Status
+from .schema import Category, Evidence, Finding, Layer, Severity, Status, _portable_path
 
 DetectorFn = Callable[[List[Path]], List[Finding]]
 
@@ -281,8 +281,10 @@ def _is_test_file(path: Path) -> bool:
     return any(part.lower() in ("tests", "test") for part in path.parts[:-1])
 
 
-def _identical_file_groups(files: List[Path]) -> List[List[Path]]:
-    """Groups of 2+ scanned files with byte-identical content. Measured on
+def _identical_file_groups(files: List[Path]) -> List[Tuple[str, List[Path]]]:
+    """(sha256, group) for every set of 2+ scanned files with byte-identical
+    content. The digest is carried out so the finding can publish it as a
+    join key -- correlate.py matches a leaked file against its twins on it. Measured on
     the first whole-library run (37 repositories): 31 such groups, almost
     all a module vendored verbatim from a sibling repo (sentinel_os and
     gsa-815 share queue_staffing_bayes_integration.py; sentinel_os and
@@ -301,7 +303,7 @@ def _identical_file_groups(files: List[Path]) -> List[List[Path]]:
             # 4 of the first 35 groups on the library were exactly that.
             continue
         by_hash.setdefault(hashlib.sha256(content).hexdigest(), []).append(path)
-    return [group for group in by_hash.values() if len(group) > 1]
+    return [(digest, group) for digest, group in by_hash.items() if len(group) > 1]
 
 
 @register("duplicate_file")
@@ -315,9 +317,13 @@ def detect_duplicate_files(files: List[Path]) -> List[Finding]:
     a symlinked directory was scanned twice is not this -- the CLI
     collects each real path once, so it never reaches here."""
     findings: List[Finding] = []
-    for group in _identical_file_groups(files):
+    for digest, group in _identical_file_groups(files):
         group = sorted(group)
-        names = ", ".join(str(p) for p in group)
+        # Portable paths, not absolute: the summary is part of the finding
+        # id, so an absolute path here made every duplicate_file id depend
+        # on the checkout's location -- the same defect _portable_path was
+        # written to fix for evidence.file.
+        names = ", ".join(_portable_path(str(p)) for p in group)
         size = group[0].stat().st_size
         findings.append(Finding(
             detector="duplicate_file",
@@ -332,6 +338,11 @@ def detect_duplicate_files(files: List[Path]) -> List[Finding]:
                 "instead of imported. Whichever copy gets the next fix, the other "
                 "won't."
             ),
+            attributes={
+                "content_sha256": digest,
+                "group_size": str(len(group)),
+                "size_bytes": str(size),
+            },
             evidence=Evidence(file=str(group[0]), related_files=[str(p) for p in group[1:]]),
         ))
     return findings
@@ -360,7 +371,7 @@ def detect_near_duplicate_functions(files: List[Path], min_lines: int = 10) -> L
     """
     representatives: List[Path] = []
     seen_twins = set()
-    for group in _identical_file_groups(files):
+    for _digest, group in _identical_file_groups(files):
         for path in sorted(group)[1:]:
             seen_twins.add(path)
     representatives = [p for p in files if p not in seen_twins]
@@ -736,6 +747,10 @@ def detect_doc_test_count_drift(
                     "and update the claim, or remove the specific number if it "
                     "will keep going stale."
                 ),
+                attributes={
+                    "documented_count": str(documented),
+                    "static_lower_bound": str(actual),
+                },
                 evidence=Evidence(file=str(path), line_start=line, line_end=line),
             ))
     return findings

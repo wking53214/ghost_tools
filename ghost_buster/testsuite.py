@@ -505,6 +505,17 @@ def _finding(root: Path, outcome: TestOutcome, kind: str, severity: Severity,
         status=Status.CONFIRMED,
         summary=f"{kind}: {outcome.nodeid} {summary}".rstrip(),
         detail=detail,
+        # Join keys for correlate.py: `kind` is the classification this
+        # module made ("failing test", "flaky test", ...), `phase` is which
+        # pytest phase produced it -- "collect" is the one that means the
+        # module could not even be imported, which is what a conflict
+        # marker in that file looks like from here.
+        attributes={
+            "nodeid": outcome.nodeid,
+            "kind": kind,
+            "phase": outcome.when,
+            "outcome": outcome.outcome,
+        },
         evidence=_evidence(root, outcome),
     )
 

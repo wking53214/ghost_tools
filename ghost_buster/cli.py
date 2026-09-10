@@ -18,6 +18,11 @@ from typing import Iterable, List
 
 from .baseline import Baseline
 from .branches import scan as scan_branches
+from .correlate import (
+    load_prior_run,
+    render_report as render_correlation_report,
+    run_connectors,
+)
 from .testsuite import render_report as render_test_report, scan as scan_tests
 from .mechanical import run_all
 from .mutation import render_run, run_mutations
@@ -100,7 +105,12 @@ def _print_report(new: List[Finding], known: List[Finding]) -> None:
         print("  (nothing new)\n")
 
 
-def main(argv: List[str] = None) -> int:
+def _build_parser() -> argparse.ArgumentParser:
+    """Every flag in one place. Extracted from main() because ghost_buster's
+    own `long_function` detector flagged main() at 194 lines against its
+    threshold of 80 -- the argument table is the bulk of it and has no
+    control flow, so lifting it out is the whole fix.
+    """
     parser = argparse.ArgumentParser(prog="ghost_buster")
     parser.add_argument("path", type=Path, help="directory to scan")
     parser.add_argument(
@@ -180,6 +190,64 @@ def main(argv: List[str] = None) -> int:
                         help="path to the gitleaks executable (default: gitleaks on PATH)")
     parser.add_argument("--secrets-timeout", type=float, default=300.0, metavar="SECONDS",
                         help="timeout for the gitleaks run (default 300)")
+    parser.add_argument(
+        "--correlate-with", action="append", default=[], metavar="[LABEL=]FILE",
+        help="another repository's --json output, optionally named "
+             "(`sentinel_os=/path/to/findings.json`); repeatable. Lets the "
+             "cross-repository connectors fire: the same leaked credential "
+             "present in a vendored or forked copy is one credential, not two "
+             "unrelated findings. Correlation over this run's own findings "
+             "always runs and needs no flag.",
+    )
+    parser.add_argument(
+        "--no-correlate", action="store_true",
+        help="skip the correlation pass entirely (it reads findings already "
+             "computed, runs no new scan, and is normally free)",
+    )
+    return parser
+
+
+def _run_repository_checks(args, findings: List[Finding]):
+    """The three opt-in checks that take a repository rather than a file
+    list: --branches, --tests, --secrets. Each appends to `findings` and
+    prints its own one-line report to stderr. Returns the TestStatusReport
+    when --tests ran (the correlation layer needs the measured counts),
+    else None.
+
+    Extracted from main() for the same reason as _build_parser: these are
+    one cohesive stage, and main() was over the long_function threshold."""
+    if args.branches:
+        branch_findings, branch_report = scan_branches(args.path, args.branches_base)
+        if branch_report.ran:
+            print(
+                f"ghost_buster: branch scan compared {branch_report.branches_scanned} "
+                f"branch(es) against '{branch_report.base_branch}'", file=sys.stderr,
+            )
+        else:
+            print(f"ghost_buster: branch scan did not run: {branch_report.reason}", file=sys.stderr)
+        findings.extend(branch_findings)
+
+    test_report = None
+    if args.tests:
+        test_findings, test_report = scan_tests(
+            args.path, python=args.tests_python, reruns=args.tests_reruns,
+            timeout=args.tests_timeout,
+        )
+        print(render_test_report(test_report), file=sys.stderr)
+        findings.extend(test_findings)
+
+    if args.secrets:
+        secrets_findings, secrets_report = scan_secrets(
+            args.path, gitleaks_path=args.secrets_binary, timeout=args.secrets_timeout,
+        )
+        print(render_secrets_report(secrets_report), file=sys.stderr)
+        findings.extend(secrets_findings)
+
+    return test_report
+
+
+def main(argv: List[str] = None) -> int:
+    parser = _build_parser()
     args = parser.parse_args(argv)
 
     if not args.path.is_dir():
@@ -207,31 +275,24 @@ def main(argv: List[str] = None) -> int:
         )
         findings.extend(mutation_run.findings)
 
-    if args.branches:
-        branch_findings, branch_report = scan_branches(args.path, args.branches_base)
-        if branch_report.ran:
-            print(
-                f"ghost_buster: branch scan compared {branch_report.branches_scanned} "
-                f"branch(es) against '{branch_report.base_branch}'", file=sys.stderr,
-            )
-        else:
-            print(f"ghost_buster: branch scan did not run: {branch_report.reason}", file=sys.stderr)
-        findings.extend(branch_findings)
+    test_report = _run_repository_checks(args, findings)
 
-    if args.tests:
-        test_findings, test_report = scan_tests(
-            args.path, python=args.tests_python, reruns=args.tests_reruns,
-            timeout=args.tests_timeout,
+    if not args.no_correlate:
+        prior_runs = []
+        for prior_path in args.correlate_with:
+            try:
+                prior_runs.append(load_prior_run(prior_path))
+            except ValueError as e:
+                # A typo'd --correlate-with is a usage error, not a silently
+                # empty correlation: failing quiet here would mean reporting
+                # "nothing to connect" for a cross-repo leak that is real.
+                print(f"error: --correlate-with {e}", file=sys.stderr)
+                return 2
+        correlations = run_connectors(
+            findings, prior_runs=prior_runs, test_report=test_report,
         )
-        print(render_test_report(test_report), file=sys.stderr)
-        findings.extend(test_findings)
-
-    if args.secrets:
-        secrets_findings, secrets_report = scan_secrets(
-            args.path, gitleaks_path=args.secrets_binary, timeout=args.secrets_timeout,
-        )
-        print(render_secrets_report(secrets_report), file=sys.stderr)
-        findings.extend(secrets_findings)
+        print(render_correlation_report(correlations), file=sys.stderr)
+        findings.extend(correlations)
 
     try:
         baseline = Baseline(baseline_path)

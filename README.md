@@ -55,8 +55,9 @@ gate is enforced in code (`ghost_writer/report.py`'s
 
 ## ghost_buster
 
-Two independent layers, plus three repository-level checks, all producing
-the same `Finding` shape (`ghost_buster/schema.py`):
+Two independent layers, three repository-level checks, and a correlation
+pass over all of them, every one producing the same `Finding` shape
+(`ghost_buster/schema.py`):
 
 - **Mechanical** (`ghost_buster/mechanical.py`) -- deterministic, AST-based,
   stdlib only. Every finding is `Status.CONFIRMED`; there's nothing to
@@ -380,6 +381,63 @@ the same `Finding` shape (`ghost_buster/schema.py`):
   exploratory run (dropping `--redact`) is documented, not forced, since
   no field it touches is ever read into a finding regardless.
 
+- **Correlation** (`ghost_buster/correlate.py`, on by default,
+  `--no-correlate` opts out) -- connectors: findings that only exist when
+  two detectors are read together. Every detector here is deliberately
+  independent, which is what makes each one testable and each finding
+  traceable to one cause, but it leaves a class of problem whose evidence
+  is split across two of them and which neither can state alone.
+
+  A connector is a pure function over the findings a run already produced.
+  It parses nothing, runs no subprocess, reads no files, and produces
+  nothing when its inputs are absent, so it is free and silent on a
+  default scan. Four ship:
+
+  | connector | joins | says what neither input can |
+  |---|---|---|
+  | `secret_in_duplicated_file` | `committed_secret` + `duplicate_file` | the credential is in N files, so purging one history leaves it live in the rest |
+  | `secret_in_multiple_repositories` | `committed_secret` + another repo's `--json` | the same leak, by gitleaks' own fingerprint, in more than one repository |
+  | `conflict_marker_breaks_tests` | `merge_conflict_marker` + `test_status` | one unresolved marker is why N tests cannot run, rather than N independent broken tests |
+  | `doc_count_contradicted_by_run` | `doc_test_count_drift` + the `--tests` run | the measured collected/passing counts, closing the loop the static detector's own detail says to close by hand |
+
+  Correlations are **additive**: the inputs stay, each independently true
+  and independently actionable, and every correlation names the findings
+  it was built from by id. They join on `Finding.attributes` -- structured
+  keys each detector publishes (a gitleaks fingerprint, a content hash, a
+  pytest node id) -- never on summary prose, because a reworded summary
+  would switch a connector off silently, and failing quiet is the failure
+  mode this project treats as worse than crashing. Only `CONFIRMED`
+  findings are eligible (a deterministic fact joined to an unverified LLM
+  claim is neither), and connectors never read their own output.
+
+  Building this surfaced a real defect it then fixed: `Evidence.
+  related_files` was written straight from the scan's absolute paths while
+  every other path was project-relative, so a committed baseline carried a
+  home directory and `certs/key.pem` could not be joined against its own
+  twin. `duplicate_file`'s summary had the same problem, which put an
+  absolute path inside a finding id -- the exact defect `_portable_path`
+  exists to prevent. Both are now portable; `duplicate_file` ids change
+  once as a result (re-accept the baseline), and a test pins that the same
+  two files scanned from two different checkout locations produce the same
+  id.
+
+  Dogfooded on the live case that motivated it: a committed TLS private
+  key in `sentinel_os/certs/key.pem`, also present in `observe`, which
+  vendors a copy. Two separate scans previously reported two unrelated
+  CRITICALs with nothing saying they were one credential;
+  `secret_in_multiple_repositories` now matches them on gitleaks'
+  fingerprint and says so, and four `secret_in_duplicated_file`
+  correlations fired within `observe` besides.
+
+  `Tests/test_correlate.py` gives every connector both directions -- it
+  fires on the shape it exists for, and stays silent on the near-miss that
+  shares part of that shape (a marker in a different file, a secret whose
+  file has no twin, a different fingerprint, a suite that never ran).
+  `Tests/test_correlate_mutants.py` breaks the layer twenty ways, mostly
+  by loosening a join or dropping a guard, and requires each to fail a
+  test; one mutant is documented rather than forced, being a cost guard
+  whose removal changes nothing observable.
+
 ### Usage
 
 ```bash
@@ -411,12 +469,19 @@ python -m ghost_buster.cli /path/to/repo --branches --branches-base origin/devel
 # stale skip). Executes the project's tests; never installs or starts anything.
 python -m ghost_buster.cli /path/to/repo --tests
 python -m ghost_buster.cli /path/to/repo --tests --tests-python /path/to/repo/.venv/bin/python --tests-reruns 5
+
 # scan the checked-out branch's git history for committed secrets with
 # gitleaks (must be installed separately; never installed by this tool).
 # Read-only: never rewrites history, rotates a credential, or writes into
 # the target repository.
 python -m ghost_buster.cli /path/to/repo --secrets
 python -m ghost_buster.cli /path/to/repo --secrets --secrets-binary /opt/gitleaks/gitleaks
+
+# correlation runs by default and needs no flag. To let the cross-repository
+# connectors fire, hand it another repo's --json output; LABEL= names it in
+# the report. --no-correlate skips the pass entirely.
+python -m ghost_buster.cli /path/to/other --secrets --json > /tmp/other.json
+python -m ghost_buster.cli /path/to/repo --secrets --correlate-with other=/tmp/other.json
 ```
 
 ### `--mutate`: the proof a check is vacuous
@@ -592,19 +657,20 @@ test suite runs.
 python -m pytest Tests/ -v
 ```
 
-464 tests, 0 network calls, 0 API key required -- the semantic-layer
+519 tests, 0 network calls, 0 API key required -- the semantic-layer
 tests verify the real parsing/fail-closed/injection-fencing logic via
 `StubModelClient`, the same technique `sentinel_os`'s own `interpretation/`
 package uses for its model-client tests. `test_branches.py`,
 `test_secrets.py` and `test_testsuite.py` build real, local git
-repositories and pytest projects in `tmp_path` instead, the only honest
-way to test a ref-graph, git-history or suite-execution check (the secrets
+repositories and pytest projects in `tmp_path` instead, the only honest way
+to test a ref-graph, git-history or suite-execution check (the secrets
 suite against a real gitleaks binary, skipped if one is not on PATH).
 `test_mutation.py`, `test_gate_mutants.py`, `test_polish_mutants.py`,
 `test_branches_mutants.py`, `test_duplication_mutants.py`,
-`test_testsuite_mutants.py` and `test_secrets_mutants.py` run pytest in
-subprocesses against scratch copies of the project; they account for most
-of the suite's wall-clock time.
+`test_testsuite_mutants.py`, `test_secrets_mutants.py` and
+`test_correlate_mutants.py` run pytest in subprocesses against scratch
+copies of the project; they account for most of the suite's wall-clock
+time.
 
 ## Changelog
 

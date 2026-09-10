@@ -212,6 +212,15 @@ def _finding(root: Path, entry: dict) -> Optional[Finding]:
         status=Status.CONFIRMED,
         summary=summary,
         detail="\n".join(detail_lines),
+        # Join keys for correlate.py. The fingerprint is gitleaks' own
+        # identifier for one leak (commit:file:rule:line) and is what makes
+        # "the same leak, in two repositories" a exact match rather than a
+        # guess from prose. None of these is the secret itself.
+        attributes={
+            "fingerprint": fingerprint,
+            "rule": rule,
+            "commit": commit,
+        },
         evidence=Evidence(
             file=str(absolute), line_start=line, line_end=end_line, snippet=rule,
         ),

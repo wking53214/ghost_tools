@@ -25,7 +25,7 @@ pytestmark = pytest.mark.skipif(
            "(https://github.com/gitleaks/gitleaks#installing)",
 )
 
-AWS_KEY = "AKIAABCDEFGHIJKLMNOP"
+AWS_KEY = "AKIAABCDEFGHIJKLMNOP"  # gitleaks:allow -- fixture, not a real key
 
 
 def _git(repo: Path, *args: str) -> None:
@@ -232,7 +232,7 @@ def test_multiple_rules_or_lines_in_one_commit_are_distinct_findings(tmp_path):
     repo = _init_repo(tmp_path / "repo")
     _commit(
         repo, "config.py",
-        f"AWS_KEY = '{AWS_KEY}'\nGH_TOKEN = 'ghp_1234567890abcdefghijklmnopqrstuvwxyz'\n",
+        f"AWS_KEY = '{AWS_KEY}'\nGH_TOKEN = 'ghp_1234567890abcdefghijklmnopqrstuvwxyz'\n",  # gitleaks:allow
         "add two secrets",
     )
 
@@ -249,7 +249,7 @@ def test_two_secrets_on_one_line_are_distinct_findings(tmp_path):
     # so in the finding id), these two real, distinct leaks collide into
     # one id and the baseline would only ever remember one of them.
     repo = _init_repo(tmp_path / "repo")
-    second_key = "AKIAZYXWVUTSRQPONMLK"
+    second_key = "AKIAZYXWVUTSRQPONMLK"  # gitleaks:allow -- fixture, not a real key
     _commit(repo, "two.py", f"A='{AWS_KEY}'; B='{second_key}'\n", "two keys one line")
 
     findings, report = scan(repo)

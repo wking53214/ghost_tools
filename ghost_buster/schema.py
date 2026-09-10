@@ -25,6 +25,22 @@ verifies it. This distinction is load-bearing, not decorative: it's what
 stops ghost_buster from inheriting the exact "hallucinated, unreviewed,
 non-deterministic AI output" failure mode it exists to catch elsewhere.
 
+WHY ATTRIBUTES EXIST
+----------------------
+`summary` and `detail` are written for a human. `attributes` is the same
+finding's facts written for a machine: the gitleaks fingerprint behind a
+committed_secret, the content hash behind a duplicate_file, the pytest
+node id behind a test_status. correlate.py joins findings from different
+detectors on these keys.
+
+Without them, cross-detector correlation means regex-parsing prose that
+exists to be readable, and every wording change silently breaks a
+correlation. Attributes are deliberately NOT part of the finding id --
+adding a key to an existing detector must not renumber a committed
+baseline -- and they are free-form `str -> str` per detector rather than a
+fixed schema, because what identifies a duplicate file has nothing in
+common with what identifies a flaky test.
+
 SEVERITY IS SEPARATE FROM STATUS
 -----------------------------------
 Severity (how bad, if true) and status (how sure we are it's true) are
@@ -193,6 +209,9 @@ class Finding:
     summary: str
     evidence: Evidence
     detail: str = ""
+    # Machine-readable join keys, for correlate.py -- see WHY ATTRIBUTES
+    # EXIST in the module docstring. Never part of the id.
+    attributes: Dict[str, str] = field(default_factory=dict)
     confidence: Optional[float] = None  # 0.0-1.0, semantic layer only; None for mechanical
     first_seen: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     disposition: Optional[str] = None  # set by the human triage step, see triage.py
@@ -207,6 +226,16 @@ class Finding:
         if portable != self.evidence.file:
             self.evidence.absolute_file = self.evidence.file
             self.evidence.file = portable
+        # related_files gets the same treatment as file. It used to be
+        # written straight from the scan's absolute paths, which made a
+        # committed baseline carry a home directory and made two findings
+        # about the same file impossible to join (correlate.py needs to
+        # match a leaked path against the paths of its byte-identical
+        # twins, and "certs/key.pem" does not equal
+        # "/home/someone/proj/certs/key.pem").
+        self.evidence.related_files = [
+            _portable_path(p) for p in self.evidence.related_files
+        ]
         self.id = _stable_id(self.detector, portable, self.summary)
         if self.confidence is not None and not (0.0 <= self.confidence <= 1.0):
             raise ValueError(f"confidence must be 0.0-1.0, got {self.confidence}")
@@ -228,6 +257,7 @@ class Finding:
             "status": self.status.value,
             "summary": self.summary,
             "detail": self.detail,
+            "attributes": dict(self.attributes),
             "evidence": self.evidence.as_dict(),
             "confidence": self.confidence,
             "first_seen": self.first_seen,
@@ -246,6 +276,7 @@ class Finding:
             status=Status(payload["status"]),
             summary=payload["summary"],
             detail=payload.get("detail", ""),
+            attributes=dict(payload.get("attributes", {})),
             evidence=Evidence(
                 file=ev["file"], line_start=ev.get("line_start"),
                 line_end=ev.get("line_end"), snippet=ev.get("snippet"),
