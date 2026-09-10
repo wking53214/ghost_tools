@@ -41,10 +41,90 @@ def registered_detectors() -> Dict[str, DetectorFn]:
 
 
 def _parse(path: Path):
+    """None means THIS DETECTOR COULD NOT ASSESS THIS FILE. It does not mean
+    the file is clean. See detect_unassessable_file below, which is the only
+    reason that distinction is visible to anyone."""
     try:
         return ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     except (SyntaxError, UnicodeDecodeError):
         return None
+
+
+def _parse_failure(path: Path):
+    """The reason _parse would return None, or None if it would succeed."""
+    try:
+        ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        return None
+    except SyntaxError as e:
+        line = f" at line {e.lineno}" if e.lineno else ""
+        return f"SyntaxError{line}: {e.msg}"
+    except UnicodeDecodeError as e:
+        return f"UnicodeDecodeError: not valid {e.encoding} at byte {e.start}"
+    except (OSError, ValueError) as e:
+        return f"{type(e).__name__}: {e}"
+
+
+# ---------------------------------------------------------------------------
+# Detector: unassessable_file -- a file every AST detector silently skipped.
+#
+# BORROWED, KNOWINGLY, FROM A PEDIATRIC SEPSIS ENGINE.
+#
+# observe-perceive's BayesianFusion carries this comment:
+#
+#     An engine that returns abstained=True is saying "I have no data to
+#     assess this patient" -- which is fundamentally different from "this
+#     patient looks stable." Previously, three low-confidence abstentions
+#     could outvote a single high-confidence septic-shock detection.
+#
+# ghost_buster had exactly that bug in a different costume. _parse() returns
+# None on a file it cannot read, every AST detector skips that file, and the
+# run reports nothing about it. Measured 2026-09-10 on three files -- one
+# clean, one with conflict markers, one with a syntax typo -- the typo file
+# produced no findings whatsoever while the header still said "scanning 3
+# file(s)". Its dead function was invisible. Silence read as all-clear.
+#
+# The clinical engine's fix is to make abstention explicit and refuse to fuse
+# it into the verdict. This detector is the same fix: abstention becomes a
+# finding rather than an absence. Every other detector still fails closed,
+# which is correct -- what was wrong was that nobody was told.
+#
+# It matters most exactly when it fires. A file that will not parse is
+# usually broken RIGHT NOW, which is the worst possible moment for every
+# structural check to quietly look away.
+# ---------------------------------------------------------------------------
+
+@register("unassessable_file")
+def detect_unassessable_file(files: List[Path]) -> List[Finding]:
+    out = []
+    for path in sorted(f for f in files if f.suffix == ".py"):
+        reason = _parse_failure(path)
+        if reason is None:
+            continue
+        out.append(Finding(
+            detector="unassessable_file",
+            category=Category.OTHER,
+            layer=Layer.MECHANICAL,
+            severity=Severity.MAJOR,
+            status=Status.CONFIRMED,
+            summary=(f"{_portable_path(path)} could not be parsed, so every "
+                     f"structural detector skipped it ({reason})"),
+            evidence=Evidence(file=str(path)),
+            detail=(
+                "This is an ABSTENTION, not a clean result. The file was counted "
+                "in the scan total and contributed nothing to it: dead code, "
+                "duplication, long functions and every other AST check silently "
+                "passed over it, and without this finding the output would be "
+                "identical to a file that was checked and found fine.\n\n"
+                "Usual causes, in order: the file is genuinely broken right now "
+                "(a syntax error, or conflict markers that also break parsing); "
+                "it targets a different Python version than the interpreter "
+                "running the scan; or it is a template with placeholders rather "
+                "than real source. The first is urgent. The third is worth "
+                "excluding by name so the abstention stops being reported."
+            ),
+            attributes={"reason": reason},
+        ))
+    return out
 
 
 # ---------------------------------------------------------------------------

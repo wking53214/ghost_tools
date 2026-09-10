@@ -1,4 +1,4 @@
-# ghost_tools -- v0.12
+# ghost_tools -- v0.13
 
 Four commands, one pipeline. `ghost-buster` hunts down structural problems
 in code and, with `--mutate`, proves which tests pass without checking
@@ -79,6 +79,30 @@ growing without bound. Writes are atomic; a corrupt or future-schema
 ledger fails the run rather than silently starting over, because an empty
 history reported as a clean one is the lie this whole feature exists to
 prevent.
+
+## Where one idea came from (v0.13.0)
+
+`unassessable_file` is borrowed, knowingly, from a pediatric sepsis
+engine. `observe-perceive`'s `BayesianFusion` carries this comment,
+written after a real defect:
+
+> An engine that returns `abstained=True` is saying "I have no data to
+> assess this patient" -- which is fundamentally different from "this
+> patient looks stable." Previously, three low-confidence abstentions
+> could outvote a single high-confidence septic-shock detection.
+
+ghost_buster had the same bug in different clothes. `_parse()` returns
+`None` for a file it cannot read, every AST detector skips that file, and
+the run said nothing at all. Measured on three files -- one clean, one
+with conflict markers, one with a syntax typo -- the typo file produced
+no findings whatsoever, its dead function invisible, while the header
+still reported "scanning 3 file(s)". Silence read as all-clear.
+
+Every detector still fails closed on a file it cannot parse, which is
+correct. What was wrong is that nobody was told. An abstention is now a
+MAJOR finding naming the file and the reason, because a file that will
+not parse is usually broken right now, which is the worst possible moment
+for every structural check to look away.
 
 ## Install
 
