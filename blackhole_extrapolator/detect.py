@@ -26,6 +26,8 @@ from __future__ import annotations
 
 import ast
 import builtins
+import importlib.util
+import sys
 import re
 from pathlib import Path
 from typing import Iterable, Iterator, Sequence
@@ -85,6 +87,54 @@ def _available_modules(search_roots: Sequence[Path]) -> set[str]:
                     any(not _SKIP_DIRS & set(p.parts) for p in path.rglob("*.py")):
                 available.add(path.name)
     return available
+
+
+# WHY `__import__` IS NOT THE TEST
+#
+# Until 2026-09-10 a module was considered real if `__import__` succeeded.
+# That asks "is it installed on the machine running the scan", which is a
+# fact about a container, not about the code. Measured across a
+# 37-repository library on a runner with no scientific stack: `matplotlib`,
+# `torch`, `cv2`, `sentence_transformers`, `pandas`, `joblib`, `lightgbm`
+# and `openai` were all reported as absences whose shape should be
+# reconstructed. Run the same scan on a laptop with those installed and the
+# voids evaporate.
+#
+# So resolution is checked against things that do not move: the standard
+# library for this interpreter, the builtins, the typing vocabulary, and
+# only then what happens to be installed.
+_STDLIB = frozenset(sys.stdlib_module_names)
+# `Dict` and `Any` used unimported are not modules at all, and an outline of
+# their "shape" is nonsense. They are here so the report says `import` and
+# not `void`.
+_TYPING_NAMES = frozenset({
+    "Any", "AnyStr", "Awaitable", "Callable", "ClassVar", "Coroutine",
+    "Dict", "Final", "FrozenSet", "Generator", "Generic", "Iterable",
+    "Iterator", "List", "Literal", "Mapping", "NamedTuple", "NoReturn",
+    "Optional", "Protocol", "Sequence", "Set", "Tuple", "Type", "TypeVar",
+    "TypedDict", "Union",
+})
+
+
+def resolution(name: str) -> str | None:
+    """Why a name this tree does not define is nonetheless not missing.
+
+    Returns a phrase naming where it lives, or None when nothing here can
+    account for it. The order is deliberate: the checks that hold on every
+    machine come before the one that depends on this one.
+    """
+    if name in _STDLIB:
+        return "the standard library"
+    if name in _TYPING_NAMES:
+        return "typing"
+    if name in _BUILTINS:
+        return "builtins"
+    try:
+        if importlib.util.find_spec(name) is not None:
+            return "installed in this environment"
+    except (ImportError, ValueError, ModuleNotFoundError):
+        pass
+    return None
 
 
 def _normalise_dist(name: str) -> str:
@@ -285,6 +335,21 @@ def detect_dangling_names(path: Path, source: str | None = None
         seen.add(name)
 
         uses = _attribute_uses(tree, name)
+
+        # A name the language already provides, used without importing it,
+        # is a missing import and not a missing thing. Emitted before the
+        # attribute survey because that survey would otherwise describe the
+        # standard library back to the reader as an interface to rebuild.
+        where = resolution(name)
+        if where:
+            yield NegativeEvidence(
+                kind=EvidenceKind.MISSING_IMPORT,
+                detail=(f"`{name}` is used but never imported; it is part of "
+                        f"{where}. The fix is an import, not a reconstruction."),
+                file=str(path), line=node.lineno,
+            )
+            continue
+
         if uses:
             reads = sorted({a for a, _, w in uses if not w})
             writes = sorted({a for a, _, w in uses if w})
@@ -338,11 +403,8 @@ def detect_missing_imports(path: Path, search_roots: Sequence[Path],
             continue
         if not module or module in available:
             continue
-        try:                       # a real third-party or stdlib module
-            __import__(module)
+        if resolution(module):     # stdlib, builtins, typing, or installed
             continue
-        except Exception:          # noqa: BLE001
-            pass
         providers = providers or {}
         provider = providers.get(module) or providers.get(_normalise_dist(module))
         if provider:
@@ -352,7 +414,15 @@ def detect_missing_imports(path: Path, search_roots: Sequence[Path],
                 file=str(path), line=node.lineno,
             )
             continue
-        detail = f"module `{module}` is imported and exists nowhere in the search roots"
+        # Everything checkable has been checked and none of it accounts for
+        # this. That is not the same as knowing it was lost: an undeclared
+        # package on an index this scan cannot reach looks identical from
+        # here. Say which checks were run, and let corroborating evidence --
+        # a dangling attribute use, debris, an orphaned test -- decide
+        # whether this is an absence or a dependency nobody wrote down.
+        detail = (f"module `{module}` is imported; it is not in the search roots, "
+                  "not provided by a sibling, not declared as a dependency, "
+                  "and not in the standard library")
         if names:
             detail += f"; its expected surface includes {sorted(names)}"
         submodule = providers.get("__uninitialised_submodule__")
@@ -360,7 +430,7 @@ def detect_missing_imports(path: Path, search_roots: Sequence[Path],
             detail += (f"; note: git submodule `{submodule}` is declared but not initialised, "
                        "run `git submodule update --init` and rescan before treating this as lost")
         yield NegativeEvidence(
-            kind=EvidenceKind.MISSING_MODULE, detail=detail,
+            kind=EvidenceKind.UNRESOLVED_IMPORT, detail=detail,
             file=str(path), line=node.lineno,
         )
 
