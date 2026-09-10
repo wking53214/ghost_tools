@@ -1,5 +1,65 @@
 # Changelog
 
+## 0.17.12 (2026-09-10)
+
+### blackhole_extrapolator
+`--recover-from` gets the ORIGINAL of a flattened file back, instead of
+proposing one.
+
+`--reconstruct-into` reasons about where the line breaks probably went and
+recovered a running program in 0 of 34 cases. This does something
+categorically different, because flattening turns out to be a whitespace-only
+transform. The 37 flattened files in a 37-repository library fall into
+exactly two shapes: one where each newline became a single space and the
+indentation survived (space runs of 4n+1), and one where every whitespace
+run collapsed to a single space, which is also what an HTML render does.
+Neither adds, removes or reorders a non-whitespace character.
+
+So `collapse` -- every whitespace run as one space -- is invariant under
+flattening, and a text that collapses to what a flattened file collapses to
+IS its original, up to whitespace. Not the most likely original.
+
+Four verdicts. `identical` and `contained` are that test passing and are
+written verbatim, with no header, because a byte-faithful original stops
+being one the moment something is prepended to it; the provenance goes in a
+RECOVERY.md manifest instead. `related` is high identifier similarity
+WITHOUT a collapse match -- a different draft of the same system -- and is
+named and deliberately not written. Four files scored 100% identifier
+overlap against a message that was a different version of the same code,
+which is exactly how a plausible file gets committed as a real one.
+
+Three defects found by running it against the real library, each now a test:
+
+  * A plain substring search matched mid-token (`port os` inside `import
+    os`), and the span recovered from it started inside an identifier.
+    Containment is checked on token boundaries, which after collapse means a
+    space or an end.
+  * Similarity scored as one-directional coverage rewarded a candidate for
+    being large: the derived `raw.csv` holding every message in an export
+    scored 100% against eight different files. It is intersection over union
+    now.
+  * Naming a recovery after the file's stem refused 6 of 27 as already
+    existing when nothing was in conflict, because four repositories each
+    hold an `artifact_1.py`. The path is in the name.
+
+One repair, gated on proving it helped: an HTML export writes an indent as
+`&nbsp;`, so the decoded text carries U+00A0 where the code had ordinary
+spaces and Python rejects that outside a string. `nbsp-to-space` is applied
+only when it turns a file that does not parse into one that does. The
+remaining failures (smart quotes, an arrow, a truncated string) are reported
+as not parsing and left exactly as the corpus holds them. Corpus damage is a
+fact about the corpus. HTML entity decoding is handled the same way: it only
+ADDS a candidate, which still has to pass the same exact collapse test.
+
+Measured against the library with five history corpora (37 flattened files,
+15,498 candidates): **29 recovered** -- 8 identical, 21 contained -- of which
+25 parse as real Python, 12 after the nbsp repair. 7 related and not written,
+1 with no candidate at all.
+
+The definition of a flattened file now lives in one place in the CLI, shared
+by the reconstruct pass and the recover pass, so the two cannot disagree
+about what they are looking at.
+
 ## 0.17.11 (2026-09-10)
 
 ### ghost_buster

@@ -1210,6 +1210,84 @@ every such void. When a parsing companion sits beside the flattened file
 kept any of the class names, so an ancestor of a renamed rewrite is not
 mistaken for a lost dependency.
 
+### `--recover-from`: the original itself, not a proposal for one
+
+`--reconstruct-into` rebuilds a flattened file by reasoning about where the
+line breaks probably went. Across a 37-repository library it recovered a
+running program in **0 of 34** cases. It gets you something editable, not
+something correct.
+
+This is a different job with a different guarantee. Flattening is a
+**whitespace-only** transform. Measured 2026-09-10, the 37 flattened files
+in that library fall into exactly two shapes:
+
+| shape | fingerprint | what did it |
+|---|---|---|
+| indentation survived | space runs of 4n+1 (5, 9, 13, 17...) | each newline became one space |
+| indentation gone | no multi-space run anywhere | every whitespace run became one space, which is also what an HTML render does |
+
+Neither adds, removes or reorders a single non-whitespace character. So
+define `collapse(x)` as every whitespace run replaced by one space, and
+`collapse` is **invariant under flattening**. If some other text collapses
+to exactly what the flattened file collapses to, that text is the original,
+up to whitespace. Not the most likely original. The original.
+
+The originals are usually still in a chat-history export. The raw ChatGPT
+export checked on 2026-09-10 held 20,919 fenced code blocks, 14,185 of them
+carrying real newlines; the only 39 single-line blocks over 200 characters
+were **Excel formulas**, which genuinely are one line. The vendor ships code
+with its newlines intact. The damage happens after the download, at a paste.
+
+**Four verdicts, and only two of them write anything.**
+
+| verdict | means | written |
+|---|---|---|
+| `identical` | a candidate collapses to exactly this file's collapse | yes, verbatim |
+| `contained` | this file's collapse is a substring of a candidate's, on token boundaries | yes, the located span's real bytes |
+| `related` | high identifier similarity, no collapse match | **no** |
+| `none` | nothing in the corpus is close | no |
+
+`related` is what keeps this honest. Four files scored 100% identifier
+overlap against a message that was a *different version* of the same code.
+High overlap is not the same claim as identical bytes, and treating it as
+one is how a plausible file gets committed as a real one.
+
+**Three defects this produced against the real library, each now a test:**
+
+- A plain substring search matched **mid-token** (`port os` inside
+  `import os`), and the span recovered from it started inside an identifier.
+  Containment is now checked on token boundaries, which after collapse means
+  a space or an end.
+- Similarity scored as one-directional coverage rewarded a candidate for
+  being **large**: the derived `raw.csv` holding every message in an export
+  scored 100% against eight different files. It is intersection over union
+  now.
+- Naming a recovery after the file's stem refused 6 of 27 as "already
+  exists", when nothing was in conflict: four repositories each hold an
+  `artifact_1.py`. The path is in the name.
+
+**One repair, and it has to prove it helped.** An HTML export writes an
+indent as `&nbsp;`, so the decoded text carries U+00A0 where the code had
+ordinary spaces, and Python rejects that outside a string literal.
+`nbsp-to-space` is applied only when it turns a file that does not parse
+into one that does; 9 of 11 non-parsing recoveries were fixed by it, and the
+rest (smart quotes, a truncated string) are reported as not parsing and left
+exactly as the corpus holds them. Damage in the corpus is a fact about the
+corpus. A recovery is written with **no header**, because a byte-faithful
+original stops being one the moment something is prepended to it; the
+provenance goes in a `RECOVERY.md` manifest beside the files.
+
+```bash
+# search one or more exports, write recovered originals and a manifest
+blackhole-extrapolator /path/to/library \
+    --recover-from ~/chatgpt_history --recover-from ~/gemini_history \
+    --recover-into /tmp/recovered
+```
+
+Nothing is written into the scanned tree, and nothing recovered is fed back
+into the analysis. A recovered file becomes real source the day a human
+reviews it and commits it.
+
 ### Sally is now Karen
 
 Every detector above keys on the literal identifier. Rename a function and
