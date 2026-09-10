@@ -282,9 +282,19 @@ class Ledger:
     def record(
         self, findings: Sequence[Finding], *, checks: Dict[str, str],
         commit: str, tool_version: str, at: Optional[str] = None,
+        scanned: Optional[int] = None,
     ) -> RunRecord:
         """Fold one run into memory. `findings` is everything FOUND, before
-        the baseline diff -- see the module docstring on why."""
+        the baseline diff -- see the module docstring on why.
+
+        `scanned` is how many files this run looked at. A count of findings
+        means nothing on its own across time: a repository that doubles in
+        size roughly doubles its findings, and without a denominator that
+        reads as decay rather than growth. Optional because ledgers written
+        before this existed have no denominator, and a run that cannot
+        supply one should still be recorded -- trajectory.py abstains on
+        those rather than guessing at them.
+        """
         at = at or _now()
         run = RunRecord(
             run_id=f"{at}:{commit[:12]}" if commit else at,
@@ -298,6 +308,8 @@ class Ledger:
         # closes by refusing to correlate correlations.
         findings = [f for f in findings if f.detector != DETECTOR]
         run.counts["found"] = len(findings)
+        if scanned is not None:
+            run.counts["scanned"] = int(scanned)
 
         seen_now = {f.id for f in findings}
         by_id = {f.id: f for f in findings}

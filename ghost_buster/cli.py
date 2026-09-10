@@ -26,6 +26,9 @@ from .ledger import (
     COULD_NOT_RUN, DECLINED, Ledger, LedgerError, NOT_RUN, RAN,
     _head_commit, render_report as render_ledger_report,
 )
+from .trajectory import (
+    derive as trajectory_derive, render_report as render_trajectory_report,
+)
 from .branches import scan as scan_branches
 from .correlate import (
     load_prior_run,
@@ -525,11 +528,19 @@ def main(argv: List[str] = None) -> int:
         checks["ledger"] = RAN
         ledger.record(
             findings, checks=checks, commit=_head_commit(args.path),
-            tool_version=__version__,
+            tool_version=__version__, scanned=len(files),
         )
         history = ledger.derive(findings)
         print(render_ledger_report(ledger, history), file=sys.stderr)
         findings.extend(history)
+
+        # Direction and surprise across runs. Emitted after the ledger has
+        # folded this run in, so the current measurement is part of the
+        # series it is judged against, and reported on the same channel as
+        # every other check -- including when it declines to judge.
+        trend = trajectory_derive(ledger.runs, root_label=str(args.path))
+        print(render_trajectory_report(ledger.runs), file=sys.stderr)
+        findings.extend(trend)
         try:
             ledger.save()
         except OSError as e:
