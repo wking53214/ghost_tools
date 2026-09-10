@@ -77,9 +77,16 @@ def test_an_unaccounted_import_is_named_unresolved_and_still_reported(tmp_path):
     evidence = scan(repo)
     assert [e.kind for e in evidence] == [EvidenceKind.UNRESOLVED_IMPORT]
     detail = evidence[0].detail
+    # Re-anchored when the manifest verdict landed: "not declared as a
+    # dependency" said the same thing to a project with a populated
+    # pyproject and to one with no manifest at all. The detail now names
+    # which of those it is, so this asserts the checks that are still
+    # phrased as checks, plus the verdict that replaced the fourth.
     for phrase in ("not in the search roots", "not provided by a sibling",
-                   "not declared as a dependency", "not in the standard library"):
+                   "not in the standard library"):
         assert phrase in detail, phrase
+    assert ("declares no dependencies anywhere" in detail
+            or "declares dependencies and this is not among them" in detail), detail
 
 
 def test_an_unresolved_import_alone_does_not_make_a_void(tmp_path, capsys):

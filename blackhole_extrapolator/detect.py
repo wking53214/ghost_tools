@@ -221,6 +221,51 @@ def _submodules(root: Path) -> list[tuple[str, bool]]:
     return out
 
 
+def false_absence_hints(root: Path, siblings: Sequence[Path] = ()) -> list[str]:
+    """Reasons a scan of this tree may report absences that are not absences.
+
+    The one hint that existed -- an uninitialised git submodule -- was the
+    most useful line the tool printed, because it named a specific way the
+    finding could be wrong and said how to check. Measured 2026-09-10, the
+    same class of error accounted for every wrong claim made about a single
+    module that day: each came from a scan whose scope was narrower than the
+    claim drawn from it.
+
+    So the hint is generalised. These are conditions of the SCAN, attached
+    once to the run rather than to any one void, because they explain the
+    report and not the code.
+    """
+    root = Path(root)
+    hints: list[str] = []
+
+    for path, initialised in _submodules(root):
+        if not initialised:
+            hints.append(
+                f"git submodule `{path}` is declared but not initialised. Run "
+                "`git submodule update --init` and rescan: everything it would "
+                "provide currently reads as missing.")
+
+    if not siblings:
+        hints.append(
+            "no sibling checkout was supplied. A module another repository in "
+            "this ecosystem provides is indistinguishable from a lost one "
+            "here -- pass --sibling, or scan the parent directory with "
+            "--ecosystem.")
+
+    gitignore = root / ".gitignore"
+    if gitignore.is_file():
+        ignored = [line.strip() for line in
+                   gitignore.read_text(errors="replace").splitlines()
+                   if line.strip().endswith(".py")]
+        if ignored:
+            hints.append(
+                f".gitignore excludes Python by name ({', '.join(ignored[:3])}). "
+                "A file present on disk but ignored is still scanned; one "
+                "absent from this checkout and ignored is not lost.")
+
+    return hints
+
+
 def resolve_providers(root: Path, siblings: Sequence[Path] = ()) -> dict[str, str]:
     """Module name -> who provides it, for everything this tree does not.
 
@@ -371,6 +416,18 @@ def detect_dangling_names(path: Path, source: str | None = None
         )
 
 
+def path_root(path: Path) -> Path:
+    """The checkout a file belongs to: the nearest ancestor holding .git,
+    falling back to its own directory. Needed because the import detector
+    is handed one file, and whether a dependency was DECLARED is a fact
+    about the repository around it."""
+    path = Path(path)
+    for parent in [path] + list(path.parents):
+        if (parent / ".git").exists():
+            return parent
+    return path.parent
+
+
 def detect_missing_imports(path: Path, search_roots: Sequence[Path],
                            source: str | None = None,
                            providers: dict[str, str] | None = None) -> Iterator[NegativeEvidence]:
@@ -420,11 +477,24 @@ def detect_missing_imports(path: Path, search_roots: Sequence[Path],
         # here. Say which checks were run, and let corroborating evidence --
         # a dangling attribute use, debris, an orphaned test -- decide
         # whether this is an absence or a dependency nobody wrote down.
+        # Whether the project declares dependencies AT ALL changes what this
+        # finding means. A repository with a populated pyproject that omits
+        # this import has a manifest bug worth fixing today; one that
+        # declares nothing cannot be said to have omitted anything.
+        declares = bool(_declared_dependencies(path_root(path)))
+        manifest = ("the project declares dependencies and this is not among them"
+                    if declares else
+                    "the project declares no dependencies anywhere, so nothing "
+                    "here can say whether it was meant to")
         detail = (f"module `{module}` is imported; it is not in the search roots, "
-                  "not provided by a sibling, not declared as a dependency, "
-                  "and not in the standard library")
+                  "not provided by a sibling, and not in the standard library; "
+                  + manifest)
         if names:
             detail += f"; its expected surface includes {sorted(names)}"
+        # The submodule note used to be appended here, to every single
+        # unresolved import. It now belongs to false_absence_hints() and is
+        # printed once for the run: the condition is a property of the scan,
+        # and repeating it per finding taught the reader to skip it.
         submodule = providers.get("__uninitialised_submodule__")
         if submodule:
             detail += (f"; note: git submodule `{submodule}` is declared but not initialised, "
@@ -477,6 +547,40 @@ _DEBRIS_DEF = re.compile(r"\bdef\s+([a-z_][A-Za-z0-9_]*)")
 
 _DEFINING_NODES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef,
                    ast.Assign, ast.Import, ast.ImportFrom)
+
+
+# WHAT A FLATTENED FILE IS
+#
+# Python source whose NEWLINES ARE GONE. The bytes survive, the line breaks
+# do not, and with them go indentation and every statement boundary the
+# language depends on.
+#
+#     VANGUARD/vanguard-behavioral-simulation-flattened.py
+#     9,877 bytes.  0 newlines.  One line, 9,877 characters wide.
+#
+# It happens when code is copied out of a surface that renders rather than
+# stores it -- a chat transcript, a rendered notebook, a PDF, a terminal
+# that soft-wrapped. Nothing was deleted; the structure was.
+#
+# Two ways it presents, and the second is why _is_destroyed checks more
+# than SyntaxError:
+#
+#   LOUD    the flattened text is not valid Python, so it raises on parse.
+#   SILENT  the file's single line begins with `#`, so Python reads all
+#           11,700 bytes of it as one comment. It imports cleanly, raises
+#           nothing, and defines zero names. TOUCHSTONE keeps one of these
+#           as a specimen precisely because a tool that only catches
+#           SyntaxError walks straight past it.
+#
+# WHY IT IS RECOVERABLE AT ALL
+#
+# Whitespace carried the structure; TOKEN ORDER carried the interface, and
+# token order is untouched. `class X:` is still followed by the `def`s that
+# were indented beneath it, each with its parameter list and return
+# annotation intact. debris_structure() reads that sequence straight off the
+# wreckage. What is unrecoverable is the bodies, the nesting, and which
+# headers were live code rather than examples inside a docstring -- and no
+# better parser recovers them, because the information is not in the file.
 
 
 def _is_destroyed(text: str) -> bool:
