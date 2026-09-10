@@ -59,8 +59,11 @@ MUTANTS = [
      "    except ValueError as e:\n        report.reason = f\"gitleaks report was not valid JSON: {e}\"\n"
      "        return [], report\n",
      "    except ValueError:\n        entries = []\n"),
-    ("severity hardcoded to something other than CRITICAL", _S,
-     "        severity=Severity.CRITICAL,\n", "        severity=Severity.MINOR,\n"),
+    # A provider-prefix rule must stay CRITICAL. The rating became
+    # conditional in v0.17.3; the thing worth protecting did not change.
+    ("a real leaked credential stops being CRITICAL", _S,
+     "        severity=Severity.MAJOR if rule in _SHAPE_ONLY_RULES else Severity.CRITICAL,\n",
+     "        severity=Severity.MINOR,\n"),
     ("category hardcoded wrong", _S,
      "        category=Category.COMMITTED_SECRET,\n", "        category=Category.OTHER,\n"),
     ("status hardcoded to something other than CONFIRMED", _S,

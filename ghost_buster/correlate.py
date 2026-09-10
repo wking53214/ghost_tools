@@ -198,7 +198,15 @@ def correlate_secret_in_duplicated_file(data: CorrelationInput) -> List[Finding]
                 detector="secret_in_duplicated_file",
                 category=Category.COMMITTED_SECRET,
                 layer=Layer.MECHANICAL,
-                severity=Severity.CRITICAL,
+                # Inherit, never assert. Duplication multiplies the reach of
+                # whatever the secrets scan found; it does not upgrade what the
+                # rule established. A shape-only match copied into two files is
+                # two copies of a maybe, and a test fixture copied twice is
+                # still a test fixture -- measured 2026-09-10, where exactly
+                # that produced four CRITICALs for the header
+                # {"x-api-key": "testkey-abc123"} sitting in a pair of
+                # byte-identical test files.
+                severity=secret.severity,
                 status=Status.CONFIRMED,
                 summary=(
                     f"the '{rule}' secret in {secret.evidence.file} is also in "
