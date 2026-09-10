@@ -73,6 +73,23 @@ class EvidenceKind(str, Enum):
     # the reader can tell "not here" from "not anywhere".
     WIRING = "wiring"
 
+    # A name from the standard library, typing, or builtins used without
+    # being imported. The file is broken and the fix is one line at the top
+    # of it. Measured 2026-09-10: `copy` was reported as an absence whose
+    # callers "require attributes: read ['copy', 'deepcopy']" -- a
+    # specification of `import copy`. Never grouped into a void.
+    MISSING_IMPORT = "missing_import"
+
+    # An import this tree does not provide, no sibling provides, the project
+    # does not declare, and the standard library does not contain. That is
+    # everything this tool can check offline, and it is not enough to tell a
+    # lost first-party module from an undeclared package on an index it
+    # cannot reach. So it is named as unresolved rather than outlined as a
+    # void, and joins a void only when some other kind of mark corroborates
+    # it. Measured 2026-09-10: `matplotlib`, `torch` and `cv2` were reported
+    # as absences because the scanning container had not installed them.
+    UNRESOLVED_IMPORT = "unresolved_import"
+
     # A test exercising something that is not there. Tests are unusually good
     # evidence: they encode the expected interface AND the expected behaviour.
     ORPHANED_TEST = "orphaned_test"
@@ -95,6 +112,19 @@ class EvidenceKind(str, Enum):
     # unpack count, where the values flow, methods used on the result. A
     # hypothesis that Sally is now called Karen, never a merge.
     RENAME_CANDIDATE = "rename_candidate"
+
+
+# Kinds that describe something OTHER than a shaped absence. Each is a real
+# report and none of them may, alone, constitute a void: a void is a claim
+# that something is missing from the world, and every kind here has a reading
+# under which nothing is missing at all. They still join a void that other
+# evidence establishes, because an unresolved import beside a dangling
+# reference is part of that absence's outline.
+NON_SEEDING_KINDS = frozenset({
+    EvidenceKind.WIRING,
+    EvidenceKind.MISSING_IMPORT,
+    EvidenceKind.UNRESOLVED_IMPORT,
+})
 
 
 class VoidKind(str, Enum):

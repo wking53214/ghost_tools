@@ -31,7 +31,11 @@ def test_sibling_provider_turns_a_missing_module_into_wiring(tmp_path):
     spine = _repo(tmp_path, "spine", {"adapter.py": "from ccc import CCCSystem\n"})
     ccc = _repo(tmp_path, "CCC", {"ccc/__init__.py": "class CCCSystem: ...\n"})
     alone = scan(spine)
-    assert [e.kind for e in alone] == [EvidenceKind.MISSING_MODULE]
+    # Re-anchored 2026-09-10: alone, this is an UNRESOLVED_IMPORT rather than
+    # a MISSING_MODULE. The property under test is unchanged -- a sibling that
+    # provides it turns it into wiring -- and the rename records that "not in
+    # the search roots" was never the same claim as "gone".
+    assert [e.kind for e in alone] == [EvidenceKind.UNRESOLVED_IMPORT]
     with_sibling = scan(spine, siblings=[ccc])
     assert [e.kind for e in with_sibling] == [EvidenceKind.WIRING]
     assert "sibling checkout `CCC`" in with_sibling[0].detail
@@ -55,14 +59,17 @@ def test_optional_dependency_in_pyproject_counts_as_declared(tmp_path):
     assert [e.kind for e in scan(repo)] == [EvidenceKind.WIRING]
 
 
-def test_undeclared_missing_module_stays_a_void_with_submodule_note(tmp_path):
+def test_undeclared_missing_module_keeps_its_submodule_note(tmp_path):
+    """Re-anchored 2026-09-10. It is no longer a void -- an import nothing
+    accounts for cannot be told from an undeclared package offline -- but the
+    submodule note is the valuable half and must survive the demotion."""
     repo = _repo(tmp_path, "gsa", {
         "core.py": "from queue_schema import EnqueueResult\n",
         ".gitmodules": '[submodule "vendor/sentinel_os"]\n\tpath = vendor/sentinel_os\n\turl = https://example.invalid/sentinel_os\n',
     })
     (repo / "vendor" / "sentinel_os").mkdir(parents=True)          # declared, empty: not initialised
     evidence = scan(repo)
-    assert [e.kind for e in evidence] == [EvidenceKind.MISSING_MODULE]
+    assert [e.kind for e in evidence] == [EvidenceKind.UNRESOLVED_IMPORT]
     assert "submodule `vendor/sentinel_os` is declared but not initialised" in evidence[0].detail
 
 
@@ -76,9 +83,13 @@ def test_wiring_never_becomes_a_void_in_the_cli(tmp_path, capsys):
     ccc = _repo(tmp_path, "CCC", {"ccc/__init__.py": "class CCCSystem: ...\n"})
     assert main([str(spine), "--sibling", str(ccc), "--show-wiring"]) == 0
     out = capsys.readouterr().out
-    assert "`lost_forever` is reached for" in out
+    # Re-anchored 2026-09-10: `lost_forever` is reported, and reported as
+    # unresolved rather than outlined as a void. Demoting the claim must not
+    # drop it -- silence would be the worse of the two answers.
+    assert "lost_forever" in out
+    assert "`lost_forever` is reached for" not in out
+    assert "resolve nowhere" in out
     assert "`ccc` is reached for" not in out
-    assert "1 void(s)" in out and "1 import(s) provided elsewhere" in out
     assert "sibling checkout `CCC`" in out
 
 
@@ -91,7 +102,7 @@ def test_ecosystem_mode_scans_every_checkout_against_the_others(tmp_path, capsys
     out = capsys.readouterr().out
     assert "=== a" in out and "=== b" in out and "=== c" in out and "not_a_repo" not in out
     assert out.count("Nothing is missing") == 2
-    assert "`nowhere_at_all` is reached for" in out
+    assert "nowhere_at_all" in out and "resolve nowhere" in out
 
 
 def test_json_shape_is_unchanged_unless_wiring_is_requested(tmp_path, capsys):
@@ -99,7 +110,10 @@ def test_json_shape_is_unchanged_unless_wiring_is_requested(tmp_path, capsys):
     ccc = _repo(tmp_path, "CCC", {"ccc/__init__.py": "class CCCSystem: ...\n"})
     assert main([str(spine), "--sibling", str(ccc), "--json"]) == 0
     plain = json.loads(capsys.readouterr().out)
-    assert isinstance(plain, list) and len(plain) == 1
+    # Re-anchored: `lost` no longer seeds a void, so the plain payload is the
+    # empty list. The shape -- a bare list without --show-wiring -- is what
+    # this test exists to pin, and that is unchanged.
+    assert isinstance(plain, list) and plain == []
     assert main([str(spine), "--sibling", str(ccc), "--json", "--show-wiring"]) == 0
     shaped = json.loads(capsys.readouterr().out)
     assert set(shaped) == {"voids", "wiring"} and len(shaped["wiring"]) == 1

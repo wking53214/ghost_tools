@@ -19,8 +19,9 @@ from pathlib import Path
 from typing import List
 
 from .detect import scan
+from .corpus import classify_root
 from .extrapolate import extrapolate, group_by_target
-from .schema import EvidenceKind, VoidKind
+from .schema import NON_SEEDING_KINDS, EvidenceKind, VoidKind
 
 _SKIP_DIRS = {".git", "__pycache__", "site-packages", ".venv", "venv",
               "node_modules", ".pytest_cache", ".ruff_cache", ".mypy_cache"}
@@ -78,7 +79,7 @@ def main(argv: List[str] = None) -> int:
             print(f"no checkouts (directories with .git) under {args.path}", file=sys.stderr)
             return 2
         if args.json:
-            print(json.dumps({repo.name: _payload(*_analyse(repo, [r for r in repos if r != repo], args), args)
+            print(json.dumps({repo.name: _payload(*_analyse(repo, [r for r in repos if r != repo], args)[:3], args)
                               for repo in repos}, indent=2))
             return 0
         for repo in repos:
@@ -103,8 +104,19 @@ def _analyse(root: Path, siblings: List[Path], args):
     ]
     wiring = [item for item in evidence if item.kind is EvidenceKind.WIRING]
     evidence = [item for item in evidence if item.kind is not EvidenceKind.WIRING]
+
+    # An archive of code is not a system with holes in it. Its truncated
+    # pastes are a statement about the extraction, and outlining them as
+    # absences to be rebuilt is the tool answering a question nobody asked.
+    classification = classify_root(root)
+
     voids = []
     for target, items in sorted(group_by_target(evidence).items()):
+        # A group made only of non-seeding marks is not a void. Each of
+        # those kinds has a reading under which nothing is missing at all,
+        # and one of them alone cannot carry a claim that something is.
+        if all(i.kind in NON_SEEDING_KINDS for i in items):
+            continue
         files = sorted({Path(i.file) for i in items})
         void = extrapolate(
             summary=f"`{target}` is reached for and is not there",
@@ -116,11 +128,13 @@ def _analyse(root: Path, siblings: List[Path], args):
         )
         if void.shape_confidence >= args.min_confidence:
             voids.append(void)
-    return voids, wiring, evidence
+    return voids, wiring, evidence, classification
 
 
 def _report(root: Path, siblings: List[Path], args) -> int:
-    voids, wiring, evidence = _analyse(root, siblings, args)
+    voids, wiring, evidence, classification = _analyse(root, siblings, args)
+    if classification.is_archive:
+        return _report_archive(classification, voids, evidence, args)
     if args.json:
         # Always JSON on --json, including the empty case: a pipeline that
         # parsed the output got prose the first time a clean tree was scanned.
@@ -130,11 +144,19 @@ def _report(root: Path, siblings: List[Path], args) -> int:
         print("No negative-space evidence found. Nothing is reaching for "
               "something that is not there.")
         return 0
-    if not evidence:
-        print(f"Nothing is missing. {len(wiring)} import(s) are provided elsewhere"
+    unresolved = [e for e in evidence if e.kind is EvidenceKind.UNRESOLVED_IMPORT]
+    missing_imports = [e for e in evidence if e.kind is EvidenceKind.MISSING_IMPORT]
+    if not voids:
+        # "Nothing is missing" is only true when nothing is outstanding. With
+        # an unresolved import on the page it would be the tool contradicting
+        # its own next paragraph.
+        lead = ("Nothing is missing." if not unresolved and not missing_imports
+                else "No voids.")
+        print(f"{lead} {len(wiring)} import(s) are provided elsewhere"
               + (":" if args.show_wiring else " (use --show-wiring to list them)."))
         if args.show_wiring:
             _print_wiring(wiring)
+        _print_unresolved(unresolved, missing_imports)
         return 0
     voids.sort(key=lambda v: v.shape_confidence, reverse=True)
     for void in voids:
@@ -145,7 +167,72 @@ def _report(root: Path, siblings: List[Path], args) -> int:
           + ("." if not wiring or args.show_wiring else " (use --show-wiring to list them)."))
     if wiring and args.show_wiring:
         _print_wiring(wiring)
+    _print_unresolved(unresolved, missing_imports)
     return 0
+
+
+def _report_archive(classification, voids, evidence, args) -> int:
+    """What to say about a repository whose job is to preserve code.
+
+    Everything found is still reported. What changes is the claim attached
+    to it: a file that will not parse inside an export is a lossy
+    extraction, and the useful question is how much of the archive is
+    readable -- not which module somebody should go and rebuild.
+    """
+    if args.json:
+        print(json.dumps({
+            "root_kind": classification.kind.value,
+            "reason": classification.reason,
+            "archived_files": classification.archived_files,
+            "total_files": classification.total_files,
+            "extraction_fidelity": [e.as_dict() for e in evidence],
+        }, indent=2))
+        return 0
+    damaged = sorted({e.file for e in evidence
+                      if e.kind in (EvidenceKind.DESTROYED_RESIDUE,
+                                    EvidenceKind.DEBRIS_STRUCTURE)})
+    print(f"This is an archive of code, not a source tree: {classification.reason}.")
+    print("Its absences are reported as extraction fidelity, not as voids.")
+    print()
+    print(f"  {classification.total_files} Python file(s); "
+          f"{len(damaged)} did not survive extraction intact")
+    print(f"  {len(evidence)} negative-space signal(s) in total")
+    if damaged and args.show_wiring:
+        for path in damaged:
+            print(f"    {path}")
+    elif damaged:
+        print("  (use --show-wiring to list the damaged files)")
+    print()
+    print("Nothing here is missing from a running system. Scan the "
+          "repository this code was extracted FROM to ask that question.")
+    return 0
+
+
+def _print_unresolved(unresolved, missing_imports) -> None:
+    """Report what was demoted out of void-hood, never drop it.
+
+    Downgrading a claim is not licence to stop making it. An import that
+    resolves nowhere is a real thing to go and settle -- declare the
+    dependency, or find out the module is gone -- and a report that
+    silently stopped mentioning it would have traded a wrong answer for no
+    answer, which is the worse of the two.
+    """
+    if missing_imports:
+        names = sorted({e.detail.split("`")[1] for e in missing_imports if "`" in e.detail})
+        print(f"\n{len(missing_imports)} missing import(s) -- a name the language "
+              f"provides, used without importing it: {', '.join(names)}")
+    if unresolved:
+        by_module = {}
+        for item in unresolved:
+            name = item.detail.split("`")[1] if "`" in item.detail else item.detail
+            by_module.setdefault(name, set()).add(Path(item.file).name)
+        print(f"\n{len(by_module)} import(s) resolve nowhere. Not outlined as voids: "
+              "nothing here can tell a lost module from a dependency that was "
+              "never declared. Settle each by declaring it or by finding it.")
+        for name, files in sorted(by_module.items()):
+            shown = ", ".join(sorted(files)[:3])
+            more = f" +{len(files) - 3} more" if len(files) > 3 else ""
+            print(f"  {name}  <- {shown}{more}")
 
 
 def _print_wiring(wiring) -> None:
