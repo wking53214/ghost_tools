@@ -16,8 +16,12 @@ import sys
 from pathlib import Path
 from typing import Iterable, List
 
-from . import version_string
+from . import __version__, version_string
 from .baseline import Baseline
+from .ledger import (
+    COULD_NOT_RUN, DECLINED, Ledger, LedgerError, NOT_RUN, RAN,
+    _head_commit, render_report as render_ledger_report,
+)
 from .branches import scan as scan_branches
 from .correlate import (
     load_prior_run,
@@ -210,6 +214,19 @@ def _build_parser() -> argparse.ArgumentParser:
              "always runs and needs no flag.",
     )
     parser.add_argument(
+        "--ledger", action=argparse.BooleanOptionalAction, default=True,
+        help="ON BY DEFAULT (--no-ledger to skip). Remember this run in "
+             "<path>/.ghost_ledger.json and report what only history can say: a "
+             "finding that was fixed and came back, one open for many runs with no "
+             "decision recorded, one that keeps appearing and vanishing, and a check "
+             "that has not actually run here in several runs. Strictly additive -- "
+             "the ledger never suppresses a finding and never tunes a threshold.",
+    )
+    parser.add_argument(
+        "--ledger-path", type=Path, default=None, metavar="FILE",
+        help="where the ledger lives (default: <path>/.ghost_ledger.json)",
+    )
+    parser.add_argument(
         "--no-correlate", action="store_true",
         help="skip the correlation pass entirely (it reads findings already "
              "computed, runs no new scan, and is normally free)",
@@ -237,7 +254,13 @@ def _skipped(name: str, flag: str) -> None:
     print(f"ghost_buster: {name} SKIPPED at your request ({flag})", file=sys.stderr)
 
 
-def _run_repository_checks(args, findings: List[Finding]):
+def _state(report) -> str:
+    """A check that ran is the only state meaning the question was asked.
+    `report.ran` False means it could not -- no git, no tests, no gitleaks."""
+    return RAN if getattr(report, "ran", False) else COULD_NOT_RUN
+
+
+def _run_repository_checks(args, findings: List[Finding], checks: dict):
     """The three checks that take a repository rather than a file list:
     --branches, --tests, --secrets. All three are ON by default; each
     appends to `findings` and prints its own one-line report to stderr,
@@ -257,8 +280,10 @@ def _run_repository_checks(args, findings: List[Finding]):
         else:
             print(f"ghost_buster: branch scan did not run: {branch_report.reason}", file=sys.stderr)
         findings.extend(branch_findings)
+        checks["branches"] = _state(branch_report)
     else:
         _skipped("branch scan", "--no-branches")
+        checks["branches"] = DECLINED
 
     test_report = None
     if args.tests:
@@ -268,8 +293,10 @@ def _run_repository_checks(args, findings: List[Finding]):
         )
         print(render_test_report(test_report), file=sys.stderr)
         findings.extend(test_findings)
+        checks["tests"] = _state(test_report)
     else:
         _skipped("test status scan", "--no-tests")
+        checks["tests"] = DECLINED
 
     if args.secrets:
         secrets_findings, secrets_report = scan_secrets(
@@ -277,8 +304,10 @@ def _run_repository_checks(args, findings: List[Finding]):
         )
         print(render_secrets_report(secrets_report), file=sys.stderr)
         findings.extend(secrets_findings)
+        checks["secrets"] = _state(secrets_report)
     else:
         _skipped("secrets scan", "--no-secrets")
+        checks["secrets"] = DECLINED
 
     return test_report
 
@@ -303,6 +332,10 @@ def main(argv: List[str] = None) -> int:
               file=sys.stderr)
         return 2
     print(f"ghost_buster: scanning {len(files)} file(s) under {args.path}", file=sys.stderr)
+    # Every check's state, recorded whatever it is. This dict is the reason
+    # the ledger can notice a blind spot: "declined" and "could not run" are
+    # facts worth remembering, not the absence of one.
+    checks = {"structural": RAN}
     findings = run_all(files)
     mutation_run = None
     if args.mutate:
@@ -311,16 +344,19 @@ def main(argv: List[str] = None) -> int:
             timeout=args.mutate_timeout, only=args.mutate_only,
         )
         findings.extend(mutation_run.findings)
+        checks["mutate"] = RAN
     else:
+        checks["mutate"] = NOT_RUN
         # Opt-in on cost (one pytest process per mutant), not because it
         # matters less -- so it is named on every run rather than simply
         # being absent.
         print("ghost_buster: mutation analysis NOT RUN (opt-in: --mutate)", file=sys.stderr)
 
-    test_report = _run_repository_checks(args, findings)
+    test_report = _run_repository_checks(args, findings, checks)
 
     if args.no_correlate:
         _skipped("correlation", "--no-correlate")
+        checks["correlate"] = DECLINED
     else:
         prior_runs = []
         for prior_path in args.correlate_with:
@@ -337,6 +373,39 @@ def main(argv: List[str] = None) -> int:
         )
         print(render_correlation_report(correlations), file=sys.stderr)
         findings.extend(correlations)
+        checks["correlate"] = RAN
+
+    # THE LEDGER RUNS BEFORE THE BASELINE DIFF, DELIBERATELY.
+    # It records what was FOUND, not what was reported. If it ran after
+    # the diff, `--accept` would quietly erase history: a finding you
+    # agreed to stop hearing about would also stop being remembered, and
+    # a regression years later would read as a first sighting.
+    if args.ledger:
+        ledger_path = args.ledger_path or (args.path / ".ghost_ledger.json")
+        try:
+            ledger = Ledger(ledger_path)
+        except LedgerError as e:
+            # Same posture as a corrupt baseline: a usage error, never a
+            # silent fresh start. Starting over would report an empty
+            # history as though it were a clean one.
+            print(f"error: ledger {e}", file=sys.stderr)
+            return 2
+        checks["ledger"] = RAN
+        ledger.record(
+            findings, checks=checks, commit=_head_commit(args.path),
+            tool_version=__version__,
+        )
+        history = ledger.derive(findings)
+        print(render_ledger_report(ledger, history), file=sys.stderr)
+        findings.extend(history)
+        try:
+            ledger.save()
+        except OSError as e:
+            print(f"error: ledger {ledger_path} could not be written: "
+                  f"{type(e).__name__}: {e}", file=sys.stderr)
+            return 2
+    else:
+        _skipped("ledger", "--no-ledger")
 
     try:
         baseline = Baseline(baseline_path)

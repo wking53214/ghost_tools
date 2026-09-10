@@ -1,4 +1,4 @@
-# ghost_tools -- v0.10
+# ghost_tools -- v0.12
 
 Four commands, one pipeline. `ghost-buster` hunts down structural problems
 in code and, with `--mutate`, proves which tests pass without checking
@@ -24,6 +24,7 @@ state on every run** -- performed, impossible, or declined.
 | test status | on | `--no-tests` |
 | committed secrets | on | `--no-secrets` |
 | correlation | on | `--no-correlate` |
+| ledger (memory) | on | `--no-ledger` |
 | mutation (`--mutate`) | **off** | opt-in on cost: one pytest process per mutant |
 | semantic layer (`--semantic`) | **off** | opt-in on cost: paid API calls |
 
@@ -44,6 +45,40 @@ repository:
   on code you do not trust.
 - **A default run takes minutes, not seconds**, because of that suite.
   `--no-tests` gets the old fast structural pass back.
+
+## What it remembers (v0.12.0)
+
+`.ghost_ledger.json` sits next to the baseline and is committed like it.
+The baseline answers *"is this present right now"*; the ledger answers
+*"what has been true over time"*. Three facts are unsayable in a set of
+ids, and all three matter:
+
+| Finding | Fires when | Why a single run cannot see it |
+|---|---|---|
+| `regressed_finding` | An id was present, went away, and came back | To a set of ids, a return and a first sighting are the same event. Escalates one severity level: a defect that returns means something reintroduced it and nothing stopped that. |
+| `flapping_finding` | It has come and gone three or more times | Usually a non-deterministic detector, occasionally a real intermittent defect. Either way, diagnose it rather than baselining it. |
+| `persistent_finding` | Open for ten consecutive runs with no decision ever recorded | Not a claim it is wrong. A claim that nobody has said either way, which is how a known problem becomes an unknown one. |
+| `blind_spot` | A check has not actually run here in five consecutive runs | **The tool noticing its own coverage gap.** Severity follows the reason: declining a default-on check is a choice someone made and can unmake (MAJOR); an environment that cannot run it is a gap but not a decision (MINOR); a check that is opt-in by design was never promised (INFORMATIONAL). |
+
+Two rules the ledger will not break:
+
+- **It only ever adds.** It never suppresses a finding, never lowers a
+  severity, and never tunes a threshold. Memory that removes signal is a
+  self-tuning suppressor, and every self-tuning suppressor shares one
+  gradient: fewer findings looks like success, so it walks itself to
+  silence. A regression is reported *alongside* the defect it is about,
+  never instead of it.
+- **It records what was found, not what was reported.** Findings enter
+  the ledger before the baseline diff, so `--accept` changes what you are
+  shown and not what the tool remembers. Otherwise accepting a finding
+  would be a way to delete history.
+
+Run history is capped at the most recent 200 runs, with older runs
+collapsing into counters, so the file stays flat in git rather than
+growing without bound. Writes are atomic; a corrupt or future-schema
+ledger fails the run rather than silently starting over, because an empty
+history reported as a clean one is the lie this whole feature exists to
+prevent.
 
 ## Install
 
