@@ -18,6 +18,10 @@ from typing import Iterable, List
 
 from . import __version__, version_string
 from .baseline import Baseline
+from .boundary import (
+    build_joined_model, derive_findings as derive_boundary_findings,
+    render_report as render_boundary_report, render_single_repo_notice,
+)
 from .ledger import (
     COULD_NOT_RUN, DECLINED, Ledger, LedgerError, NOT_RUN, RAN,
     _head_commit, render_report as render_ledger_report,
@@ -228,6 +232,20 @@ def _build_parser() -> argparse.ArgumentParser:
              "with neither tests nor a deploy artifact.",
     )
     parser.add_argument(
+        "--join", type=Path, action="append", default=[], metavar="PATH",
+        help="another repository to join to this one, repeatable. A cross-repo "
+             "boundary is the one place both sides are blind: the importing "
+             "repository guards the import and skips its tests when the other is "
+             "absent, and the providing repository has never heard of the "
+             "importer. Given two or more, this resolves each cross-repo import "
+             "against what the other side actually exports, and reports symbols "
+             "that cross a boundary with no test anywhere exercising them.",
+    )
+    parser.add_argument(
+        "--single-repo", action="store_true",
+        help="skip the joined-repository question and scan this repository alone",
+    )
+    parser.add_argument(
         "--structure", action=argparse.BooleanOptionalAction, default=True,
         help="ON BY DEFAULT (--no-structure to skip). Build a structural model "
              "from evidence only: packaging boundary, importable modules, "
@@ -268,6 +286,35 @@ def _build_parser() -> argparse.ArgumentParser:
              "computed, runs no new scan, and is normally free)",
     )
     return parser
+
+
+def _resolve_join_mode(args, files) -> List[Path]:
+    """Joined or single, and never by silently assuming.
+
+    --join says so outright. --single-repo says so outright. With neither,
+    ASK -- but only when stdin is a terminal. A prompt in CI hangs the
+    build forever, and a tool that hangs a build gets removed from the
+    build, so a non-interactive run scans one repository and says on the
+    receipt line that it did. Nobody should mistake a single-repo scan for
+    a joined one.
+    """
+    if args.join:
+        return list(args.join)
+    if args.single_repo or not sys.stdin.isatty():
+        return []
+    notice = render_single_repo_notice(args.path, files)
+    if notice is None:
+        return []      # nothing reaches across a boundary; no question to ask
+    print(notice, file=sys.stderr)
+    print("ghost_buster: scan this repository alone, or join another? "
+          "Enter path(s) to join, separated by spaces, or press Enter for "
+          "single-repo: ", end="", file=sys.stderr, flush=True)
+    try:
+        answer = input().strip()
+    except (EOFError, KeyboardInterrupt):
+        print(file=sys.stderr)
+        return []
+    return [Path(p) for p in answer.split() if p]
 
 
 def _skipped(name: str, flag: str) -> None:
@@ -396,6 +443,27 @@ def main(argv: List[str] = None) -> int:
         # matters less -- so it is named on every run rather than simply
         # being absent.
         print("ghost_buster: mutation analysis NOT RUN (opt-in: --mutate)", file=sys.stderr)
+
+    join_paths = _resolve_join_mode(args, files)
+    if join_paths:
+        roots = [args.path] + list(join_paths)
+        files_by_root = {
+            str(Path(r).resolve()): _collect_files(Path(r), args.exclude)
+            for r in roots if Path(r).is_dir()
+        }
+        joined = build_joined_model(roots, files_by_root)
+        boundary_findings = derive_boundary_findings(joined, files_by_root)
+        print(render_boundary_report(joined, boundary_findings), file=sys.stderr)
+        findings.extend(boundary_findings)
+        checks["boundary"] = RAN if joined.ran else COULD_NOT_RUN
+    else:
+        checks["boundary"] = NOT_RUN
+        notice = render_single_repo_notice(args.path, files)
+        if notice:
+            print(notice, file=sys.stderr)
+        else:
+            print("ghost_buster: boundary scan NOT RUN (single repository; "
+                  "no unprovided packages reached for)", file=sys.stderr)
 
     if args.structure:
         model = build_model(args.path, files)
