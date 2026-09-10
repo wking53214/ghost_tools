@@ -288,6 +288,26 @@ class Finding:
             disposition=payload.get("disposition"),
             disposition_note=payload.get("disposition_note", ""),
         )
+        # A RECORDED id wins over a recomputed one. __post_init__ derives the
+        # id from the portable path, which is right when a finding is being
+        # made -- and wrong when one is being read back, because the id in the
+        # file IS the identity. Recomputing it silently re-identifies a
+        # finding that was already accepted.
+        #
+        # It only bites a baseline written before the path in the id was made
+        # portable, which stored an ABSOLUTE path. _portable_path needs the
+        # file to exist to find the project root, and that path points into a
+        # scratch directory that no longer does, so it falls back to the last
+        # two segments and lands somewhere the current scan never produces.
+        #
+        # Measured 2026-09-10 on a committed baseline of 879 entries: 304 were
+        # re-identified on load, and 90 findings the author had explicitly
+        # accepted came back as new. A baseline that resurfaces what it was
+        # told to suppress is worse than no baseline, because the author
+        # already spent the decision.
+        recorded = payload.get("id")
+        if recorded:
+            finding.id = recorded
         return finding
 
 
