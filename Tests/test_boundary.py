@@ -237,6 +237,40 @@ def test_a_single_repo_scan_says_it_is_looking_at_half_a_system(tmp_path):
     assert "provider" in notice
 
 
+def test_a_guarded_stdlib_import_is_not_a_cross_repo_boundary(tmp_path):
+    """`try: from importlib.metadata import x / except ImportError` is the
+    ordinary way to support more than one Python version, not a seam with
+    another repository. This project does exactly that, and the very first
+    self-scan after the boundary check landed reported ghost_tools as
+    reaching for an outside package called `importlib`."""
+    root = tmp_path / "stdlib_guard"
+    (root / "app").mkdir(parents=True)
+    (root / "app" / "__init__.py").write_text("")
+    (root / "app" / "compat.py").write_text(
+        "try:\n    from importlib.metadata import version\n"
+        "except ImportError:\n    version = None\n")
+    assert render_single_repo_notice(root, _collect_files(root)) is None
+
+    _, findings = _join(root, _provider(tmp_path))
+    assert "boundary provider absent" not in _kinds(findings)
+
+
+def test_the_notice_reads_cleanly_with_only_dormant_tests(tmp_path):
+    """It used to print an empty parenthesis when the package list was
+    empty: "reaches for 0 package(s) it does not provide ()"."""
+    root = tmp_path / "only_dormant"
+    (root / "app").mkdir(parents=True)
+    (root / "app" / "__init__.py").write_text("")
+    (root / "tests").mkdir()
+    (root / "tests" / "test_x.py").write_text(
+        "import pytest\n\n\ndef test_x():\n    pytest.skip('sibling not available')\n")
+    notice = render_single_repo_notice(root, _collect_files(root))
+    assert notice is not None
+    assert "0 package(s)" not in notice
+    assert "()" not in notice
+    assert "1 dormant test(s)" in notice
+
+
 def test_a_self_contained_repo_gets_no_notice(tmp_path):
     root = tmp_path / "solo"
     (root / "app").mkdir(parents=True)

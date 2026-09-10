@@ -72,6 +72,13 @@ MUTANTS = [
      '                    or "tests" in p.parts or "test" in p.parts):\n'
      "                continue\n", ""),
 
+    ("a guarded stdlib import counts as a cross-repo boundary", _B,
+     "    return package.split(\".\", 1)[0] in _stdlib_names()\n", "    return False\n"),
+    ("the single-repo notice stops filtering stdlib", _B,
+     "        reaches.extend(f for f in found\n"
+     "                       if f.package not in model.packages and not _is_stdlib(f.package))\n",
+     "        reaches.extend(f for f in found if f.package not in model.packages)\n"),
+
     # --- mode handling ---
     ("a non-interactive run prompts anyway and hangs the build", _C,
      "    if args.single_repo or not sys.stdin.isatty():\n        return []\n",
