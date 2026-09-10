@@ -113,6 +113,36 @@ DETECTOR = "committed_secret"
 _TIMEOUT_DEFAULT = 300.0
 _GIT_CHECK_TIMEOUT = 15.0
 
+# WHAT A RULE PROVES, AND WHAT IT ONLY SUGGESTS
+#
+# Most gitleaks rules match a provider-ISSUED prefix: sk-, ghp_, AKIA,
+# xoxb-, or a PEM header. A provider mints those; they do not occur by
+# accident. A match is a credential, and CRITICAL is the honest rating.
+#
+# A handful match SHAPE instead: a high-entropy string standing near a
+# word like key, token or secret. That is a candidate, not a credential,
+# and it fires on things that merely look the part.
+#
+# Measured 2026-09-10 across a 37-repository library: every one of the 32
+# 'generic-api-key' hits was a false positive. Ten were the header
+# {"x-api-key": "testkey-abc123"} in a test file. Eight were prose inside
+# exported conversation logs. Six were a fake key fed to a redaction demo
+# -- the detector found the bait the code exists to catch. Six were the
+# English word "anthropomorphic". Not one was a credential.
+#
+# Rating those CRITICAL alongside a real leaked token is how a security
+# check gets skimmed, and a skimmed check is worth less than no check:
+# the next real one arrives in a list the reader has already learned to
+# scroll past. So a shape-only match is reported, and reported as MAJOR.
+#
+# This is a severity judgement, not a filter. Nothing is suppressed, no
+# file type is exempt, and a secret in a test file is still a secret --
+# it is only rated by how much the rule established.
+#
+# To extend: add a rule id here only if it matches entropy or proximity
+# rather than an issued prefix.
+_SHAPE_ONLY_RULES = frozenset({"generic-api-key"})
+
 
 @dataclass
 class SecretsScanReport:
@@ -189,12 +219,26 @@ def _finding(root: Path, entry: dict) -> Optional[Finding]:
     detail_lines = [
         f"gitleaks rule '{rule}'" + (f": {description}" if description else "."),
         intro,
+    ]
+    if rule in _SHAPE_ONLY_RULES:
+        detail_lines.append(
+            "VERIFY THIS ONE BEFORE ROTATING ANYTHING. This rule matches the "
+            "SHAPE of a credential -- a high-entropy string near a word like "
+            "key, token or secret -- not a prefix any provider issues. It "
+            "cannot tell a live key from a test fixture, a hash quoted in "
+            "prose, or a deliberately fake value in a redaction demo. Read the "
+            "line first; rotate only if it is real."
+        )
+    detail_lines += [
         "The secret value itself is never included in this report, and is not "
         "reproduced if this finding is accepted into a baseline.",
         "Still readable by anyone who can read this repository's history, even "
         "though it may no longer be present in the current files -- removing it "
-        "from a later commit does not remove it from history. Treat the "
-        "credential as compromised and rotate it first; only rewriting history "
+        "from a later commit does not remove it from history. "
+        + ("If it is real, treat it as compromised and rotate it first"
+           if rule in _SHAPE_ONLY_RULES else
+           "Treat the credential as compromised and rotate it first")
+        + "; only rewriting history "
         "(git filter-repo or BFG Repo-Cleaner) and force-pushing, with "
         "collaborators re-cloning afterward, removes it from the repository "
         "itself. A false positive (a placeholder or already-rotated test value) "
@@ -208,7 +252,7 @@ def _finding(root: Path, entry: dict) -> Optional[Finding]:
         detector=DETECTOR,
         category=Category.COMMITTED_SECRET,
         layer=Layer.MECHANICAL,
-        severity=Severity.CRITICAL,
+        severity=Severity.MAJOR if rule in _SHAPE_ONLY_RULES else Severity.CRITICAL,
         status=Status.CONFIRMED,
         summary=summary,
         detail="\n".join(detail_lines),

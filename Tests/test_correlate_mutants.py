@@ -60,8 +60,8 @@ MUTANTS = [
     ("the leaked file is counted as one of its own copies", _C,
      "            others = [c for c in copies if not _same_file(secret.evidence.file, c)]\n",
      "            others = list(copies)\n"),
-    ("secret/duplicate severity downgraded from CRITICAL", _C,
-     '                severity=Severity.CRITICAL,\n'
+    ("secret/duplicate severity stops inheriting and is downgraded", _C,
+     '                severity=secret.severity,\n'
      '                status=Status.CONFIRMED,\n'
      '                summary=(\n'
      '                    f"the \'{rule}\' secret in {secret.evidence.file} is also in "\n',
