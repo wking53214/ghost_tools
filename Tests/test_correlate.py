@@ -72,11 +72,12 @@ def _marker(file="app/models.py", line=12) -> Finding:
     )
 
 
-def _drift(file="README.md", documented="353", static="429") -> Finding:
+def _drift(file="README.md", documented="353", static="429", context="The suite has ") -> Finding:
     return _finding(
         "doc_test_count_drift", file, severity=Severity.MINOR, category=Category.DOC_DRIFT,
         summary=f"'{file}' claims {documented} test(s)",
-        attributes={"documented_count": documented, "static_lower_bound": static},
+        attributes={"documented_count": documented, "static_lower_bound": static,
+                    "claim_context": context},
     )
 
 
@@ -332,6 +333,29 @@ def test_a_fully_green_suite_keeps_the_doc_finding_minor():
 def test_doc_count_connector_is_silent_without_a_tests_run():
     assert run_connectors([_drift()]) == []
     assert run_connectors([_drift()], test_report=_Report(ran=False)) == []
+
+
+@pytest.mark.parametrize("context,shape", [
+    ("`Tests/test_x.py` gained ", "a delta"),
+    ("ghost_tools went from 255 to ", "a recorded transition"),
+    ('HERALD\'s README claimed "', "a quoted claim"),
+    ("That project's README claimed ", "an attributed claim"),
+])
+def test_doc_count_connector_refuses_to_rewrite_a_claim_that_is_not_a_total(context, shape):
+    """The connector tells a reader to write a specific number into a
+    specific file. It re-checks the claim's shape itself rather than
+    trusting the detector filtered it, because that instruction is wrong
+    for a delta or a quotation -- it would replace something true with
+    something false. All four shapes were real findings on ghost_tools.
+    """
+    out = run_connectors([_drift(context=context)], test_report=_Report())
+    assert out == [], f"recommended overwriting {shape}"
+
+
+def test_doc_count_connector_still_fires_on_a_real_claim_with_context():
+    out = run_connectors([_drift(context="the suite has ")], test_report=_Report())
+    assert len(out) == 1
+    assert "collects 429" in out[0].summary
 
 
 def test_doc_count_connector_is_silent_without_a_drift_finding():

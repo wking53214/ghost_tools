@@ -76,6 +76,7 @@ from dataclasses import dataclass, field
 from pathlib import PurePath
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
+from .mechanical import claim_shape
 from .schema import Category, Evidence, Finding, Layer, Severity, Status
 
 ConnectorFn = Callable[["CorrelationInput"], List[Finding]]
@@ -415,7 +416,10 @@ def correlate_doc_count_against_run(data: CorrelationInput) -> List[Finding]:
     arithmetic and a misleading sentence.
 
     Silent unless `--tests` ran; a static count alone is not something to
-    contradict.
+    contradict. Silent too when the claim is not about the current suite --
+    a delta, a recorded transition, or a number quoted from elsewhere --
+    which it checks itself from the context the detector publishes, rather
+    than assuming its input was already filtered.
     """
     report = data.test_report
     if report is None or not getattr(report, "ran", False):
@@ -433,6 +437,21 @@ def correlate_doc_count_against_run(data: CorrelationInput) -> List[Finding]:
         documented = drift.attributes.get("documented_count", "")
         static = drift.attributes.get("static_lower_bound", "")
         if not documented:
+            continue
+        # Re-check the claim's shape rather than trusting that the detector
+        # filtered it. This connector does not merely repeat its input, it
+        # tells the reader to write a specific number into a specific file,
+        # and that instruction is wrong unless the number really is a claim
+        # about the current suite. "gained 13 tests" is a delta, "went from
+        # 255 to 272 tests" a recorded transition, and a quoted count
+        # belongs to whoever was quoted -- writing today's total over any of
+        # them replaces something true with something false.
+        #
+        # Measured on ghost_tools itself: before the detector learned these
+        # shapes, all three of its drift findings were one of them, and this
+        # connector confidently recommended overwriting all three.
+        shape = claim_shape(drift.attributes.get("claim_context", ""))
+        if shape is not None:
             continue
         out.append(Finding(
             detector="doc_count_contradicted_by_run",

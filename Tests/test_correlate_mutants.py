@@ -91,6 +91,13 @@ MUTANTS = [
      "            and True\n"),
 
     # --- doc_count_contradicted_by_run ---
+    ("connector stops re-checking the claim shape (recommends overwriting a delta)", _C,
+     '        shape = claim_shape(drift.attributes.get("claim_context", ""))\n'
+     "        if shape is not None:\n            continue\n",
+     ""),
+    ("connector re-checks the wrong attribute (re-check becomes a no-op)", _C,
+     '        shape = claim_shape(drift.attributes.get("claim_context", ""))\n',
+     '        shape = claim_shape(drift.attributes.get("no_such_key", ""))\n'),
     ("doc/run connector fires without a --tests run", _C,
      '    if report is None or not getattr(report, "ran", False):\n        return []\n', ""),
     ("doc/run connector reports the static bound instead of the measured count", _C,

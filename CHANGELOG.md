@@ -1,5 +1,54 @@
 # Changelog
 
+## 0.10.1 (2026-09-10)
+
+### ghost_buster
+Precision fix for `doc_test_count_drift` and the connector built on it,
+found by running the whole toolkit against ghost_tools itself. All three
+of its drift findings, and all three correlations, were false.
+
+- **A number followed by "tests" is not automatically a claim about the
+  current suite.** Four shapes read identically to the claim regex and
+  mean something else; each of the first three was a real false positive
+  on this project's own docs:
+  - `"gained 13 tests"` -- a delta, not a total (CHANGELOG.md)
+  - `"went from 255 to 272 tests"` -- a recorded transition, true when
+    written (PROVENANCE.md)
+  - `'claimed "135 tests"'` -- another project's stale count, quoted here
+    as the example this detector was built from. The detector was
+    flagging the sentence that explains the detector (README.md)
+  - an unquoted attribution (`claimed 3 tests`), added for symmetry
+  Each pattern must match immediately before the number, which keeps them
+  narrow: a live claim rarely has one of these words adjacent to its count.
+- **The connector re-checks rather than trusting.**
+  `doc_count_contradicted_by_run` does not merely repeat its input, it
+  tells a reader to write a specific number into a specific file, and that
+  instruction is wrong for a delta or a quotation -- it replaces something
+  true with something false. The detector now publishes the claim's
+  surrounding text as `claim_context`, and the connector re-runs
+  `claim_shape()` on it itself. Two mutants pin that the re-check is
+  load-bearing.
+- **A false negative caught during the fix, worth naming.** The first
+  version of the quotation rule included the backtick, so a live claim
+  sitting under a ` ```bash ` block -- exactly where this project's README
+  states its own count -- was read as quoted and silently suppressed.
+  Suppressing a real claim is the one outcome worse than the false
+  positives these rules remove. Backtick is out of the quote set, and a
+  regression test pins the code-fence case.
+- Measured on ghost_tools: 27 findings -> 22, with doc_test_count_drift
+  3 -> 0 and doc_count_contradicted_by_run 3 -> 0. No remaining doc
+  findings, and no CRITICAL or MAJOR anywhere in the repository.
+- **Known blind spot, unchanged.** `doc_count_contradicted_by_run` can
+  only fire where `doc_test_count_drift` already fired, so a documented
+  count that sits above the static lower bound but below the real
+  collected count is caught by neither. That is exactly this README's own
+  "519 tests" against a suite now collecting 540; the number is corrected
+  here by hand, not by the tool.
+- 8 tests and 9 mutants added, all killed. One mutant from the exploratory
+  run was a broken no-op (it inserted a disabled rule while leaving the
+  real one intact) and was rewritten rather than counted as a survivor.
+- Tests: 519 -> 540.
+
 ## 0.10.0 (2026-09-09)
 
 ### ghost_buster

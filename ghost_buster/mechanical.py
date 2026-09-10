@@ -660,6 +660,65 @@ _TEST_COUNT_CLAIM_RE = re.compile(
     re.IGNORECASE,
 )
 
+# A number followed by "tests" is not automatically a claim about how many
+# tests this suite has NOW. Four shapes look identical to the regex above
+# and mean something else entirely; each of the first three was a real
+# false positive on this project's own docs, found by running the detector
+# against ghost_tools itself:
+#
+#   "gained 13 tests"            a delta, not a total
+#   "went from 255 to 272 tests" a recorded transition, true when written
+#   'claimed "135 tests"'        another project's stale claim, quoted here
+#                                as the example this detector was built from
+#
+# Flagging these is worse than saying nothing: the finding is false, and
+# the doc_count_contradicted_by_run connector built on top of it then
+# recommends writing the current count over a number that was correct.
+# Measured on ghost_tools: all three of its doc_test_count_drift findings,
+# and all three correlations, were this.
+#
+# Each pattern must match IMMEDIATELY before the number (trailing `$`
+# against the text preceding it), which keeps them narrow -- a live claim
+# rarely has one of these words adjacent to its count.
+_CLAIM_LOOKBACK = 80
+
+_NOT_A_CURRENT_CLAIM = (
+    ("delta", re.compile(
+        r"\b(?:gained|gains|gain|added|adds|add|grew|grown|grows|growing|plus|minus|"
+        r"removed|removes|dropped|drops|another|extra|net|more|fewer)\b\s*(?:by\s+)?$",
+        re.IGNORECASE)),
+    ("transition", re.compile(
+        r"(?:\bfrom\s+\d+\s+to\s+|\b\d+\s*(?:->|-->|\u2192)\s*)$", re.IGNORECASE)),
+    # Quote characters only -- NOT the backtick. A markdown code fence ends
+    # in backticks, so including it suppressed the live "519 tests" claim
+    # sitting right under a ```bash block in this project's own README:
+    # a false negative, and the one outcome worse than the false positives
+    # these rules exist to remove.
+    ("quotation", re.compile(r"[\"'\u201c\u2018]\s*$")),
+    ("attribution", re.compile(r"\b(?:claimed|reported|said)\s*$", re.IGNORECASE)),
+)
+
+
+def claim_shape(before: str) -> Optional[str]:
+    """The reason a "N tests" claim preceded by `before` is not about the
+    current suite ("delta", "transition", "quotation", "attribution"), or
+    None if it reads as a live claim. See _NOT_A_CURRENT_CLAIM above.
+
+    Takes the preceding text rather than (text, offset) so that anything
+    holding only a finding can re-run the same judgement -- correlate.py's
+    doc_count_contradicted_by_run does exactly that, re-checking rather
+    than trusting that its input was filtered.
+    """
+    for reason, pattern in _NOT_A_CURRENT_CLAIM:
+        if pattern.search(before):
+            return reason
+    return None
+
+
+def claim_context(text: str, start: int) -> str:
+    """The text immediately before a claim, as claim_shape() wants it."""
+    return text[max(0, start - _CLAIM_LOOKBACK):start]
+
 
 def _count_test_functions(files: List[Path]) -> int:
     """Static, conservative LOWER BOUND on the real test count: every
@@ -722,6 +781,9 @@ def detect_doc_test_count_drift(
             documented = int(match.group(1))
             if documented == 0:
                 continue
+            before = claim_context(text, match.start())
+            if claim_shape(before) is not None:
+                continue
             if actual < documented * min_growth_ratio:
                 continue
             if actual - documented < min_absolute_growth:
@@ -750,8 +812,15 @@ def detect_doc_test_count_drift(
                 attributes={
                     "documented_count": str(documented),
                     "static_lower_bound": str(actual),
+                    # The text this claim sits in, so a consumer can re-run
+                    # claim_shape() itself instead of assuming the claim was
+                    # already filtered. correlate.py does.
+                    "claim_context": " ".join(before.split()),
                 },
-                evidence=Evidence(file=str(path), line_start=line, line_end=line),
+                evidence=Evidence(
+                    file=str(path), line_start=line, line_end=line,
+                    snippet=" ".join((before + match.group(0)).split())[-160:],
+                ),
             ))
     return findings
 
