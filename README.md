@@ -747,6 +747,83 @@ python -m ghost_buster.cli /path/to/other --secrets --json > /tmp/other.json
 python -m ghost_buster.cli /path/to/repo --secrets --correlate-with other=/tmp/other.json
 ```
 
+### `drifted_copy`: the same file in several places, no longer agreeing
+
+`duplicate_file` groups by content hash, so it finds copies that are
+byte-identical and nothing else. **It goes quiet at exactly the moment the
+problem begins** -- somebody fixes a bug in one copy, the hashes diverge, and
+the group vanishes from the report.
+
+Measured across 24 live repositories: **111 file groups share a complete
+top-level name set, and 29 of those have drifted.** None of the 29 was
+visible to anything in the toolkit.
+
+Two files are "the same file" when their top-level definitions have the same
+names, all of them, at least three. Equality rather than overlap, because two
+modules sharing three helper names is a coincidence and two sharing all
+fourteen is a copy. Drift is measured per definition by structural hash
+(`ast.dump` without attributes), so reformatting and comments do not register
+and a changed condition does. The split is the finding:
+
+| evidence | category | severity |
+|---|---|---|
+| every definition structurally identical | `duplication` | MINOR, a tidiness problem |
+| some definition differs | `parallel_implementation` | MAJOR, a fix that did not propagate |
+
+That second row filled an empty slot. Until now `parallel_implementation`
+had exactly one producer, `semantic.py`, whose findings are REASONED by
+construction because an LLM made them. This is the mechanical half, and it
+is CONFIRMED because a structural hash either matches or it does not.
+
+What it found immediately:
+
+```
+GSA_Governance_Operating_Core_Enterprise.py   3 copies, 97 shared names, 1 differs
+ast_graph_extractor.py                        5 copies, 6 shared names, all 6 differ
+citadel_v1.1_copy1 / _copy2 / v1.2            3 copies in ONE repo, all 5 differ
+cassette_interface.py, cassette_schema.py     drifted between two sentinel_os copies
+```
+
+Byte-identical groups are deliberately not repeated here; that is
+`duplicate_file`'s finding, for the same reason `duplicate_file` was given a
+group of its own in v0.9. And it does not guess intent: a `_v1.1` beside a
+`_v1.2` may be a deliberate archive. It says which definitions stopped
+matching and leaves the judgement where it belongs.
+
+### `swallowed_exception`: a handler that catches something and does nothing
+
+The same argument `dead_end_call` makes, one level down. Something went
+wrong, something caught it, nothing happened, and the operation reports
+success:
+
+```python
+try:
+    publish(decision)
+except Exception:
+    pass
+```
+
+That is not error handling. It is the removal of error handling written in
+a shape that looks like error handling, which is why it survives review.
+
+**Breadth sets the severity, because swallowing is sometimes correct.**
+`except ImportError: pass` hides one class of failure and is usually the
+intended behaviour for an optional dependency. `except Exception: pass`
+hides the missing dependency *and* the typo, the None, the failed write, and
+the bug introduced next year. So bare `except` and `Exception` /
+`BaseException` are MAJOR; a named narrow exception is MINOR.
+
+Measured: **32 in live code, 13 catching bare `Exception`**, in ANVIL, CCC,
+Ecology and AUGUR. A further 22 are in test files and are not reported --
+best-effort cleanup in a teardown is ordinary, and `is_test_path` is shared
+with the naming and dead-end detectors so all three agree on what a test is.
+
+Disclosed scope: only `pass`. A handler whose body is `continue`,
+`return None` or a lone `logger.debug(...)` swallows just as thoroughly, and
+each needs its own measurement first -- a `continue` in a retry loop is often
+exactly right. `contextlib.suppress` is never flagged: it says in its own
+name what it does.
+
 ### `dead_end_call`: a door somebody opens onto nothing
 
 `dead_code` next door answers the opposite question. It finds a definition

@@ -1,5 +1,60 @@
 # Changelog
 
+## 0.17.15 (2026-09-10)
+
+### ghost_buster
+Two detectors, from a category-by-category review of where the 15-member
+Category enum was thin rather than empty.
+
+`drifted_copy`: the same file in several places, no longer agreeing.
+`duplicate_file` groups by content hash, so it goes quiet at exactly the
+moment the problem begins -- one copy gets fixed, the hashes diverge, the
+group disappears. Two files are the same file when their top-level
+definitions share the same names, all of them, at least three; drift is
+measured per definition by structural hash without attributes, so
+reformatting does not register and a changed condition does. Every
+definition identical is DUPLICATION and MINOR, a tidiness problem. Any
+definition differing is PARALLEL_IMPLEMENTATION and MAJOR, a fix that did
+not propagate -- which fills the only category whose sole producer was
+semantic.py, whose findings are REASONED by construction. Byte-identical
+groups stay duplicate_file's finding and are not repeated.
+
+Measured: 111 groups share a full name set library-wide, 29 have drifted.
+Among them GSA_Governance_Operating_Core_Enterprise.py in three copies with
+97 shared names and one differing, ast_graph_extractor.py in five copies
+with all six differing, three CITADEL versions inside one repository, and
+cassette_interface.py and cassette_schema.py drifted between the two
+sentinel_os copies.
+
+`swallowed_exception`: a handler that catches something and does nothing
+with it. The same failure dead_end_call reports one level up -- the
+operation reports success and nothing happened. Breadth sets the severity,
+because swallowing is sometimes correct: `except ImportError: pass` hides
+one class of failure and is usually the point, while `except Exception:
+pass` hides the typo, the None, the failed write and the bug introduced next
+year. Bare except and Exception/BaseException are MAJOR, a named narrow
+exception MINOR. Scope is disclosed as `pass` only; `continue` and a lone
+log call swallow too and each needs its own measurement first.
+contextlib.suppress is never flagged.
+
+Measured: 32 in live code, 13 catching bare Exception, in ANVIL, CCC,
+Ecology and AUGUR. A further 22 are in test files and are not reported.
+
+Together these add 61 findings to a library scan, 32 MAJOR and 29 MINOR.
+That is a lot at once, which is what the severity split and `--accept` are
+for: take them into the baseline in one pass and only new ones surface after.
+
+Also checked and NOT built, because measurement said not to: unreachable
+code after a return or raise (1 occurrence library-wide) and import cycles
+within a repository (1). Two obvious-sounding detectors that would have
+found nothing.
+
+Two fixture defects caught while writing the tests. A `textwrap.dedent`
+applied after concatenating an unindented string is a no-op, so three
+copies-fixtures never parsed -- two tests failed and a third passed against
+nothing at all. And a reformatting fixture silently stopped reformatting
+anything; it now asserts that it changed something before relying on it.
+
 ## 0.17.14 (2026-09-10)
 
 ### ghost_buster
