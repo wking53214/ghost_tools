@@ -47,7 +47,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 from .schema import Category, Evidence, Finding, Layer, Severity, Status
-from .structure import StructuralModel, build_model
+from .structure import StructuralModel, _stdlib_names, build_model
 
 DETECTOR = "boundary"
 
@@ -166,6 +166,16 @@ def dormant_tests(tree: ast.AST, repo: str, module: str) -> List[DormantTest]:
     return out
 
 
+def _is_stdlib(package: str) -> bool:
+    """A guarded import of a standard-library module is not a cross-repo
+    boundary. It is the ordinary way to support more than one Python
+    version -- `try: from importlib.metadata import x / except ImportError`
+    -- and this project does exactly that, so the very first self-scan
+    after the boundary check landed reported ghost_tools as reaching for
+    an outside package called `importlib`."""
+    return package.split(".", 1)[0] in _stdlib_names()
+
+
 def build_joined_model(roots: Sequence, files_by_root: Dict[str, List[Path]]) -> JoinedModel:
     joined = JoinedModel(repos=[str(Path(r).resolve()) for r in roots])
     if len(joined.repos) < 2:
@@ -207,7 +217,7 @@ def build_joined_model(roots: Sequence, files_by_root: Dict[str, List[Path]]) ->
             except (OSError, SyntaxError, UnicodeDecodeError):
                 continue
             imports, notes = guarded_imports(tree, root, m.dotted)
-            joined.reaches.extend(imports)
+            joined.reaches.extend(i for i in imports if not _is_stdlib(i.package))
             joined.unresolved.extend(notes)
             joined.dormant_tests.extend(dormant_tests(tree, root, m.dotted))
 
@@ -378,13 +388,18 @@ def render_single_repo_notice(root, files: List[Path]) -> Optional[str]:
         except (OSError, SyntaxError, UnicodeDecodeError):
             continue
         found, _ = guarded_imports(tree, str(root), m.dotted)
-        reaches.extend(f for f in found if f.package not in model.packages)
+        reaches.extend(f for f in found
+                       if f.package not in model.packages and not _is_stdlib(f.package))
         dormant += len(dormant_tests(tree, str(root), m.dotted))
     packages = sorted({r.package for r in reaches})
     if not packages and not dormant:
         return None
-    return (f"ghost_buster: this repository reaches for {len(packages)} package(s) "
-            f"it does not provide ({', '.join(packages[:5])}"
-            f"{' ...' if len(packages) > 5 else ''}) and holds {dormant} dormant "
-            f"test(s). Those seams are UNCHECKED in a single-repo scan -- "
-            f"re-run with --join <path-to-each> to verify them.")
+    bits = []
+    if packages:
+        bits.append(f"reaches for {len(packages)} package(s) it does not provide "
+                    f"({', '.join(packages[:5])}{' ...' if len(packages) > 5 else ''})")
+    if dormant:
+        bits.append(f"holds {dormant} dormant test(s)")
+    return (f"ghost_buster: this repository {' and '.join(bits)}. Those seams are "
+            f"UNCHECKED in a single-repo scan -- re-run with --join <path-to-each> "
+            f"to verify them.")
