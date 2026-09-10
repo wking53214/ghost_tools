@@ -1,4 +1,4 @@
-# ghost_tools -- v0.14
+# ghost_tools -- v0.15
 
 Four commands, one pipeline. `ghost-buster` hunts down structural problems
 in code and, with `--mutate`, proves which tests pass without checking
@@ -139,6 +139,50 @@ because a security check people learn to skim is worth less than none.
   silent; a fully protected module is silent; auth applied by middleware
   makes every route look unprotected, which drops the module below the
   threshold and reports nothing. It fails quiet, deliberately.
+
+## The structural model (v0.15.0)
+
+`ghost-buster --structure-report` reconstructs what a repository actually
+is, from evidence only: the packaging and distribution boundary, every
+importable module, every execution entry point, the import topology split
+into internal and external, which external boundaries each module actually
+crosses, module-level mutable state, declared public surface, data
+representations, test modules, and **an explicit list of what could not be
+resolved statically**. `--structure-out FILE` writes the same model as JSON.
+
+Two findings fall out of it, and each is a contradiction between two
+observed facts rather than a judgement:
+
+| Finding | Fires when |
+|---|---|
+| `entry point target missing` | a console script points at a module or symbol that does not exist |
+| `undeclared dependency` | a package is imported, resolvable to a distribution, and declared nowhere |
+
+### What it refuses to say
+
+The specification this implements forbids inferring an architectural
+boundary from a conventional directory name -- `services/`, `adapters/`,
+`core/`, `utils/`. That rules out the only mechanical route to one. So the
+model does not claim which modules are domain logic, orchestration,
+infrastructure or presentation, and the report says so in as many words.
+A name is a claim its author made, not a fact about the code, and it is
+precisely the thing worth checking this model against.
+
+### Two measurements that changed the design
+
+**A bare `pathlib` import is not a filesystem boundary.** 37 of this
+project's 68 modules import it and most only manipulate paths. Boundary
+detection is call-based where the import is noisy (`read_text`, `open`,
+`os.environ`) and import-based only where it is unambiguous (`socket`,
+`subprocess`, `sqlite3`).
+
+**An import name is not a distribution name.** `yaml` ships in PyYAML,
+`PIL` in pillow, `ccc` in cognitive-continuity-constitution. Comparing
+import names directly against declarations reported six packages as
+undeclared on a real repository that declares every one of them. Imports
+are now mapped through installed distribution metadata, and an import that
+cannot be mapped goes to `unresolved` rather than becoming a finding --
+because a missing declaration and an ordinary alias look identical.
 
 ## Install
 

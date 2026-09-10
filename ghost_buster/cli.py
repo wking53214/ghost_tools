@@ -31,6 +31,10 @@ from .correlate import (
 from .testsuite import render_report as render_test_report, scan as scan_tests
 from .mechanical import run_all
 from .project import render_report as render_project_report, scan as scan_project
+from .structure import (
+    build_model, derive_findings as derive_structure_findings,
+    render_model, render_report as render_structure_report,
+)
 from .mutation import render_run, run_mutations
 from .schema import Finding, FindingSet, Severity
 from .secrets import render_report as render_secrets_report, scan as scan_secrets
@@ -224,6 +228,28 @@ def _build_parser() -> argparse.ArgumentParser:
              "with neither tests nor a deploy artifact.",
     )
     parser.add_argument(
+        "--structure", action=argparse.BooleanOptionalAction, default=True,
+        help="ON BY DEFAULT (--no-structure to skip). Build a structural model "
+             "from evidence only: packaging boundary, importable modules, "
+             "execution entry points, import topology, which external boundaries "
+             "each module actually crosses, module-level mutable state, declared "
+             "public surface, data representations, and an explicit list of what "
+             "could NOT be resolved statically. Reports contradictions between "
+             "two observed facts (a console script pointing at a symbol that does "
+             "not exist; a package imported and never declared). Says nothing "
+             "about architectural responsibility, layering or quality -- those "
+             "are interpretations, and the only mechanical route to them is the "
+             "directory name.",
+    )
+    parser.add_argument(
+        "--structure-out", type=Path, default=None, metavar="FILE",
+        help="also write the full structural model to FILE as JSON",
+    )
+    parser.add_argument(
+        "--structure-report", action="store_true",
+        help="also print the full structural model in readable form",
+    )
+    parser.add_argument(
         "--ledger", action=argparse.BooleanOptionalAction, default=True,
         help="ON BY DEFAULT (--no-ledger to skip). Remember this run in "
              "<path>/.ghost_ledger.json and report what only history can say: a "
@@ -370,6 +396,25 @@ def main(argv: List[str] = None) -> int:
         # matters less -- so it is named on every run rather than simply
         # being absent.
         print("ghost_buster: mutation analysis NOT RUN (opt-in: --mutate)", file=sys.stderr)
+
+    if args.structure:
+        model = build_model(args.path, files)
+        structure_findings = derive_structure_findings(model)
+        print(render_structure_report(model, structure_findings), file=sys.stderr)
+        findings.extend(structure_findings)
+        checks["structure"] = RAN if model.ran else COULD_NOT_RUN
+        if args.structure_out:
+            try:
+                args.structure_out.write_text(model.to_json(), encoding="utf-8")
+            except OSError as e:
+                print(f"error: --structure-out {args.structure_out}: "
+                      f"{type(e).__name__}: {e}", file=sys.stderr)
+                return 2
+        if args.structure_report:
+            print(render_model(model), file=sys.stderr)
+    else:
+        _skipped("structure scan", "--no-structure")
+        checks["structure"] = DECLINED
 
     test_report = _run_repository_checks(args, findings, checks)
 
