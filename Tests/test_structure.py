@@ -215,9 +215,18 @@ def test_a_valid_console_script_is_not_reported(tmp_path):
 
 def test_a_repo_with_no_declaration_mechanism_is_not_nagged(tmp_path):
     """Nothing to contradict. A repo with no pyproject and no requirements
-    is not declaring anything wrongly."""
+    is not declaring anything wrongly.
+
+    The import has to be a package that is CERTAINLY installed wherever this
+    runs, because the check only reaches a verdict for an import it can map
+    to a distribution. This fixture used `requests`, which is installed on a
+    developer machine and not on the CI runner, so the mutant that removes
+    the declaration-source guard died locally and survived in CI -- an
+    environment-dependent test, which is a worse defect than the one it was
+    guarding. pytest is running this line, so pytest is installed.
+    """
     root = _repo(tmp_path, pyproject=None,
-                 files={"demo/uses.py": "import requests\n"})
+                 files={"demo/uses.py": "import pytest\n"})
     assert derive_findings(_model(root)) == []
 
 
