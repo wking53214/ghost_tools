@@ -61,7 +61,44 @@ MUTANTS = [
      "            if lowered in _PLACEHOLDER_EXACT or lowered.endswith(_PLACEHOLDER_SUFFIX):",
      "            if lowered in _PLACEHOLDER_EXACT or any(x in lowered for x in _PLACEHOLDER_SUFFIX):"),
 
+    # ------------------------------------------- one thing under two names
+
+    # The 1:1 requirement, both directions. Dropping either produces a
+    # rename that collides with a name legitimately in use elsewhere.
+    ("a parameter taking several variables is reported anyway", _N,
+     "        if len(args) != 1:\n            continue",
+     "        if False:\n            continue"),
+    ("a variable reaching several parameters is reported anyway", _N,
+     "        if not _renamable(param, arg) or len(to_param[arg]) != 1:",
+     "        if not _renamable(param, arg):"),
+
+    # Somebody else's API.
+    ("third-party parameter names are reconciled too", _N,
+     "            if not called or called not in ours:",
+     "            if not called:"),
+
+    # The three exclusions in _renamable, each an observed false positive.
+    ("a constant is renamed after the parameter it is passed to", _N,
+     "    if param.isupper() or arg.isupper():\n        return False",
+     "    if False:\n        return False"),
+    ("privacy stops being part of the name", _N,
+     "    if param.startswith(\"_\") != arg.startswith(\"_\"):\n        return False",
+     "    if False:\n        return False"),
+    ("camelCase is treated as ours to rename", _N,
+     "    return not (_CAMEL.search(param) or _CAMEL.search(arg))",
+     "    return True"),
+
+    # Keyword arguments carry the same disagreement as positional ones.
+    ("keyword arguments stop being read", _N,
+     "                if kw.arg and isinstance(kw.value, ast.Name):",
+     "                if False:"),
+
     # Severity: a name is not a defect.
+    ("a disagreement finding is raised above MINOR", _N,
+     "            severity=Severity.MINOR,\n            status=Status.CONFIRMED,\n"
+     "            summary=(f\"`{param}` and `{arg}` are one value under two names, \"",
+     "            severity=Severity.MAJOR,\n            status=Status.CONFIRMED,\n"
+     "            summary=(f\"`{param}` and `{arg}` are one value under two names, \""),
     ("a naming finding is raised above MINOR", _N,
      "                severity=Severity.MINOR,\n                status=Status.CONFIRMED,\n"
      "                summary=(f\"{path.name} carries",

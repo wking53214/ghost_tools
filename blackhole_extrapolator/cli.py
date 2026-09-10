@@ -20,6 +20,7 @@ from typing import List
 
 from .detect import _declared_dependencies, false_absence_hints, scan
 from .corpus import RootKind, classify_root
+from .reconstruct import reconstruct, write_proposal
 from .extrapolate import extrapolate, group_by_target
 from .schema import NON_SEEDING_KINDS, EvidenceKind, VoidKind
 
@@ -66,6 +67,11 @@ def main(argv: List[str] = None) -> int:
              "with every other as a sibling, and report only what nothing "
              "in the ecosystem provides.",
     )
+    parser.add_argument(
+        "--reconstruct-into", metavar="DIR", type=Path,
+        help="write a line-broken PROPOSAL for each flattened file into DIR. "
+             "Never writes into the scanned tree and never feeds the result "
+             "back into the analysis.")
     parser.add_argument("--all", action="store_true",
                         help="render every void, including those whose evidence "
                              "constrains no shape")
@@ -75,6 +81,9 @@ def main(argv: List[str] = None) -> int:
     if not args.path.is_dir():
         print(f"not a directory: {args.path}", file=sys.stderr)
         return 2
+
+    if args.reconstruct_into:
+        return _reconstruct_flattened(args.path, args.reconstruct_into)
 
     if args.ecosystem:
         repos = sorted(p for p in args.path.iterdir() if p.is_dir() and (p / ".git").exists())
@@ -132,6 +141,43 @@ def _analyse(root: Path, siblings: List[Path], args):
         if void.shape_confidence >= args.min_confidence:
             voids.append(void)
     return voids, wiring, evidence, classification
+
+
+def _reconstruct_flattened(root: Path, into: Path) -> int:
+    """Emit a proposal for every flattened file under `root`.
+
+    Reported separately from voids and never mixed into them: a void is a
+    claim that something is missing, and a flattened file is present. What
+    is missing from it is its structure, which is a different finding with a
+    different remedy.
+    """
+    from .detect import _source_files
+    written, skipped = [], []
+    for path in _source_files(root):
+        try:
+            text = path.read_text(errors="replace")
+        except OSError:
+            continue
+        if text.count("\n") > 2 or len(text) < 200:
+            continue
+        try:
+            written.append((path, write_proposal(path, into, text)))
+        except FileExistsError:
+            skipped.append(path)
+    if not written and not skipped:
+        print(f"No flattened files under {root}; nothing to reconstruct.")
+        return 0
+    print(f"{len(written)} proposal(s) written to {into}:")
+    for src, target in written:
+        result = reconstruct(src.read_text(errors="replace"), str(src))
+        verdict = "parses" if result.is_program else "readable, does not parse"
+        print(f"  {target.name}  ({result.lines} lines, {verdict})")
+    for src in skipped:
+        print(f"  SKIPPED {src.name}: a proposal already exists and was not overwritten")
+    print("\nNothing here was analysed. Review a proposal and commit it as real "
+          "source if it is right; the next scan will read it as source because "
+          "by then it is.")
+    return 0
 
 
 def _report(root: Path, siblings: List[Path], args) -> int:

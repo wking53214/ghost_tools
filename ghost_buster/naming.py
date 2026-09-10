@@ -45,6 +45,7 @@ from typing import Dict, List, Sequence, Set, Tuple
 
 from .schema import Category, Evidence, Finding, Layer, Severity, Status
 
+DISAGREEMENT_DETECTOR = "name_disagreement"
 VESTIGIAL_DETECTOR = "vestigial_domain_name"
 PLACEHOLDER_DETECTOR = "placeholder_name"
 
@@ -314,5 +315,138 @@ def detect_placeholder_names(files: Sequence[Path]) -> List[Finding]:
                 "does."
             ),
             evidence=Evidence(file=str(path)),
+        ))
+    return findings
+
+
+# ------------------------------------------------------- one thing, two names
+
+# A name that is a CONSTANT has a role of its own; renaming INGRESS_GUARDS to
+# `dependencies` because it is passed as that argument would be wrong. A
+# leading underscore is a statement about privacy that a public parameter
+# name does not carry. And camelCase in a library that is otherwise
+# snake_case means a third-party API, whose parameter names are not ours.
+# Each exclusion was observed on 2026-09-10 as a false positive: the
+# unfiltered pass reported 271 pairs, of which `dependencies <- INGRESS_GUARDS`,
+# `create_fn <- _create` and `parse_all <- parseAll` (pyparsing) were typical.
+_CAMEL = re.compile(r"[a-z][A-Z]")
+
+
+def _renamable(param: str, arg: str) -> bool:
+    if param == arg:
+        return False
+    if param.isupper() or arg.isupper():
+        return False
+    if param.startswith("_") != arg.startswith("_"):
+        return False
+    return not (_CAMEL.search(param) or _CAMEL.search(arg))
+
+
+def _call_name(node: ast.Call) -> str | None:
+    if isinstance(node.func, ast.Name):
+        return node.func.id
+    if isinstance(node.func, ast.Attribute):
+        return node.func.attr
+    return None
+
+
+def detect_name_disagreements(files: Sequence[Path]) -> List[Finding]:
+    """One value carried across a seam under two different names.
+
+    The complaint this answers is the one every SQL join produces: a column
+    called `customer_id` on one side and `recipient_id` on the other, the
+    same key wearing two names, and nothing in either schema saying so.
+    Measured on 2026-09-10 across a 37-repository library, the same thing
+    happens between repositories: `recipient_pub` is only ever passed
+    `cust_pub`, `enqueued_at_ms` is only ever passed `enq_ms`.
+
+    ONLY 1:1, WHICH IS THE WHOLE SAFETY ARGUMENT
+
+    A parameter that receives several different variables is not a naming
+    disagreement -- it is a parameter doing its job. A variable passed to
+    several different parameters is the same. Renaming either would collide
+    with a name that is legitimately in use elsewhere. A bijection is the
+    one case where the two names provably denote one thing, and where
+    substituting one for the other cannot capture anything.
+
+    Reports; does not rename. ghost_buster has never modified a file it was
+    pointed at, and a cross-repository rename touches call sites and tests in
+    trees this scan was never asked to write to.
+    """
+    files = [Path(f) for f in files]
+    trees: List[tuple] = []
+    signatures: Dict[str, List[str]] = {}
+    ours: Set[str] = set()
+
+    for path in files:
+        if _is_test(path):
+            continue
+        tree = _parse(path)
+        if tree is None:
+            continue
+        trees.append((path, tree))
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                ours.add(node.name)
+                signatures.setdefault(
+                    node.name,
+                    [a.arg for a in node.args.args if a.arg not in ("self", "cls")])
+
+    to_arg: Dict[str, Counter] = {}
+    to_param: Dict[str, Counter] = {}
+    seen_in: Dict[tuple, Set[str]] = {}
+
+    def note(param: str, arg: str, path: Path) -> None:
+        to_arg.setdefault(param, Counter())[arg] += 1
+        to_param.setdefault(arg, Counter())[param] += 1
+        seen_in.setdefault((param, arg), set()).add(str(path))
+
+    for path, tree in trees:
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            called = _call_name(node)
+            # A function this scan never saw defined belongs to somebody
+            # else, and its parameter names are not ours to reconcile.
+            if not called or called not in ours:
+                continue
+            for kw in node.keywords:
+                if kw.arg and isinstance(kw.value, ast.Name):
+                    note(kw.arg, kw.value.id, path)
+            params = signatures.get(called) or []
+            for index, arg in enumerate(node.args):
+                if isinstance(arg, ast.Name) and index < len(params):
+                    note(params[index], arg.id, path)
+
+    findings: List[Finding] = []
+    for param, args in sorted(to_arg.items()):
+        if len(args) != 1:
+            continue
+        arg = next(iter(args))
+        if not _renamable(param, arg) or len(to_param[arg]) != 1:
+            continue
+        sites = args[arg]
+        where = sorted(seen_in[(param, arg)])
+        findings.append(Finding(
+            detector=DISAGREEMENT_DETECTOR,
+            category=Category.NAMING,
+            layer=Layer.MECHANICAL,
+            severity=Severity.MINOR,
+            status=Status.CONFIRMED,
+            summary=(f"`{param}` and `{arg}` are one value under two names, "
+                     f"across {len(where)} file(s)"),
+            detail=(
+                f"The parameter `{param}` is only ever passed a variable named "
+                f"`{arg}`, and `{arg}` is only ever passed to `{param}` -- "
+                f"{sites} call site(s) in {', '.join(Path(w).name for w in where[:4])}"
+                + (f" (+{len(where) - 4} more)" if len(where) > 4 else "") + ".\n"
+                "A one-to-one correspondence is the only case where two names "
+                "provably denote the same thing: a parameter taking several "
+                "variables is doing its job, and renaming it would collide with "
+                "a name legitimately in use. Which of the two should win is "
+                "yours to pick -- the parameter is the contract, the variable "
+                "is the caller's local, and neither is automatically right."
+            ),
+            evidence=Evidence(file=where[0], related_files=where),
         ))
     return findings

@@ -1534,12 +1534,17 @@ def detect_merge_conflict_markers(files: List[Path]) -> List[Finding]:
 # cassettes to tell a domain's vocabulary from the engine's, and returns
 # nothing at all when a tree has no seam to check against.
 from .naming import (                                            # noqa: E402
-    PLACEHOLDER_DETECTOR, VESTIGIAL_DETECTOR,
-    detect_placeholder_names, detect_vestigial_domain_names,
+    DISAGREEMENT_DETECTOR, PLACEHOLDER_DETECTOR, VESTIGIAL_DETECTOR,
+    detect_name_disagreements, detect_placeholder_names,
+    detect_vestigial_domain_names,
 )
 
 register(VESTIGIAL_DETECTOR)(detect_vestigial_domain_names)
 register(PLACEHOLDER_DETECTOR)(detect_placeholder_names)
+# Sees more the wider the scan: within one repository it finds what crosses
+# its files, and under --join or an ecosystem scan it finds what crosses
+# repositories, which is where the two-names-for-one-thing problem lives.
+register(DISAGREEMENT_DETECTOR)(detect_name_disagreements)
 
 
 def run_all(files: Iterable[Path]) -> List[Finding]:
