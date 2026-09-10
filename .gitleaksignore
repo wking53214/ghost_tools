@@ -1,0 +1,17 @@
+# Fingerprints of ghost_tools' own test fixtures: the deliberately fake
+# credentials Tests/test_secrets.py feeds to gitleaks to prove the detector
+# fires. They are not real keys and there is nothing to rotate.
+#
+# The fixtures themselves carry `gitleaks:allow` comments, which covers every
+# future commit. These entries cover the commits that introduced them before
+# those comments existed -- a gitleaks fingerprint pins a specific commit, so
+# this list is closed and should not need to grow.
+#
+# This file is also the mechanism ghost_buster's own --secrets documentation
+# points users at, exercised here on itself.
+b5e74d89f3db1d55b820326a1038de1af3b951e9:Tests/test_secrets.py:github-pat:235
+b5e74d89f3db1d55b820326a1038de1af3b951e9:Tests/test_secrets.py:aws-access-token:28
+b5e74d89f3db1d55b820326a1038de1af3b951e9:Tests/test_secrets.py:aws-access-token:252
+0edf061ab3aa0dff4352589627201cffcc093fea:Tests/test_secrets.py:github-pat:235
+0edf061ab3aa0dff4352589627201cffcc093fea:Tests/test_secrets.py:aws-access-token:28
+0edf061ab3aa0dff4352589627201cffcc093fea:Tests/test_secrets.py:aws-access-token:252

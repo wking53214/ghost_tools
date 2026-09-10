@@ -405,7 +405,14 @@ def test_render_report_summarises_the_run(shapes):
     assert "2 stale skip(s)" in line
 
 
-def test_scan_writes_nothing_into_the_project(tmp_path):
+def test_scan_writes_nothing_into_the_project(tmp_path, monkeypatch):
+    # The ambient environment must not be what suppresses bytecode, or this
+    # asserts nothing. Found by running ghost_buster --tests on ghost_tools
+    # itself: that run exports PYTHONDONTWRITEBYTECODE for the whole suite,
+    # the nested mutation harness inherited it, and the mutant that deletes
+    # testsuite.py's own export survived -- the test had been passing on the
+    # environment's behaviour rather than the code's.
+    monkeypatch.delenv("PYTHONDONTWRITEBYTECODE", raising=False)
     proj = _project(tmp_path, {"test_ok.py": "def test_ok():\n    assert True\n"})
     findings, report = scan(proj)
     assert findings == []
