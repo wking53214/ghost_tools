@@ -45,6 +45,33 @@ def test_a_shape_only_match_is_major_not_critical():
         assert _for(rule).severity is Severity.MAJOR, rule
 
 
+def test_the_set_names_exactly_the_two_rules_that_match_shape():
+    """Pinned by literal, deliberately.
+
+    The test above iterates _SHAPE_ONLY_RULES and asserts each member is
+    MAJOR, which is true of whatever the set happens to hold -- drop a
+    rule and it still passes, having checked the ones that remain. This
+    one names them, so removing either is a failing test rather than a
+    quieter report.
+
+    Both were established the same way: every hit checked at the file,
+    line and column reported, across a 37-repository library on
+    2026-09-10. 44 'generic-api-key', 4 'curl-auth-header', not one a
+    credential. Adding a third is a judgement about a rule, so it should
+    cost an edit here.
+    """
+    assert set(_SHAPE_ONLY_RULES) == {"curl-auth-header", "generic-api-key"}
+
+
+def test_a_curl_auth_header_match_is_major_not_critical():
+    """It anchors on the header name inside a curl command, not on
+    anything a provider issued: -H "X-API-Key: prod_key_123" matches, and
+    that is what all four library hits were."""
+    curl = _for("curl-auth-header")
+    assert curl.severity is Severity.MAJOR
+    assert "VERIFY THIS ONE BEFORE ROTATING" in curl.detail
+
+
 def test_a_shape_only_finding_says_to_verify_before_rotating():
     generic = _for("generic-api-key")
     assert "VERIFY THIS ONE BEFORE ROTATING" in generic.detail
@@ -105,3 +132,10 @@ def test_duplicating_a_shape_only_match_does_not_make_it_critical():
 
 def test_duplicating_a_real_credential_stays_critical():
     assert _dup_correlation("aws-access-token").severity is Severity.CRITICAL
+
+
+def test_duplicating_a_curl_auth_header_match_does_not_make_it_critical():
+    """The second door, checked for the rule that was going through it.
+    Duplication multiplies reach; it does not upgrade what a rule
+    established."""
+    assert _dup_correlation("curl-auth-header").severity is Severity.MAJOR
