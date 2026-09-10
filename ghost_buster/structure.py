@@ -103,6 +103,8 @@ class ModuleFacts:
     boundaries: List[str] = field(default_factory=list)
     module_state: List[str] = field(default_factory=list)   # mutable top-level bindings
     bindings: List[str] = field(default_factory=list)       # public top-level names bound
+    reexports: List[str] = field(default_factory=list)      # names bound by a top-level import
+    star_imports: List[str] = field(default_factory=list)   # `from X import *` targets
     guarded: List[str] = field(default_factory=list)        # imported inside try/except ImportError
     data_models: List[str] = field(default_factory=list)
     entry_points: List[str] = field(default_factory=list)   # main(), __main__ guard
@@ -255,6 +257,25 @@ def analyse_module(path: Path, root: Path, package_roots: Set[str]) -> Optional[
         if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
             if not node.target.id.startswith("_"):
                 facts.bindings.append(node.target.id)
+        # A NAME BOUND BY AN IMPORT IS IMPORTABLE FROM THIS MODULE. That is
+        # how a package presents a public surface: `__init__.py` pulls names
+        # up out of submodules and callers write `from pkg import Name`.
+        #
+        # Collecting only definitions made every re-export invisible.
+        # Measured 2026-09-10 joining two real repositories: four names that
+        # a package re-exports through its `__init__` -- two by an explicit
+        # line, two through a star-import -- were reported as a CRITICAL
+        # "does not export them" against an import that runs fine.
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            for alias in node.names:
+                if alias.name == "*":
+                    if isinstance(node, ast.ImportFrom) and node.module:
+                        facts.star_imports.append(node.module)
+                    continue
+                bound = alias.asname or alias.name.split(".", 1)[0]
+                if not bound.startswith("_"):
+                    facts.reexports.append(bound)
+
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             (facts.internal if node.name.startswith("_") else facts.exported).append(node.name)
             if isinstance(node, ast.ClassDef) and _model_kind(node):
