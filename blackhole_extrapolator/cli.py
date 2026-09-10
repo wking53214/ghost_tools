@@ -18,8 +18,8 @@ import sys
 from pathlib import Path
 from typing import List
 
-from .detect import scan
-from .corpus import classify_root
+from .detect import _declared_dependencies, false_absence_hints, scan
+from .corpus import RootKind, classify_root
 from .extrapolate import extrapolate, group_by_target
 from .schema import NON_SEEDING_KINDS, EvidenceKind, VoidKind
 
@@ -66,6 +66,9 @@ def main(argv: List[str] = None) -> int:
              "with every other as a sibling, and report only what nothing "
              "in the ecosystem provides.",
     )
+    parser.add_argument("--all", action="store_true",
+                        help="render every void, including those whose evidence "
+                             "constrains no shape")
     parser.add_argument("--show-wiring", action="store_true",
                         help="also list imports that are provided elsewhere")
     args = parser.parse_args(argv)
@@ -156,18 +159,42 @@ def _report(root: Path, siblings: List[Path], args) -> int:
               + (":" if args.show_wiring else " (use --show-wiring to list them)."))
         if args.show_wiring:
             _print_wiring(wiring)
-        _print_unresolved(unresolved, missing_imports)
+        _print_unresolved(unresolved, missing_imports, root)
+        _print_hints(root, siblings)
         return 0
     voids.sort(key=lambda v: v.shape_confidence, reverse=True)
-    for void in voids:
+
+    # A void whose INFERRED section is empty is half a Void: it carries the
+    # UNDETERMINABLE list and nothing the evidence forced. Measured
+    # 2026-09-10, those were 25% of the report by volume. They are counted
+    # and named, not rendered, unless --all asks for them.
+    #
+    # The test is "constrains no shape", never a confidence threshold: after
+    # the classification pass, shapeless voids sit at 0.35-0.40 alongside
+    # fourteen that DO have a shape, so a numeric cutoff would hide real
+    # ones to reach them.
+    shaped = [v for v in voids if v.inferred_anything]
+    shapeless = [v for v in voids if not v.inferred_anything]
+    for void in (voids if args.all else shaped):
         print(void.render())
         print()
-    print(f"{len(voids)} void(s) from {len(evidence)} negative-space signals"
+    if shapeless and not args.all:
+        names = ", ".join(sorted(v.summary.split("`")[1] for v in shapeless
+                                 if "`" in v.summary)[:6])
+        print(f"{len(shapeless)} further absence(s) whose evidence constrains no "
+              f"shape at all -- named, not outlined: {names}"
+              + (", ..." if len(shapeless) > 6 else "")
+              + "  (--all to render them)")
+        print()
+    print(f"{len(shaped)} outlined void(s)"
+          + (f" and {len(shapeless)} shapeless" if shapeless else "")
+          + f" from {len(evidence)} negative-space signals"
           + (f"; {len(wiring)} import(s) provided elsewhere" if wiring else "")
           + ("." if not wiring or args.show_wiring else " (use --show-wiring to list them)."))
     if wiring and args.show_wiring:
         _print_wiring(wiring)
-    _print_unresolved(unresolved, missing_imports)
+    _print_unresolved(unresolved, missing_imports, root)
+    _print_hints(root, siblings)
     return 0
 
 
@@ -191,8 +218,30 @@ def _report_archive(classification, voids, evidence, args) -> int:
     damaged = sorted({e.file for e in evidence
                       if e.kind in (EvidenceKind.DESTROYED_RESIDUE,
                                     EvidenceKind.DEBRIS_STRUCTURE)})
-    print(f"This is an archive of code, not a source tree: {classification.reason}.")
-    print("Its absences are reported as extraction fidelity, not as voids.")
+    # Each kind is not-a-source-tree for a different reason, and the reader
+    # needs the reason to know what to do next. Collapsing them into
+    # "archive" would tell someone their deliberate fixtures were preserved
+    # payloads, which is wrong in a way that costs trust.
+    headline = {
+        RootKind.CODE_ARCHIVE:
+            "This is an archive of code, not a source tree",
+        RootKind.SPECIMEN_CORPUS:
+            "This is a specimen corpus: code kept broken on purpose so tools "
+            "can be tested against it",
+        RootKind.RETIRED:
+            "This repository says it is retired",
+    }[classification.kind]
+    print(f"{headline}: {classification.reason}.")
+    if classification.kind is RootKind.SPECIMEN_CORPUS:
+        print("Its damaged files are the point of it. They are reported as "
+              "fixtures, not as voids.")
+    elif classification.kind is RootKind.RETIRED:
+        target = classification.forwarding
+        print("What looks lost here is somewhere else"
+              + (f" -- scan {target}, which is where its content went."
+                 if target else ", named in its own README."))
+    else:
+        print("Its absences are reported as extraction fidelity, not as voids.")
     print()
     print(f"  {classification.total_files} Python file(s); "
           f"{len(damaged)} did not survive extraction intact")
@@ -208,7 +257,23 @@ def _report_archive(classification, voids, evidence, args) -> int:
     return 0
 
 
-def _print_unresolved(unresolved, missing_imports) -> None:
+def _print_hints(root: Path, siblings) -> None:
+    """Conditions of this scan that could make its absences false.
+
+    Printed once per run rather than repeated on every void: they describe
+    the scan and not the code, and a caveat stapled to each finding reads as
+    noise by the third repetition.
+    """
+    hints = false_absence_hints(root, siblings)
+    if not hints:
+        return
+    print(f"\nBefore treating any of the above as lost -- {len(hints)} thing(s) "
+          "about THIS SCAN could produce an absence that is not one:")
+    for hint in hints:
+        print(f"  - {hint}")
+
+
+def _print_unresolved(unresolved, missing_imports, root: Path) -> None:
     """Report what was demoted out of void-hood, never drop it.
 
     Downgrading a claim is not licence to stop making it. An import that
@@ -226,9 +291,20 @@ def _print_unresolved(unresolved, missing_imports) -> None:
         for item in unresolved:
             name = item.detail.split("`")[1] if "`" in item.detail else item.detail
             by_module.setdefault(name, set()).add(Path(item.file).name)
-        print(f"\n{len(by_module)} import(s) resolve nowhere. Not outlined as voids: "
-              "nothing here can tell a lost module from a dependency that was "
-              "never declared. Settle each by declaring it or by finding it.")
+        # Whether the project declares dependencies AT ALL decides what
+        # these are. A populated manifest that omits them is a manifest bug
+        # to fix today; no manifest at all cannot have omitted anything, and
+        # saying "undeclared" of such a project would be an accusation the
+        # evidence does not support.
+        declares = bool(_declared_dependencies(root))
+        verdict = ("The project declares dependencies and none of these is among "
+                   "them -- either the manifest is short, or they are lost."
+                   if declares else
+                   "The project declares no dependencies anywhere, so nothing here "
+                   "can say whether these were meant to come from outside.")
+        print(f"\n{len(by_module)} import(s) resolve nowhere. Not outlined as "
+              f"voids: nothing here can tell a lost module from a dependency "
+              f"that was never declared. {verdict}")
         for name, files in sorted(by_module.items()):
             shown = ", ".join(sorted(files)[:3])
             more = f" +{len(files) - 3} more" if len(files) > 3 else ""
