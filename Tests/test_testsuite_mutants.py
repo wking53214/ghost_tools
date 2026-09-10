@@ -79,6 +79,21 @@ MUTANTS = [
      "                timeout=None, env=env,\n"),
     ("bytecode written into the scanned project", _T,
      '        env["PYTHONDONTWRITEBYTECODE"] = "1"\n', ""),
+
+    # --- an expected failure goes quiet again (v0.13.1) ---
+    ("an xfail that fails as expected reports nothing, so nothing can age it", _T,
+     '            elif outcome.outcome == "xfailed":\n', "            elif False:\n"),
+    ("an expected failure is rated MAJOR, making xfail worse to use than skip", _T,
+     '                    root, outcome, "expected failure", Severity.INFORMATIONAL,\n',
+     '                    root, outcome, "expected failure", Severity.MAJOR,\n'),
+    ("the xfail reason is dropped and the summary falls back to the traceback", _T,
+     '                current.xfail_reason = str(rec.get("xfail_reason") or "")\n', ""),
+    ("the plugin stops carrying the reason at all", _T,
+     '        "xfail_reason": str(getattr(report, "wasxfail", "") or ""),\n', ""),
+    ("a bare xfail claims a reason it does not have", _T,
+     '                        f" ({outcome.xfail_reason.strip()})" if outcome.xfail_reason.strip()\n'
+     '                        else ", with no reason recorded"),\n',
+     '                        f" ({outcome.xfail_reason.strip()})"),\n'),
 ]
 
 

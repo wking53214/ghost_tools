@@ -38,7 +38,15 @@ different ghost:
   that IS present when the scan runs is a STALE skip, MAJOR: the
   dependency arrived and the test never came back.
 - An `xfail` that unexpectedly passes is a stale expectation, MAJOR. An
-  `xfail` that fails as expected is not a finding.
+  `xfail` that fails as expected is INFORMATIONAL -- reported, but
+  quietly. It is a recorded decision, not an unexplained absence, so it
+  is not MAJOR on day one. It is reported at all so that the ledger can
+  see it: an expected failure standing for two hundred runs is
+  indistinguishable from one added yesterday if nothing is ever emitted,
+  and `persistent_finding` can only age what it is told about. Measured
+  2026-09-10: five pediatric missed detections moved from bare skips to
+  named xfails, correctly stopped being MAJOR, and vanished from the
+  report entirely -- the same silence one level up.
 - A test file that cannot be collected at all (an import at module level
   raised) is reported the same way as a failing test, or as blocked when
   the import error names a missing module.
@@ -130,6 +138,12 @@ def pytest_runtest_logreport(report):
         "when": report.when,
         "outcome": report.outcome,
         "wasxfail": hasattr(report, "wasxfail"),
+        # The REASON, separately from the boolean above. pytest sets
+        # wasxfail to "" for a bare xfail with no reason given, so the
+        # two cannot be collapsed into one field without losing the
+        # difference between "expected to fail, here is why" and
+        # "expected to fail, no reason recorded".
+        "xfail_reason": str(getattr(report, "wasxfail", "") or ""),
         "location": list(location) if location else None,
         "text": _longrepr(report),
     })
@@ -238,6 +252,7 @@ class Dependency:
 class TestOutcome:
     nodeid: str
     outcome: str                  # passed | failed | error | skipped | xfailed | xpassed
+    xfail_reason: str = ""        # why, when the outcome is xfailed; "" if none given
     file: Optional[str] = None
     line: Optional[int] = None    # 1-based
     text: str = ""                # skip reason or failure text
@@ -413,6 +428,7 @@ def _aggregate(records: List[dict]) -> Dict[str, TestOutcome]:
                 continue
             if rec.get("wasxfail"):
                 current.outcome, current.text = "xfailed", text
+                current.xfail_reason = str(rec.get("xfail_reason") or "")
             else:
                 current.outcome, current.text, current.when = "skipped", text, when
         elif outcome == "passed" and when == "call" and rec.get("wasxfail"):
@@ -579,6 +595,21 @@ def scan(root: Path, *, python: Optional[str] = None, reruns: int = 3,
                 findings.append(_classify_failure(root, outcome, runner, reruns, report))
             elif outcome.outcome == "skipped":
                 findings.append(_classify_skip(root, outcome, runner, report))
+            elif outcome.outcome == "xfailed":
+                findings.append(_finding(
+                    root, outcome, "expected failure", Severity.INFORMATIONAL,
+                    "fails as expected" + (
+                        f" ({outcome.xfail_reason.strip()})" if outcome.xfail_reason.strip()
+                        else ", with no reason recorded"),
+                    "Not a problem today: somebody wrote down that this fails and why, "
+                    "which is what an xfail is for and is strictly better than a skip. "
+                    "It is emitted so that it can AGE. An expected failure carries no "
+                    "clock of its own, so without a finding to track, one standing for "
+                    "two hundred runs looks exactly like one added yesterday. With this, "
+                    "the ledger raises persistent_finding once it has gone ten runs with "
+                    "no decision recorded, and reports it as a regression if it is ever "
+                    "closed and comes back.",
+                ))
             elif outcome.outcome == "xpassed":
                 findings.append(_finding(
                     root, outcome, "stale xfail", Severity.MAJOR, "passes",
