@@ -33,9 +33,9 @@ MUTANTS = [
      "            severity=Severity.INFORMATIONAL,\n"
      "            status=Status.CONFIRMED,\n"
      '            summary=(f"{_portable_path(path)} could not be parsed, so every "\n'),
-    ("every file is reported, python or not (prose becomes noise)", _M,
-     '    for path in sorted(f for f in files if f.suffix == ".py"):\n',
-     "    for path in sorted(files):\n"),
+    ('every file is reported, python or not (prose becomes noise)', _M,
+     '    for path in sorted(f for f in files if f.suffix == ".py"):\n        reason = _parse_failure(path)\n',
+     '    for path in sorted(files):\n        reason = _parse_failure(path)\n'),
     ("a readable file is reported too (the detector cries wolf)", _M,
      "        ast.parse(path.read_text(encoding=\"utf-8\"), filename=str(path))\n        return None\n",
      "        ast.parse(path.read_text(encoding=\"utf-8\"), filename=str(path))\n"

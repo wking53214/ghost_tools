@@ -1,4 +1,4 @@
-# ghost_tools -- v0.13
+# ghost_tools -- v0.14
 
 Four commands, one pipeline. `ghost-buster` hunts down structural problems
 in code and, with `--mutate`, proves which tests pass without checking
@@ -103,6 +103,42 @@ correct. What was wrong is that nobody was told. An abstention is now a
 MAJOR finding naming the file and the reason, because a file that will
 not parse is usually broken right now, which is the worst possible moment
 for every structural check to look away.
+
+## The founder checks (v0.14.0)
+
+Three checks built from research into what actually bites solo and
+early-stage teams. Each is deliberately narrower than its category name,
+because a security check people learn to skim is worth less than none.
+
+| Check | Fires when | Severity |
+|---|---|---|
+| `no_ci_configuration` | a deploy artifact ships this code and no CI runs first | MAJOR |
+| | test files exist and no CI runs them | MINOR |
+| `insecure_default` | `DEBUG = True`, `run(debug=True)` | CRITICAL |
+| | CORS allows every origin **and** credentials | CRITICAL |
+| | `ALLOWED_HOSTS = ["*"]`, `verify=False` | MAJOR |
+| `unauthenticated_route` | a route has no auth while most of its siblings do | MAJOR |
+
+**What each one refuses to say** is the design:
+
+- **Not "this repo has no CI".** Plenty of repositories are fine without
+  it: a scratch pad, a spike, a corpus. The claim is narrower and about
+  work already wasted -- you wrote tests and nothing runs them -- or about
+  a deploy with no gate in front of it.
+- **Not "probably insecure".** Every rule is a construct with essentially
+  one meaning, and each is skipped inside test files where being
+  permissive is usually the point. Wide-open CORS *without* credentials is
+  a normal public API and is not reported. Measured across three real
+  repositories: zero findings.
+- **Not "routes with no auth".** That version is unusable: a login
+  endpoint has no auth by definition, and so do signup, health probes,
+  webhooks, OAuth callbacks, and every endpoint of every public API. What
+  is reported is the INCONSISTENCY -- a handler whose siblings are nearly
+  all protected, meaning the author already decided this router needs a
+  caller identity and this one does not say so. A fully public module is
+  silent; a fully protected module is silent; auth applied by middleware
+  makes every route look unprotected, which drops the module below the
+  threshold and reports nothing. It fails quiet, deliberately.
 
 ## Install
 
