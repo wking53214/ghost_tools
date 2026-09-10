@@ -102,6 +102,7 @@ class ModuleFacts:
     imports_external: List[str] = field(default_factory=list)
     boundaries: List[str] = field(default_factory=list)
     module_state: List[str] = field(default_factory=list)   # mutable top-level bindings
+    bindings: List[str] = field(default_factory=list)       # public top-level names bound
     data_models: List[str] = field(default_factory=list)
     entry_points: List[str] = field(default_factory=list)   # main(), __main__ guard
     raises: List[str] = field(default_factory=list)
@@ -244,6 +245,15 @@ def analyse_module(path: Path, root: Path, package_roots: Set[str]) -> Optional[
                 elif isinstance(t, ast.Name):
                     if _is_mutable_literal(node.value):
                         facts.module_state.append(t.id)
+                    # A public module-level constant is an export like any
+                    # other. Collecting only defs and classes reported
+                    # MINIMUM_MATCH_LENGTH as missing from a package that
+                    # exports it on line one of a real repository.
+                    if not t.id.startswith("_"):
+                        facts.bindings.append(t.id)
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            if not node.target.id.startswith("_"):
+                facts.bindings.append(node.target.id)
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             (facts.internal if node.name.startswith("_") else facts.exported).append(node.name)
             if isinstance(node, ast.ClassDef) and _model_kind(node):
@@ -293,6 +303,7 @@ def analyse_module(path: Path, root: Path, package_roots: Set[str]) -> Optional[
                 facts.entry_points.append(f"{dotted}:__main__ guard")
 
     facts.boundaries = sorted(set(facts.boundaries))
+    facts.bindings = sorted(set(facts.bindings))
     facts.imports_internal = sorted(set(facts.imports_internal))
     facts.imports_external = sorted(set(facts.imports_external))
     facts.unresolved = sorted(set(facts.unresolved))

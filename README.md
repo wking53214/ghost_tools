@@ -1,4 +1,4 @@
-# ghost_tools -- v0.15
+# ghost_tools -- v0.16
 
 Four commands, one pipeline. `ghost-buster` hunts down structural problems
 in code and, with `--mutate`, proves which tests pass without checking
@@ -183,6 +183,50 @@ undeclared on a real repository that declares every one of them. Imports
 are now mapped through installed distribution metadata, and an import that
 cannot be mapped goes to `unresolved` rather than becoming a finding --
 because a missing declaration and an ordinary alias look identical.
+
+## The seam between two repositories (v0.16.0)
+
+A cross-repo boundary is the one place both sides are blind. The importing
+repository guards the import and skips its tests when the other is absent,
+so its CI never runs the seam. The providing repository has never heard of
+the importer. The contract is verified at exactly one moment: when
+somebody joins them.
+
+    ghost-buster . --join ../CCC --join ../Conservation_Kernel
+
+| Finding | Fires when | Severity |
+|---|---|---|
+| `cross repo import unresolved` | A imports a name B does not export | CRITICAL |
+| `boundary symbol untested` | a symbol crosses the seam and **no test in either repo mentions it** | MAJOR |
+| `boundary provider absent` | A reaches for a package nothing in the join provides | MINOR |
+| `dormant boundary test` | inventory of tests waiting for the other side | INFORMATIONAL |
+
+`boundary symbol untested` is the mechanical form of **"is a new test
+needed here"**. A dormant test counts as coverage: a test written for the
+seam and guarded the same way the import is lies dormant alone and runs on
+join, which is exactly right and strictly better than no test.
+
+### Single repo or joined
+
+`--join PATH` says so outright, and `--single-repo` says so outright. With
+neither, it **asks** -- but only when stdin is a terminal. A prompt in CI
+hangs the build forever, and a tool that hangs a build gets removed from
+the build, so a non-interactive run scans one repository and says on the
+receipt line that it did.
+
+A single-repo scan that is looking at half a system says so:
+
+    this repository reaches for 6 package(s) it does not provide
+    (augur, ccc, conservation_kernel, fortress_unified, gems ...) and holds
+    8 dormant test(s). Those seams are UNCHECKED in a single-repo scan --
+    re-run with --join <path-to-each> to verify them.
+
+### What it cannot check
+
+Duck-typed contracts. One real adapter states its own: "CCC's intake is
+structural: anything carrying .conclusion, .method, .source_material ...
+can be recorded." No static analysis resolves that, and pretending
+otherwise would be inventing evidence, so those go to `unresolved`, named.
 
 ## Install
 
