@@ -1,4 +1,4 @@
-"""cli.py -- `python -m ghost_buster <path>`.
+"""cli.py -- the `ghost-buster <path>` console script (`ghost_buster.cli:main`).
 
 v0.1 scope: wires up Layer 1 (mechanical) end to end, always. Layer 2
 (semantic) is available as a library (see semantic.py) but is NOT wired
@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 from typing import Iterable, List
 
+from . import version_string
 from .baseline import Baseline
 from .branches import scan as scan_branches
 from .correlate import (
@@ -112,6 +113,13 @@ def _build_parser() -> argparse.ArgumentParser:
     control flow, so lifting it out is the whole fix.
     """
     parser = argparse.ArgumentParser(prog="ghost_buster")
+    # Consumed and exited on during parsing, so it works without the
+    # required `path` positional -- which is the only way anyone would
+    # ever type it.
+    parser.add_argument(
+        "--version", action="version", version=version_string(),
+        help="print the version and exit",
+    )
     parser.add_argument("path", type=Path, help="directory to scan")
     parser.add_argument(
         "--baseline", type=Path, default=None,

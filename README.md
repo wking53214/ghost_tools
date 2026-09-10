@@ -17,6 +17,7 @@ docs; `blackhole-extrapolator` outlines the things that are not there at all.
 ```bash
 python -m pip install "git+https://github.com/wking53214/ghost_tools"
 ghost-buster /path/to/repo
+ghost-buster --version          # what you are running
 ```
 
 No dependencies. Python 3.11 or later. `python -m ghost_buster.cli` and the
