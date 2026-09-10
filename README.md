@@ -12,11 +12,44 @@ docs; `blackhole-extrapolator` outlines the things that are not there at all.
     ghost-writer              the ones worth documenting
     blackhole-extrapolator    the ones that went up in smoke
 
+## What runs by default (v0.11.0)
+
+Every check is **on** unless you turn it off, and **every check reports its
+state on every run** -- performed, impossible, or declined.
+
+| Check | Default | Turn off with |
+|---|---|---|
+| structural detectors | on | (always run) |
+| unmerged branches | on | `--no-branches` |
+| test status | on | `--no-tests` |
+| committed secrets | on | `--no-secrets` |
+| correlation | on | `--no-correlate` |
+| mutation (`--mutate`) | **off** | opt-in on cost: one pytest process per mutant |
+| semantic layer (`--semantic`) | **off** | opt-in on cost: paid API calls |
+
+The half that matters more than the defaults: **a check that does not run
+says so.** Until v0.10.1 the repository checks were opt-in and a run that
+skipped one printed nothing about it. Measured on a real repository, a scan
+with `--branches --secrets` reported 34 findings and exit 1, looked like a
+complete audit, and never mentioned that test status had gone unexamined --
+where five clinical missed detections were sitting behind skips that
+`--tests` rates MAJOR. Silence about a check is the defect; declining one
+on purpose is fine, and now leaves a receipt in the output.
+
+Two consequences worth knowing before you point this at an unfamiliar
+repository:
+
+- **A default run executes the project's test suite.** That is what
+  `--tests` does, and it now happens without being asked. Use `--no-tests`
+  on code you do not trust.
+- **A default run takes minutes, not seconds**, because of that suite.
+  `--no-tests` gets the old fast structural pass back.
+
 ## Install
 
 ```bash
 python -m pip install "git+https://github.com/wking53214/ghost_tools"
-ghost-buster /path/to/repo
+ghost-buster /path/to/repo      # every check, on by default
 ghost-buster --version          # what you are running
 ```
 

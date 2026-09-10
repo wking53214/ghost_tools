@@ -217,15 +217,34 @@ def test_cli_secrets_flag_runs_the_scan_and_reports(tmp_path, capsys):
     assert AWS_KEY not in err
 
 
-def test_cli_without_secrets_flag_never_runs_the_scan(tmp_path, capsys):
+def test_cli_finds_a_committed_secret_with_no_flag_at_all(tmp_path, capsys):
+    """v0.11.0 flipped this test's premise, deliberately.
+
+    Until 0.10.1 the secrets scan was opt-in, and this test asserted that a
+    plain run walked past a live AWS key in the history without a word. That
+    is the behaviour the flip exists to end: a check that is off by default
+    and silent about being off reports a clean repository that is not one.
+    """
     repo = _init_repo(tmp_path / "repo")
     _commit(repo, "config.py", f"AWS_KEY = '{AWS_KEY}'\n", "add key")
     (repo / "module.py").write_text("x = 1\n")
     rc = main([str(repo), "--json", "--baseline", str(tmp_path / "b.json")])
     out, err = capsys.readouterr()
+    assert rc == 1, "a committed credential is a CRITICAL finding, so the run fails"
+    assert '"detector": "committed_secret"' in out
+    assert AWS_KEY not in out and AWS_KEY not in err
+
+
+def test_cli_no_secrets_skips_the_scan_and_leaves_a_receipt(tmp_path, capsys):
+    """Opting out is allowed. Opting out quietly is not."""
+    repo = _init_repo(tmp_path / "repo")
+    _commit(repo, "config.py", f"AWS_KEY = '{AWS_KEY}'\n", "add key")
+    (repo / "module.py").write_text("x = 1\n")
+    rc = main([str(repo), "--json", "--no-secrets", "--baseline", str(tmp_path / "b.json")])
+    out, err = capsys.readouterr()
     assert rc == 0
-    assert "secrets scan" not in err
     assert "committed_secret" not in out
+    assert "secrets scan SKIPPED at your request (--no-secrets)" in err
 
 
 def test_multiple_rules_or_lines_in_one_commit_are_distinct_findings(tmp_path):

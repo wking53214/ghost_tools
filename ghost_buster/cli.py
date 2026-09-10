@@ -142,7 +142,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--mutate", action="store_true",
-        help="prove vacuous checks by mutation: find tests shaped like they check "
+        help="OPT-IN, on cost -- one pytest process per mutant, so a large "
+             "suite can run for hours; every other check is on by default. "
+             "Proves vacuous checks by mutation: find tests shaped like they check "
              "nothing, break the code they call in a scratch copy, and report only "
              "the tests that still pass. Runs one pytest process per mutant; the "
              "working tree is never modified.",
@@ -156,8 +158,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--mutate-verbose", action="store_true",
                         help="also list killed mutants and candidates that could not be judged")
     parser.add_argument(
-        "--branches", action="store_true",
-        help="flag local/remote-tracking branches with commits not reflected in the "
+        "--branches", action=argparse.BooleanOptionalAction, default=True,
+        help="ON BY DEFAULT (--no-branches to skip). Flag local/remote-tracking branches with commits not reflected in the "
              "base branch (fast-forward, ordinary merge, or squash all recognized). "
              "Read-only git plumbing against the checkout as it sits: never fetches, "
              "never pushes, never queries GitHub, so it cannot see a branch's "
@@ -170,8 +172,8 @@ def _build_parser() -> argparse.ArgumentParser:
              "origin/master, main, master that resolves)",
     )
     parser.add_argument(
-        "--tests", action="store_true",
-        help="run the project's pytest suite and report every test that did not pass: "
+        "--tests", action=argparse.BooleanOptionalAction, default=True,
+        help="ON BY DEFAULT (--no-tests to skip). Runs the project's pytest suite and report every test that did not pass: "
              "failing (MAJOR), flaky (fails in the suite, passes rerun alone; MAJOR), "
              "blocked by a missing service/module/variable (MINOR, says what), skipped "
              "without a reason naming a dependency (MAJOR), skipped for a dependency "
@@ -188,8 +190,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--tests-timeout", type=float, default=900.0, metavar="SECONDS",
                         help="timeout for each pytest invocation, the full run included (default 900)")
     parser.add_argument(
-        "--secrets", action="store_true",
-        help="scan the checked-out branch's git history for committed secrets with "
+        "--secrets", action=argparse.BooleanOptionalAction, default=True,
+        help="ON BY DEFAULT (--no-secrets to skip). Scans the checked-out branch's git history for committed secrets with "
              "gitleaks (must be installed separately; never installed by this tool). "
              "Read-only: never rewrites history, rotates a credential, or writes into "
              "the target repository. The secret value itself never appears in a finding.",
@@ -215,12 +217,33 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _skipped(name: str, flag: str) -> None:
+    """An opt-out leaves a receipt.
+
+    WHY THIS FUNCTION EXISTS (v0.11.0)
+
+    Every repository check used to be off unless asked for, and a run that
+    did not perform one said nothing at all about it. Measured on a real
+    repository: a scan with --branches --secrets reported 34 findings and
+    exit 1, looked complete, and never mentioned that test status had not
+    been examined. The suite it did not run was hiding five clinical
+    missed detections behind skips.
+
+    So the checks are on by default now, and -- the half that matters more
+    -- a skipped check announces itself on the same channel as a performed
+    one. Whoever reads the output learns what was NOT looked at without
+    having to reconstruct the command line.
+    """
+    print(f"ghost_buster: {name} SKIPPED at your request ({flag})", file=sys.stderr)
+
+
 def _run_repository_checks(args, findings: List[Finding]):
-    """The three opt-in checks that take a repository rather than a file
-    list: --branches, --tests, --secrets. Each appends to `findings` and
-    prints its own one-line report to stderr. Returns the TestStatusReport
-    when --tests ran (the correlation layer needs the measured counts),
-    else None.
+    """The three checks that take a repository rather than a file list:
+    --branches, --tests, --secrets. All three are ON by default; each
+    appends to `findings` and prints its own one-line report to stderr,
+    and each announces itself when turned off. Returns the
+    TestStatusReport when --tests ran (the correlation layer needs the
+    measured counts), else None.
 
     Extracted from main() for the same reason as _build_parser: these are
     one cohesive stage, and main() was over the long_function threshold."""
@@ -234,6 +257,8 @@ def _run_repository_checks(args, findings: List[Finding]):
         else:
             print(f"ghost_buster: branch scan did not run: {branch_report.reason}", file=sys.stderr)
         findings.extend(branch_findings)
+    else:
+        _skipped("branch scan", "--no-branches")
 
     test_report = None
     if args.tests:
@@ -243,6 +268,8 @@ def _run_repository_checks(args, findings: List[Finding]):
         )
         print(render_test_report(test_report), file=sys.stderr)
         findings.extend(test_findings)
+    else:
+        _skipped("test status scan", "--no-tests")
 
     if args.secrets:
         secrets_findings, secrets_report = scan_secrets(
@@ -250,6 +277,8 @@ def _run_repository_checks(args, findings: List[Finding]):
         )
         print(render_secrets_report(secrets_report), file=sys.stderr)
         findings.extend(secrets_findings)
+    else:
+        _skipped("secrets scan", "--no-secrets")
 
     return test_report
 
@@ -282,10 +311,17 @@ def main(argv: List[str] = None) -> int:
             timeout=args.mutate_timeout, only=args.mutate_only,
         )
         findings.extend(mutation_run.findings)
+    else:
+        # Opt-in on cost (one pytest process per mutant), not because it
+        # matters less -- so it is named on every run rather than simply
+        # being absent.
+        print("ghost_buster: mutation analysis NOT RUN (opt-in: --mutate)", file=sys.stderr)
 
     test_report = _run_repository_checks(args, findings)
 
-    if not args.no_correlate:
+    if args.no_correlate:
+        _skipped("correlation", "--no-correlate")
+    else:
         prior_runs = []
         for prior_path in args.correlate_with:
             try:

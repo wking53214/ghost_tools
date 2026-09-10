@@ -468,14 +468,33 @@ def test_cli_tests_flag_runs_the_suite_and_reports(tmp_path, capsys):
     assert '"detector": "test_status"' in out
 
 
-def test_cli_without_tests_flag_never_runs_the_suite(tmp_path, capsys):
+def test_cli_reports_a_failing_test_with_no_flag_at_all(tmp_path, capsys):
+    """v0.11.0 inverted this test's premise, deliberately.
+
+    Until 0.10.1 the suite scan was opt-in, and this test asserted that a
+    plain run over a project whose tests FAIL exited 0 and said nothing
+    about it. That is the shape the default flip exists to end: a check
+    that is off by default and silent about being off reports a healthy
+    project that is not one.
+    """
     proj = _project(tmp_path, {"test_bad.py": "def test_bad():\n    assert False\n"})
     (proj / "module.py").write_text("x = 1\n")
     rc = main([str(proj), "--json", "--baseline", str(tmp_path / "b.json")])
     out, err = capsys.readouterr()
+    assert rc == 1, "a failing test is MAJOR, so the run fails"
+    assert "test scan" in err
+    assert '"detector": "test_status"' in out
+
+
+def test_cli_no_tests_skips_the_suite_and_leaves_a_receipt(tmp_path, capsys):
+    """Opting out is allowed. Opting out quietly is not."""
+    proj = _project(tmp_path, {"test_bad.py": "def test_bad():\n    assert False\n"})
+    (proj / "module.py").write_text("x = 1\n")
+    rc = main([str(proj), "--json", "--no-tests", "--baseline", str(tmp_path / "b.json")])
+    out, err = capsys.readouterr()
     assert rc == 0
-    assert "test scan" not in err
     assert "test_status" not in out
+    assert "test status scan SKIPPED at your request (--no-tests)" in err
 
 
 @pytest.mark.parametrize("reason,kind,name", [
