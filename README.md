@@ -747,6 +747,68 @@ python -m ghost_buster.cli /path/to/other --secrets --json > /tmp/other.json
 python -m ghost_buster.cli /path/to/repo --secrets --correlate-with other=/tmp/other.json
 ```
 
+### `dead_end_call`: a door somebody opens onto nothing
+
+`dead_code` next door answers the opposite question. It finds a definition
+**nobody references**. This one finds the definition everybody references
+whose body does nothing, and its whole job is telling that apart from the
+thing it most resembles:
+
+> A **seam** is inert on purpose. An abstract method, a Protocol, a plugin
+> interface: it has no body because the body arrives from somewhere else,
+> and being empty is the design.
+>
+> A **dead end** is inert because nothing ever arrived. Live code calls it,
+> the call returns, and nothing happened.
+
+Both are empty. The difference is not in the body, it is in whether anything
+in the world is arranged to fill it, and that is decidable, because a seam
+**declares itself**:
+
+| declared by | what that looks like |
+|---|---|
+| inheritance | an `ABC`, `ABCMeta` or `Protocol` base |
+| decorator | `@abstractmethod`, `@abstractproperty` |
+| use | a subclass anywhere in the scan that overrides it with a real body |
+
+Anything with none of those, called by non-test code, is reported. The five
+empty shapes are `pass`, `...`, docstring-only, `return None`, and
+`raise NotImplementedError`.
+
+**Silence is worse than a crash.** A raised `NotImplementedError` reached at
+runtime stops and names itself, so it is MINOR. A `pass` reached at runtime
+lets the caller believe the work happened, which is the difference between
+"the check passed" and "the thing works", so the silent shapes are MAJOR.
+
+**It cannot say "never", and does not.** Nothing static proves never. The
+finding says what the evidence supports: nothing in the scanned set provides
+a body and nothing declares an intent to. An implementation in a repository
+this scan was not pointed at would settle it, which is what
+`blackhole-extrapolator --sibling` exists for. It also cannot say which
+object a call landed on, the same disclosed limit `dead_code` carries: this
+is AST-only with no type resolution, so "something calls `execute`" means
+the name is called somewhere.
+
+**Measured before it was built.** Across 24 live repositories and 1,562
+files: 162 callables whose body does nothing, 31 with no override in their
+own repository, 11 called by live code. Ten of the eleven were deliberate,
+so every exclusion below was a false positive first:
+
+| excluded | measured case |
+|---|---|
+| Null Object and no-op conventions (`Null*`, `NoOp*`, `Fake*`, `Stub*`, `Dummy*`, `Mock*`, on a word boundary) | `NullTelemetrySink.record`, `_NoOpSpan.set_status` |
+| definitions in test files, and call sites in test files | `_FakeConn.close`, `NoneReturningDecider.safety_check` |
+| an empty `__init__`, `__enter__`, `__exit__`, `__del__` | `AuditReportValidator.__init__` |
+
+What survives, library-wide, is **one** finding: `UniversalAdapter.execute`
+raising `NotImplementedError` in a plain class documented as "Base contract
+for all domain adapters", with nothing anywhere subclassing it and live code
+calling `.execute()`. It appears three times because the file is vendored
+into two repositories.
+
+That ratio is the point. A detector that reported all 162 would be telling
+you about your Protocols.
+
 ### `--annotate-names`: one value, two names, written down twice
 
 The complaint this answers is the one every SQL join produces. A column is

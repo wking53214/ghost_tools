@@ -1533,6 +1533,8 @@ def detect_merge_conflict_markers(files: List[Path]) -> List[Finding]:
 # Both abstain rather than guess: the vestigial check needs at least two
 # cassettes to tell a domain's vocabulary from the engine's, and returns
 # nothing at all when a tree has no seam to check against.
+from .deadend import DETECTOR as DEAD_END_DETECTOR             # noqa: E402
+from .deadend import detect_dead_end_calls                     # noqa: E402
 from .naming import (                                            # noqa: E402
     DISAGREEMENT_DETECTOR, PLACEHOLDER_DETECTOR, VESTIGIAL_DETECTOR,
     detect_name_disagreements, detect_placeholder_names,
@@ -1545,6 +1547,7 @@ register(PLACEHOLDER_DETECTOR)(detect_placeholder_names)
 # its files, and under --join or an ecosystem scan it finds what crosses
 # repositories, which is where the two-names-for-one-thing problem lives.
 register(DISAGREEMENT_DETECTOR)(detect_name_disagreements)
+register(DEAD_END_DETECTOR)(detect_dead_end_calls)
 
 
 def run_all(files: Iterable[Path]) -> List[Finding]:

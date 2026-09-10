@@ -1,5 +1,52 @@
 # Changelog
 
+## 0.17.14 (2026-09-10)
+
+### ghost_buster
+`dead_end_call`: a callable whose body does nothing, that live code calls,
+and that nothing in the scanned set is arranged to fill.
+
+`dead_code` answers the opposite question -- a definition nobody references.
+This is the definition everybody references that does nothing, and the whole
+design is telling it apart from a seam. A seam is inert on purpose and
+declares itself: an ABC/ABCMeta/Protocol base, an @abstractmethod decorator,
+or a subclass somewhere in the scan that overrides it with a real body. A
+dead end has none of those and gets called anyway.
+
+Severity splits on loudness. A raised NotImplementedError stops and names
+itself, so it is MINOR. A `pass` lets the caller believe the work happened,
+which is the difference between "the check passed" and "the thing works", so
+the silent shapes are MAJOR.
+
+It does not claim "never", and the finding says so: nothing HERE provides a
+body, an implementation in an unscanned repository would settle it, scan the
+siblings if it matters. It also cannot say which object a call landed on --
+the same disclosed AST-only limit `dead_code` carries.
+
+Measured before it was built, across 24 live repositories and 1,562 files:
+162 callables whose body does nothing, 31 with no override in their own
+repository, 11 called by live code. Ten of the eleven were deliberate, so
+every exclusion is a measured false positive: the Null Object and test-double
+naming conventions, definitions and call sites in test files, and an empty
+`__init__`/`__enter__`/`__exit__`/`__del__`. What survives library-wide is
+one real finding, `UniversalAdapter.execute`, reported three times because
+the file is vendored into two repositories.
+
+Two defects in the first draft, both caught by mutation:
+
+  * The no-op name check was a regex ending `(?=[A-Z_0-9]|$)` under
+    re.IGNORECASE, and IGNORECASE makes `[A-Z]` match lowercase, so the word
+    boundary it existed to enforce did not exist and `nullify_cache` was
+    treated as a Null object. It is written out as a function now.
+  * The test for the empty-`__init__` exclusion passed for the wrong reason:
+    `__init__` never reaches the called set through construction, only
+    through an explicit `super().__init__()`, so the fixture was exercising
+    the "not called" filter instead.
+
+`is_test_path` moves to naming.py and is shared. Two detectors that each
+decide for themselves what a test file is will eventually disagree, and the
+disagreement will be invisible.
+
 ## 0.17.13 (2026-09-10)
 
 ### Tests

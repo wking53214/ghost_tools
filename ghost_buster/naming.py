@@ -121,7 +121,10 @@ def _words(name: str) -> Set[str]:
 _TEST_DIRS = frozenset({"test", "tests"})
 
 
-def _is_test(path: Path) -> bool:
+def is_test_path(path: Path) -> bool:
+    """Shared with deadend.py. Two detectors that each decide for themselves
+    what a test file is will eventually disagree, and the disagreement will
+    be invisible."""
     return path.name.startswith("test_") or path.parent.name.lower() in _TEST_DIRS
 
 
@@ -236,7 +239,7 @@ def detect_vestigial_domain_names(files: Sequence[Path]) -> List[Finding]:
     for path in files:
         if path.name in cassette_names or path.name == "cassette.py":
             continue
-        if _is_test(path):
+        if is_test_path(path):
             continue
         tree = _parse(path)
         if tree is None:
@@ -286,7 +289,7 @@ def detect_placeholder_names(files: Sequence[Path]) -> List[Finding]:
     """
     findings: List[Finding] = []
     for path in (Path(f) for f in files):
-        if _is_test(path):
+        if is_test_path(path):
             continue
         tree = _parse(path)
         if tree is None:
@@ -456,7 +459,7 @@ def find_name_disagreements(files: Sequence[Path]) -> List[Disagreement]:
     substituting one for the other cannot capture anything.
     """
     files = [Path(f) for f in files]
-    trees = [(p, t) for p in files if not _is_test(p)
+    trees = [(p, t) for p in files if not is_test_path(p)
              for t in (_parse(p),) if t is not None]
     known = _Definitions(trees)
 
