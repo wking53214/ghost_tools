@@ -201,17 +201,32 @@ def test_every_not_passing_test_gets_exactly_one_finding(shapes):
         "stale skip": 2,
         "skipped for a dependency": 4,
         "stale xfail": 1,
+        # v0.13.1: an xfail that fails as expected is INFORMATIONAL rather
+        # than absent, so the ledger has something to age. See the block at
+        # the end of this file.
+        "expected failure": 1,
     }
-    assert len(findings) == 18
+    assert len(findings) == 19
     assert all(f.category == Category.TEST_STATUS for f in findings)
     assert all(f.status == Status.CONFIRMED for f in findings)
     assert all(f.layer.value == "mechanical" for f in findings)
 
 
-def test_passing_and_expected_failing_tests_produce_nothing(shapes):
+def test_a_passing_test_produces_nothing(shapes):
+    """v0.13.1 split this test in two. It used to assert that an expected
+    failure produced nothing either, which is how five pediatric missed
+    detections came to be invisible: correctly not MAJOR, and therefore
+    reported not at all. A passing test genuinely produces nothing. An
+    expected failure now produces one quiet finding so it can age."""
     _, findings, _ = shapes
     assert not any("test_passes" in f.summary for f in findings)
-    assert not any("test_xfail_fails" in f.summary for f in findings)
+
+
+def test_an_expected_failure_produces_one_quiet_finding(shapes):
+    _, findings, _ = shapes
+    matched = [f for f in findings if "test_xfail_fails" in f.summary]
+    assert len(matched) == 1
+    assert matched[0].severity == Severity.INFORMATIONAL
 
 
 def test_deterministic_failure_is_rerun_the_default_three_times(shapes):
@@ -584,3 +599,85 @@ def test_local_module_index_finds_files_and_packages_and_skips_environments(tmp_
     assert "notpkg" not in index
     assert "vendored" not in index
     assert "__init__" not in index
+
+
+# ---------------------------------------------------------------------------
+# An expected failure is reported so that it can AGE (v0.13.1).
+#
+# Until v0.13.0 an xfail that failed as expected produced no finding at all.
+# The reasoning was half right: it is a recorded decision, not an unexplained
+# absence, so it is not MAJOR. But emitting NOTHING means the ledger never
+# sees it, persistent_finding can never fire, and an expected failure standing
+# for two hundred runs is indistinguishable from one added yesterday.
+#
+# Measured 2026-09-10 on a pediatric deterioration engine: five missed
+# detections moved from bare skips (5 MAJOR) to named xfails, correctly
+# stopped being MAJOR, and vanished from the report entirely. The same
+# silence, one level up.
+# ---------------------------------------------------------------------------
+
+XFAIL_SUITE = {
+    "test_gap.py": (
+        "import pytest\n\n"
+        "@pytest.mark.xfail(reason='known gap: detector misses this case')\n"
+        "def test_known_gap():\n    assert False\n"
+    ),
+}
+
+
+def test_an_expected_failure_is_reported(tmp_path):
+    proj = _project(tmp_path, XFAIL_SUITE)
+    findings, report = scan(proj, python=sys.executable, reruns=0)
+    assert report.xfailed == 1
+    kinds = [f.attributes.get("kind") for f in findings]
+    assert "expected failure" in kinds, (
+        "an xfail must produce a finding, or the ledger can never age it"
+    )
+
+
+def test_an_expected_failure_is_informational_not_major(tmp_path):
+    """It is a decision somebody recorded, not a test switched off in
+    silence. Rating it MAJOR on day one would make xfail worse than skip
+    to use, which would push people back toward the skip."""
+    proj = _project(tmp_path, XFAIL_SUITE)
+    findings, _ = scan(proj, python=sys.executable, reruns=0)
+    xf = next(f for f in findings if f.attributes.get("kind") == "expected failure")
+    assert xf.severity == Severity.INFORMATIONAL
+
+
+def test_the_expected_failure_carries_its_reason(tmp_path):
+    """The reason is the whole value of an xfail over a skip. The plugin
+    used to record only a boolean `wasxfail`, so the summary fell back to
+    the raw traceback and said nothing useful."""
+    proj = _project(tmp_path, XFAIL_SUITE)
+    findings, _ = scan(proj, python=sys.executable, reruns=0)
+    xf = next(f for f in findings if f.attributes.get("kind") == "expected failure")
+    assert "known gap: detector misses this case" in xf.summary
+    assert "assert False" not in xf.summary, "that is the traceback, not the reason"
+
+
+def test_a_bare_xfail_says_no_reason_was_recorded(tmp_path):
+    """pytest sets wasxfail to "" for `@pytest.mark.xfail` with no reason,
+    which is why the boolean and the reason cannot be one field."""
+    proj = _project(tmp_path, {"test_bare.py": (
+        "import pytest\n\n"
+        "@pytest.mark.xfail\n"
+        "def test_bare():\n    assert False\n"
+    )})
+    findings, report = scan(proj, python=sys.executable, reruns=0)
+    assert report.xfailed == 1
+    xf = next(f for f in findings if f.attributes.get("kind") == "expected failure")
+    assert "no reason recorded" in xf.summary
+
+
+def test_an_xfail_that_passes_is_still_major(tmp_path):
+    """The new INFORMATIONAL branch must not swallow the stale-xfail case."""
+    proj = _project(tmp_path, {"test_xpass.py": (
+        "import pytest\n\n"
+        "@pytest.mark.xfail(reason='thought this was broken')\n"
+        "def test_actually_works():\n    assert True\n"
+    )})
+    findings, report = scan(proj, python=sys.executable, reruns=0)
+    assert report.xpassed == 1
+    stale = next(f for f in findings if f.attributes.get("kind") == "stale xfail")
+    assert stale.severity == Severity.MAJOR
