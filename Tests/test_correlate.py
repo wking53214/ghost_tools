@@ -457,4 +457,9 @@ def test_cli_no_correlate_skips_the_pass(tmp_path, capsys):
     rc = main([str(proj), "--no-correlate", "--baseline", str(tmp_path / "b.json")])
     out, err = capsys.readouterr()
     assert rc == 0
-    assert "correlation" not in err
+    # v0.11.0: a skipped pass is no longer silent. What must be absent is the
+    # WORK (no connector ran, no correlation finding was produced), not the
+    # word -- the receipt naming the opt-out is the point of the change.
+    assert "correlation SKIPPED at your request (--no-correlate)" in err
+    assert "found nothing to connect" not in err
+    assert "connected" not in err

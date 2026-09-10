@@ -100,6 +100,7 @@ class Category(str, Enum):
     MERGE_CONFLICT_MARKER = "merge_conflict_marker"  # an unresolved <<<<<<< / ======= / >>>>>>> triplet
     TEST_STATUS = "test_status"  # a test that failed, flaked, is blocked, or is skipped without cause
     COMMITTED_SECRET = "committed_secret"  # a live-looking credential gitleaks found in git history
+    HISTORY = "history"  # what the ledger knows and a single run cannot: regressions, rot, blind spots
     OTHER = "other"
 
 

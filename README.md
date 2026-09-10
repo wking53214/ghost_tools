@@ -1,4 +1,4 @@
-# ghost_tools -- v0.10
+# ghost_tools -- v0.13
 
 Four commands, one pipeline. `ghost-buster` hunts down structural problems
 in code and, with `--mutate`, proves which tests pass without checking
@@ -12,11 +12,103 @@ docs; `blackhole-extrapolator` outlines the things that are not there at all.
     ghost-writer              the ones worth documenting
     blackhole-extrapolator    the ones that went up in smoke
 
+## What runs by default (v0.11.0)
+
+Every check is **on** unless you turn it off, and **every check reports its
+state on every run** -- performed, impossible, or declined.
+
+| Check | Default | Turn off with |
+|---|---|---|
+| structural detectors | on | (always run) |
+| unmerged branches | on | `--no-branches` |
+| test status | on | `--no-tests` |
+| committed secrets | on | `--no-secrets` |
+| correlation | on | `--no-correlate` |
+| ledger (memory) | on | `--no-ledger` |
+| mutation (`--mutate`) | **off** | opt-in on cost: one pytest process per mutant |
+| semantic layer (`--semantic`) | **off** | opt-in on cost: paid API calls |
+
+The half that matters more than the defaults: **a check that does not run
+says so.** Until v0.10.1 the repository checks were opt-in and a run that
+skipped one printed nothing about it. Measured on a real repository, a scan
+with `--branches --secrets` reported 34 findings and exit 1, looked like a
+complete audit, and never mentioned that test status had gone unexamined --
+where five clinical missed detections were sitting behind skips that
+`--tests` rates MAJOR. Silence about a check is the defect; declining one
+on purpose is fine, and now leaves a receipt in the output.
+
+Two consequences worth knowing before you point this at an unfamiliar
+repository:
+
+- **A default run executes the project's test suite.** That is what
+  `--tests` does, and it now happens without being asked. Use `--no-tests`
+  on code you do not trust.
+- **A default run takes minutes, not seconds**, because of that suite.
+  `--no-tests` gets the old fast structural pass back.
+
+## What it remembers (v0.12.0)
+
+`.ghost_ledger.json` sits next to the baseline and is committed like it.
+The baseline answers *"is this present right now"*; the ledger answers
+*"what has been true over time"*. Three facts are unsayable in a set of
+ids, and all three matter:
+
+| Finding | Fires when | Why a single run cannot see it |
+|---|---|---|
+| `regressed_finding` | An id was present, went away, and came back | To a set of ids, a return and a first sighting are the same event. Escalates one severity level: a defect that returns means something reintroduced it and nothing stopped that. |
+| `flapping_finding` | It has come and gone three or more times | Usually a non-deterministic detector, occasionally a real intermittent defect. Either way, diagnose it rather than baselining it. |
+| `persistent_finding` | Open for ten consecutive runs with no decision ever recorded | Not a claim it is wrong. A claim that nobody has said either way, which is how a known problem becomes an unknown one. |
+| `blind_spot` | A check has not actually run here in five consecutive runs | **The tool noticing its own coverage gap.** Severity follows the reason: declining a default-on check is a choice someone made and can unmake (MAJOR); an environment that cannot run it is a gap but not a decision (MINOR); a check that is opt-in by design was never promised (INFORMATIONAL). |
+
+Two rules the ledger will not break:
+
+- **It only ever adds.** It never suppresses a finding, never lowers a
+  severity, and never tunes a threshold. Memory that removes signal is a
+  self-tuning suppressor, and every self-tuning suppressor shares one
+  gradient: fewer findings looks like success, so it walks itself to
+  silence. A regression is reported *alongside* the defect it is about,
+  never instead of it.
+- **It records what was found, not what was reported.** Findings enter
+  the ledger before the baseline diff, so `--accept` changes what you are
+  shown and not what the tool remembers. Otherwise accepting a finding
+  would be a way to delete history.
+
+Run history is capped at the most recent 200 runs, with older runs
+collapsing into counters, so the file stays flat in git rather than
+growing without bound. Writes are atomic; a corrupt or future-schema
+ledger fails the run rather than silently starting over, because an empty
+history reported as a clean one is the lie this whole feature exists to
+prevent.
+
+## Where one idea came from (v0.13.0)
+
+`unassessable_file` is borrowed, knowingly, from a pediatric sepsis
+engine. `observe-perceive`'s `BayesianFusion` carries this comment,
+written after a real defect:
+
+> An engine that returns `abstained=True` is saying "I have no data to
+> assess this patient" -- which is fundamentally different from "this
+> patient looks stable." Previously, three low-confidence abstentions
+> could outvote a single high-confidence septic-shock detection.
+
+ghost_buster had the same bug in different clothes. `_parse()` returns
+`None` for a file it cannot read, every AST detector skips that file, and
+the run said nothing at all. Measured on three files -- one clean, one
+with conflict markers, one with a syntax typo -- the typo file produced
+no findings whatsoever, its dead function invisible, while the header
+still reported "scanning 3 file(s)". Silence read as all-clear.
+
+Every detector still fails closed on a file it cannot parse, which is
+correct. What was wrong is that nobody was told. An abstention is now a
+MAJOR finding naming the file and the reason, because a file that will
+not parse is usually broken right now, which is the worst possible moment
+for every structural check to look away.
+
 ## Install
 
 ```bash
 python -m pip install "git+https://github.com/wking53214/ghost_tools"
-ghost-buster /path/to/repo
+ghost-buster /path/to/repo      # every check, on by default
 ghost-buster --version          # what you are running
 ```
 

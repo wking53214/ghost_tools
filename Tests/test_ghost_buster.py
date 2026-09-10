@@ -294,9 +294,21 @@ def test_collect_files_skips_build_output(tmp_path):
 
 
 def test_run_all_handles_unparseable_file_without_crashing(tmp_path):
+    """v0.13.0 changed what this asserts, and the old assertion was the bug.
+
+    It used to be `assert findings == []` with the comment "fails closed,
+    does not raise" -- so the documented, tested contract was that a file
+    nobody could read produces exactly the same output as a file that was
+    read and found clean. Not raising is still right and still asserted.
+    Saying nothing was not. See Tests/test_unassessable.py.
+    """
     f = _write(tmp_path, "broken.py", "def this is not valid python(((\n")
-    findings = run_all([f])
-    assert findings == []  # fails closed, does not raise
+    findings = run_all([f])                      # must not raise
+    detectors = {x.detector for x in findings}
+    assert detectors == {"unassessable_file"}, (
+        "every AST detector must still fail closed on a file it cannot parse, "
+        "and the run must say that it did"
+    )
 
 
 # ------------------------------------------------------------- merge_conflict_marker
