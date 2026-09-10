@@ -35,10 +35,14 @@ achieved and says which, in the file, at the top.
 
 WHAT IT WILL NOT DO
 
-Write into the repository it scanned. ghost_buster has never modified a
-file it was pointed at, and that property is what lets someone aim it at
-thirty-seven repositories overnight without reading the diff first. A
-reconstruction goes to a directory the caller names, and nowhere else.
+Write into the repository it scanned. Nothing in the toolkit modifies a file
+it did not create unless a flag explicitly asks -- `--annotate-names` is the
+only thing that does -- and that property is what lets someone aim it at
+thirty-seven repositories overnight without reading the diff first. It is
+checked rather than promised: Tests/test_tree_immutability.py snapshots the
+scanned tree and compares it afterwards, for every entry point including
+this one. A reconstruction goes to a directory the caller names, and nowhere
+else.
 
 Feed itself back into the analysis. Every downstream detector reports in
 one voice; a finding computed against reconstructed code would arrive

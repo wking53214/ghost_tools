@@ -513,11 +513,12 @@ def find_name_disagreements(files: Sequence[Path]) -> List[Disagreement]:
 def detect_name_disagreements(files: Sequence[Path]) -> List[Finding]:
     """The 1:1 disagreements above, as findings.
 
-    Reports; does not rename. ghost_buster has never modified a file it was
-    pointed at on its own account, and a cross-repository rename touches
-    call sites and tests in trees this scan was never asked to write to.
-    `--annotate-names` is the one path that writes, it is opt-in, and it
-    writes comments and a README table rather than code.
+    Reports; does not rename. A cross-repository rename touches call sites
+    and tests in trees this scan was never asked to write to.
+    `--annotate-names` is the one path that writes into a scanned tree, it is
+    opt-in, and it writes comments and a README table rather than code. That
+    it is the ONLY one is checked, not asserted: see
+    Tests/test_tree_immutability.py.
     """
     findings: List[Finding] = []
     for d in find_name_disagreements(files):

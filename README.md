@@ -859,6 +859,59 @@ the same note inline on each signature and each call. Edit the code, not
 this block: it is rewritten whole every run and contains no timestamp, so
 a run that changes nothing produces no diff.
 <!-- ghost_buster:name-disagreements:end -->
+### What a scan may do to your tree, checked rather than promised
+
+"The working tree is never modified" appeared **35 times** across this
+project's code and documentation, and nothing verified it. A promise made 35
+times and checked zero times is exactly the defect class this toolkit exists
+to find in other people's code, and it sat here unexamined through the
+version that added `--annotate-names` and the one that added
+`--recover-into`, which are the first two things in the toolkit that write
+anything at all.
+
+`Tests/test_tree_immutability.py` runs every real entry point against a real
+tree and compares a content snapshot taken before and after. Writing it
+immediately showed the blanket claim to be **too strong**, so the invariant
+is now stated as what is actually true and actually tested:
+
+> Nothing that already existed is modified or deleted, and the only files
+> that appear are ones the caller declared it expected.
+
+| entry point | what it may leave behind |
+|---|---|
+| `ghost-buster PATH` (default) | `.ghost_ledger.json` and nothing else |
+| `ghost-buster PATH --accept` | `.ghost_baseline.json` |
+| `ghost-buster PATH --annotate-names` | modifies `.py` files and the README, by comment only. The one deliberate exception |
+| `ghost-buster PATH --json` | nothing |
+| `blackhole-extrapolator PATH` | nothing |
+| `--reconstruct-into DIR` | writes to `DIR`; the scanned tree untouched |
+| `--recover-from CORPUS --recover-into DIR` | writes to `DIR`; **both** the scanned tree and the corpus untouched |
+
+That last row matters most: a corpus is somebody's exported chat history,
+and reading it has to leave it exactly as it was found. It is a second tree,
+guarded separately.
+
+The mechanism is a content hash of every path, not a patched `open`. The
+idea came from a capability tracer recovered out of a chat history, which
+patched `builtins.open` and would have caught none of this, because every
+write here goes through `Path.write_text`:
+
+```
+Path.write_text seen by a builtins.open patch: False
+```
+
+A snapshot cannot be sidestepped by which API a writer happens to use, and
+it catches a deletion, a `chmod`, a stray directory, and a file written and
+removed again within the same run, all of which a patched `open` or a
+survivors-only comparison would miss.
+
+Eleven mutants hold the suite to its job. Three of them break **real product
+code** in the exact way the guard exists to catch: annotating without the
+flag that asks for it, writing a reconstruction beside the original instead
+of into the output directory, and writing a recovery into the scanned
+repository. Without those three, this would be 35 docstrings and one more
+file agreeing with them.
+
 ### `--mutate`: the proof a check is vacuous
 
 The characteristic defect of an iteratively built codebase is a check that

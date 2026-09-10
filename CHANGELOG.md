@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.17.13 (2026-09-10)
+
+### Tests
+The tree-immutability guard: proof that a scan leaves the tree alone,
+instead of a docstring saying so.
+
+"The working tree is never modified" appeared 35 times across this project's
+code and documentation and nothing verified it. That is the defect class
+ghost_buster exists to find in other people's code, and it went unexamined
+here through the version that added `--annotate-names` and the one that
+added `--recover-into` -- the first two things in the toolkit that write
+anything at all.
+
+`Tests/tree_guard.py` snapshots every path under a root as `mode:sha256`,
+and `unchanged(root, may_create=...)` asserts that nothing which already
+existed was modified or deleted and that only declared files appeared.
+`Tests/test_tree_immutability.py` runs every real entry point against a real
+tree under that guard, including the recovery pass against a corpus, which
+is a second tree: an exported chat history has to be left exactly as it was
+found.
+
+Writing it showed the blanket claim to be too strong, and the docstrings
+that made it are corrected. A default scan writes `.ghost_ledger.json`;
+`--accept` writes `.ghost_baseline.json`; `--annotate-names` deliberately
+edits sources. The invariant that is true and now tested is that nothing
+which already existed is modified or deleted, and that every new file was
+declared.
+
+The mechanism is a content snapshot rather than a patched `open`. The idea
+came from a capability tracer recovered out of a chat history by
+`--recover-from`; its mechanism patched `builtins.open`, which would have
+caught none of this, because every write here goes through
+`Path.write_text`. A snapshot also catches a deletion, a chmod, a stray
+directory and a file written and removed again inside one run.
+
+Eleven mutants, three of which break real product code in the exact way the
+guard exists to catch: annotating without the flag, writing a reconstruction
+beside the original, writing a recovery into the scanned repository.
+
 ## 0.17.12 (2026-09-10)
 
 ### blackhole_extrapolator
