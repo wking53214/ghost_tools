@@ -1528,6 +1528,20 @@ def detect_merge_conflict_markers(files: List[Path]) -> List[Finding]:
     return findings
 
 
+# Registered here rather than decorated in naming.py, so that module keeps
+# importing nothing but the schema and cannot form a cycle with this one.
+# Both abstain rather than guess: the vestigial check needs at least two
+# cassettes to tell a domain's vocabulary from the engine's, and returns
+# nothing at all when a tree has no seam to check against.
+from .naming import (                                            # noqa: E402
+    PLACEHOLDER_DETECTOR, VESTIGIAL_DETECTOR,
+    detect_placeholder_names, detect_vestigial_domain_names,
+)
+
+register(VESTIGIAL_DETECTOR)(detect_vestigial_domain_names)
+register(PLACEHOLDER_DETECTOR)(detect_placeholder_names)
+
+
 def run_all(files: Iterable[Path]) -> List[Finding]:
     """Run every registered mechanical detector against the given file
     list. Detectors are independent and order-independent by design
