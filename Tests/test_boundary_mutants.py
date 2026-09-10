@@ -48,8 +48,11 @@ MUTANTS = [
     ("a module-level constant stops counting as an export", _S,
      '                    if not t.id.startswith("_"):\n'
      "                        facts.bindings.append(t.id)\n", ""),
+    # The line moved into _surface() when re-export collection was added on
+    # 2026-09-10; the property it protects is unchanged.
     ("bindings are dropped when computing what a package provides", _B,
-     "                names.update(m.bindings)\n", ""),
+     "        return set(m.exported) | set(m.public_names) | set(m.bindings) | set(m.reexports)\n",
+     "        return set(m.exported) | set(m.public_names) | set(m.reexports)\n"),
     ("a repository reaching for itself is treated as a boundary", _B,
      "        if provider_root == reach.repo:\n            continue    # reaching for itself; not a boundary\n",
      ""),

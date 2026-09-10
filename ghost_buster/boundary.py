@@ -47,7 +47,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 from .schema import Category, Evidence, Finding, Layer, Severity, Status
-from .structure import StructuralModel, _stdlib_names, build_model
+from .structure import _PACKAGE_PARENTS, _stdlib_names, StructuralModel, build_model
 
 DETECTOR = "boundary"
 
@@ -89,6 +89,7 @@ class JoinedModel:
     #: ccc.matching import X` against the union of every ccc module would
     #: accept a name that lives in a different submodule entirely.
     provides_module: Dict[str, Set[str]] = field(default_factory=dict)
+    opaque_modules: Set[str] = field(default_factory=set)
     reaches: List[GuardedImport] = field(default_factory=list)
     dormant_tests: List[DormantTest] = field(default_factory=list)
     unresolved: List[str] = field(default_factory=list)
@@ -190,22 +191,76 @@ def build_joined_model(roots: Sequence, files_by_root: Dict[str, List[Path]]) ->
 
     # What each repository PROVIDES: its importable top-level packages and,
     # for each, every top-level name any of its modules exports.
+    # A MODULE UNDER src/ STILL BELONGS TO ITS PACKAGE. `packages` reports
+    # `gems` while every module is dotted `src.gems.*`, so a first-segment
+    # comparison matched nothing and the repository was recorded as providing
+    # NOTHING AT ALL -- which made every name imported from it "missing" and
+    # every such import a CRITICAL. Measured 2026-09-10 joining two real
+    # repositories: two criticals, both against imports that run fine.
+    def _normalise(dotted: str) -> str:
+        """Drop layout directories and the __init__ suffix, so a module is
+        named the way an importer would name it."""
+        if dotted.endswith(".__init__"):
+            dotted = dotted[: -len(".__init__")]
+        elif dotted == "__init__":
+            return ""
+        parts = [p for p in dotted.split(".") if p]
+        while parts and parts[0] in _PACKAGE_PARENTS:
+            parts.pop(0)
+        return ".".join(parts)
+
+    # A NAME A MODULE RE-EXPORTS IS A NAME IT PROVIDES. Collecting only
+    # definitions treated `__init__.py` as though it exported nothing, which
+    # is the opposite of what an `__init__.py` is usually for.
+    def _surface(m) -> Set[str]:
+        return set(m.exported) | set(m.public_names) | set(m.bindings) | set(m.reexports)
+
+    #: Modules whose surface cannot be enumerated because a star-import
+    #: points somewhere this scan could not resolve. Their contents are
+    #: unknowable, so a name is never reported missing from them.
+    opaque: Set[str] = set()
+
     for root, model in models.items():
+        # Index by the LAST dotted segment as well, so `gems.contracts`
+        # resolves whether the scan saw it as `gems.contracts` or as
+        # `src.gems.contracts` under a src layout.
+        by_tail: Dict[str, Set[str]] = {}
+        for m in model.modules:
+            tail = _normalise(m.dotted)
+            if not tail:
+                continue
+            by_tail.setdefault(tail, set()).update(_surface(m))
+            by_tail.setdefault(tail.split(".")[-1], set()).update(_surface(m))
+
         for package in model.packages:
             names: Set[str] = set()
             for m in model.modules:
-                top = m.dotted.split(".", 1)[0]
-                if top != package:
+                normalised = _normalise(m.dotted)
+                if not normalised or normalised.split(".", 1)[0] != package:
                     continue
-                names.update(m.exported)
-                names.update(m.public_names)
-                names.update(m.bindings)
-                joined.provides_module[m.dotted] = set(
-                    m.exported) | set(m.public_names) | set(m.bindings)
-                # A package's __init__ re-exports are the usual front door.
+                surface = _surface(m)
+
+                # Expand `from X import *` against the joined set where X is
+                # resolvable, and mark the module opaque where it is not.
+                for target in m.star_imports:
+                    resolved = by_tail.get(target) or by_tail.get(target.split(".")[-1])
+                    if resolved is None:
+                        opaque.add(normalised)
+                        joined.unresolved.append(
+                            f"{normalised} re-exports everything from '{target}', "
+                            f"which this scan could not resolve; its public "
+                            f"surface is therefore not enumerable and no name "
+                            f"will be reported missing from it")
+                    else:
+                        surface |= resolved
+
+                names.update(surface)
+                joined.provides_module[normalised] = surface
                 if m.is_package:
                     names.update(n.split(".")[-1] for n in m.imports_internal)
             joined.provides[package] = (root, names)
+
+    joined.opaque_modules = opaque
 
     # What each repository REACHES FOR.
     for root, model in models.items():
@@ -300,6 +355,13 @@ def derive_findings(joined: JoinedModel, files_by_root: Dict[str, List[Path]]) -
                     f"subpackage laid out in a way this scan did not follow")
                 continue
             exported = exact | joined.provides_module.get(reach.package, set())
+
+        # A module whose surface could not be enumerated cannot be shown to
+        # be missing anything. Abstain rather than accuse: this check is
+        # CRITICAL, and a critical that is wrong costs more than one that is
+        # absent.
+        if reach.source in joined.opaque_modules or reach.package in joined.opaque_modules:
+            continue
 
         missing = [n for n in reach.names if n not in exported]
         if missing:
