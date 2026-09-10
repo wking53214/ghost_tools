@@ -129,3 +129,47 @@ def test_accept_with_json_emits_json_on_stdout(tmp_path, capsys):
     accepted = json.loads(out.out)
     assert isinstance(accepted, list) and accepted
     assert "accepted" in out.err
+
+
+# ---------------------------------------------------------------- 6. recorded identity
+
+def test_an_entry_keeps_the_id_it_was_written_with(tmp_path):
+    """Reading a finding back must not re-identify it.
+
+    Measured 2026-09-10 across a 37-repository library: 17 committed
+    baselines, 2,065 of their 2,464 entries written by a version that stored
+    an ABSOLUTE path. On one of them, 304 entries changed id the instant they
+    were loaded and 90 accepted findings came back as new.
+    """
+    written = _finding("s")
+    payload = written.as_dict()
+    # The path the id was hashed from is gone: a scratch clone from a
+    # container that no longer exists. _portable_path cannot find a project
+    # root without the file, so it falls back to the last two segments.
+    payload["evidence"]["file"] = "/tmp/scratch-9f21/clones/proj/src/pkg/mod.py"
+
+    read_back = Finding.from_dict(payload)
+
+    assert read_back.id == written.id, (
+        "a finding was re-identified on load: the baseline records one id and "
+        "the diff looks for another, so the entry suppresses nothing"
+    )
+
+
+def test_a_legacy_baseline_still_suppresses_what_it_accepted(tmp_path, capsys):
+    root = _checkout(tmp_path / "proj")
+    assert main([str(root), "--accept"]) == 0
+    baseline = root / ".ghost_baseline.json"
+
+    # Rewrite it the way the older version wrote it: absolute paths into a
+    # directory that is not there any more, recorded ids left intact.
+    entries = json.loads(baseline.read_text())
+    assert entries
+    for e in entries:
+        e["evidence"]["file"] = "/tmp/scratch-9f21/clones/proj/" + e["evidence"]["file"]
+    baseline.write_text(json.dumps(entries))
+
+    assert main([str(root)]) == 0
+    out = capsys.readouterr()
+    assert "0 new finding(s)" in out.out, out.out
+    assert "matched nothing scanned" not in out.err, out.err
