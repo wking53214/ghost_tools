@@ -65,6 +65,321 @@ def _parse_failure(path: Path):
 
 
 # ---------------------------------------------------------------------------
+# Detector: unauthenticated_route -- the handler somebody forgot.
+#
+# WHY THIS DOES NOT LOOK FOR "ROUTES WITH NO AUTH"
+#
+# The obvious version of this check reports every route handler with no
+# authentication attached. It is unusable. A login endpoint has no auth by
+# definition. So does a signup form, a health probe, a webhook receiver, a
+# password reset, an OAuth callback, a public docs page, a static asset
+# route, and every endpoint of every public API in existence. The check
+# fires dozens of times per repository, is right maybe twice, and the two
+# are indistinguishable from the rest.
+#
+# What is worth reporting is INCONSISTENCY. When a module has several route
+# handlers and MOST of them carry an authentication marker, a sibling
+# without one is a different kind of object: not a public endpoint, but a
+# handler somebody forgot. The author already decided this router needs
+# auth -- they said so, repeatedly, right there in the same file.
+#
+# This makes the check quiet by construction. A fully public module says
+# nothing (no signal). A fully protected module says nothing (nothing
+# missing). Only the mixed case speaks, and only when the majority is
+# protected, which is exactly the shape of the mistake.
+# ---------------------------------------------------------------------------
+
+#: Decorator/parameter names that mean "this route is authenticated". Matched
+#: on the trailing attribute, so `deps.require_user` and `require_user` both
+#: count, as do the common third-party spellings.
+_AUTH_MARKERS = frozenset({
+    "login_required", "auth_required", "authenticated", "requires_auth",
+    "require_auth", "require_user", "require_login", "current_user",
+    "get_current_user", "jwt_required", "token_required", "permission_required",
+    "requires_authentication", "protected", "authorize", "authorized",
+    "require_scope", "require_role", "require_permission", "admin_required",
+    "staff_member_required", "verify_token", "check_auth", "IsAuthenticated",
+    "Security", "HTTPBearer", "OAuth2PasswordBearer", "Depends",
+})
+
+#: Decorator attributes that mark a function as an HTTP route.
+_ROUTE_ATTRS = frozenset({
+    "route", "get", "post", "put", "patch", "delete", "head", "options",
+    "websocket", "api_route",
+})
+
+#: The fraction of a module's routes that must be protected before a
+#: sibling without auth counts as an omission rather than a design.
+#:
+#: This single number is also the minimum-routes gate, which is why there
+#: is no separate one. Two mutants proved a `_MIN_ROUTES = 3` constant
+#: could not change any outcome and deleted it: with two routes the most
+#: protected a module can be while still having an unprotected sibling is
+#: one of two, and 0.5 is already below this threshold. Three routes is
+#: therefore the arithmetic floor, and stating it twice only created a
+#: guard that looked load-bearing and was not.
+_PROTECTED_MAJORITY = 0.6
+
+
+def _decorator_names(node) -> List[str]:
+    out = []
+    for dec in getattr(node, "decorator_list", []):
+        target = dec.func if isinstance(dec, ast.Call) else dec
+        if isinstance(target, ast.Attribute):
+            out.append(target.attr)
+        elif isinstance(target, ast.Name):
+            out.append(target.id)
+    return out
+
+
+def _is_route(node) -> bool:
+    for dec in getattr(node, "decorator_list", []):
+        target = dec.func if isinstance(dec, ast.Call) else dec
+        if isinstance(target, ast.Attribute) and target.attr in _ROUTE_ATTRS:
+            return True
+    return False
+
+
+def _auth_names(node) -> List[str]:
+    """Every way this handler says it needs a caller identity: a decorator,
+    or a parameter default like `user = Depends(require_user)`."""
+    found = [n for n in _decorator_names(node) if n in _AUTH_MARKERS]
+    args = getattr(node, "args", None)
+    if args is not None:
+        for default in list(args.defaults) + [d for d in args.kw_defaults if d]:
+            call = default.func if isinstance(default, ast.Call) else default
+            name = call.attr if isinstance(call, ast.Attribute) else getattr(call, "id", "")
+            if name in _AUTH_MARKERS:
+                found.append(name)
+            if isinstance(default, ast.Call):
+                for a in default.args:
+                    inner = a.attr if isinstance(a, ast.Attribute) else getattr(a, "id", "")
+                    if inner in _AUTH_MARKERS:
+                        found.append(inner)
+    return found
+
+
+@register("unauthenticated_route")
+def detect_unauthenticated_route(files: List[Path]) -> List[Finding]:
+    out = []
+    for path in sorted(f for f in files if f.suffix == ".py"):
+        if _looks_like_a_test(path):
+            continue
+        tree = _parse(path)
+        if tree is None:
+            continue
+        routes = [
+            n for n in ast.walk(tree)
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and _is_route(n)
+        ]
+        if not routes:
+            continue
+        protected = [n for n in routes if _auth_names(n)]
+        if len(protected) / len(routes) < _PROTECTED_MAJORITY:
+            continue    # the module is not claiming to be a protected one
+        for node in routes:
+            if _auth_names(node):
+                continue
+            out.append(Finding(
+                detector="unauthenticated_route",
+                category=Category.ARCHITECTURE,
+                layer=Layer.MECHANICAL,
+                severity=Severity.MAJOR,
+                status=Status.CONFIRMED,
+                summary=(f"{_portable_path(path)}: route '{node.name}' has no "
+                         f"authentication, while {len(protected)} of "
+                         f"{len(routes)} routes in this module do"),
+                evidence=Evidence(
+                    file=str(path),
+                    line_start=getattr(node, "lineno", None),
+                    line_end=getattr(node, "end_lineno", None),
+                ),
+                detail=(
+                    "Reported because of the INCONSISTENCY, not the absence. A "
+                    "route with no authentication is usually fine -- a login "
+                    "form, a health probe, a webhook, a public API. What is "
+                    "reported here is a handler whose siblings in the same "
+                    "module are nearly all protected: the author already "
+                    "decided this router needs a caller identity and said so "
+                    "repeatedly, and this one does not say it.\n\n"
+                    "Confirm before acting: an intentionally public endpoint "
+                    "inside an otherwise protected router is a real and common "
+                    "design (a status endpoint on an admin API). If that is "
+                    "what this is, accept it into the baseline so the reason "
+                    "is recorded, rather than leaving the question open.\n\n"
+                    "Scope limits: authentication applied by middleware, by a "
+                    "router-level dependency, or by a decorator this list does "
+                    "not know is invisible here, and would make every route in "
+                    "the module look unprotected -- in which case the module "
+                    "falls below the protected majority and nothing is "
+                    "reported at all. This check fails quiet, deliberately."
+                ),
+                attributes={
+                    "route": node.name,
+                    "protected_siblings": str(len(protected)),
+                    "routes_in_module": str(len(routes)),
+                },
+            ))
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Detector: insecure_default -- a framework left in ship-mode.
+#
+# The shape this catches is not a subtle vulnerability. It is a switch that
+# exists to make local development pleasant and was never turned back off:
+# DEBUG=True serving stack traces and a template-injection console to the
+# public internet, a CORS policy that accepts every origin WITH credentials,
+# ALLOWED_HOSTS accepting any Host header, TLS verification disabled.
+#
+# DELIBERATELY NARROW. Every rule here is a construct with essentially one
+# meaning, and each is skipped inside test files, where a permissive setting
+# is usually the point of the test. "Probably insecure" patterns -- binding
+# 0.0.0.0, a hardcoded string that looks like a key, a missing timeout --
+# are left out: they are ambiguous, they fire constantly, and a detector
+# people learn to skim is worth less than no detector.
+# ---------------------------------------------------------------------------
+
+#: name -> (severity, what is wrong, what to do)
+_INSECURE_ASSIGNMENTS = {
+    "DEBUG": (
+        Severity.CRITICAL,
+        "DEBUG is enabled at module level",
+        "In Django and Flask this serves a full traceback, local variables and "
+        "settings to anyone who triggers an error, and Werkzeug's debugger "
+        "offers an interactive console. Read it from the environment and "
+        "default it to off, so that forgetting to set it fails safe.",
+    ),
+    "ALLOWED_HOSTS": (
+        Severity.MAJOR,
+        "ALLOWED_HOSTS accepts any Host header",
+        "Django's Host-header validation is what stops an attacker-controlled "
+        "Host from poisoning password-reset links and cache keys. '*' turns it "
+        "off entirely. Name the hosts you actually serve.",
+    ),
+}
+
+
+def _is_true(node) -> bool:
+    return isinstance(node, ast.Constant) and node.value is True
+
+
+def _is_star_list(node) -> bool:
+    """['*'] or ('*',) or a bare '*'."""
+    if isinstance(node, ast.Constant):
+        return node.value == "*"
+    if isinstance(node, (ast.List, ast.Tuple)):
+        return any(isinstance(e, ast.Constant) and e.value == "*" for e in node.elts)
+    return False
+
+
+def _kwarg(call: ast.Call, name: str):
+    for kw in call.keywords:
+        if kw.arg == name:
+            return kw.value
+    return None
+
+
+def _looks_like_a_test(path: Path) -> bool:
+    """A permissive setting inside a test is usually the subject of the test.
+    Matched on the path, not the content, so a fixture string mentioning
+    DEBUG does not exempt a real settings module."""
+    parts = {p.lower() for p in path.parts}
+    return (
+        path.name.startswith("test_") or path.name.endswith("_test.py")
+        or path.name == "conftest.py"
+        or bool(parts & {"tests", "test", "testing", "fixtures"})
+    )
+
+
+@register("insecure_default")
+def detect_insecure_default(files: List[Path]) -> List[Finding]:
+    out = []
+    for path in sorted(f for f in files if f.suffix == ".py"):
+        if _looks_like_a_test(path):
+            continue
+        tree = _parse(path)
+        if tree is None:
+            continue   # unassessable_file says so; see that detector
+        for node in ast.walk(tree):
+            for kind, severity, summary, detail in _insecure_nodes(node):
+                out.append(Finding(
+                    detector="insecure_default",
+                    category=Category.STALE_FLAG,
+                    layer=Layer.MECHANICAL,
+                    severity=severity,
+                    status=Status.CONFIRMED,
+                    summary=f"{_portable_path(path)}: {summary}",
+                    evidence=Evidence(
+                        file=str(path),
+                        line_start=getattr(node, "lineno", None),
+                        line_end=getattr(node, "end_lineno", None),
+                    ),
+                    detail=detail + (
+                        "\n\nSkipped inside test files, where a permissive "
+                        "setting is usually the point. If this file is a "
+                        "development-only settings module, say so by name in "
+                        "the baseline rather than by hoping nobody imports it."
+                    ),
+                    attributes={"kind": kind},
+                ))
+    return out
+
+
+def _insecure_nodes(node):
+    """Yields (kind, severity, summary, detail) for one AST node."""
+    # DEBUG = True / ALLOWED_HOSTS = ["*"], at any level: a settings module
+    # inside a function is still a settings module.
+    if isinstance(node, ast.Assign):
+        for target in node.targets:
+            if not isinstance(target, ast.Name) or target.id not in _INSECURE_ASSIGNMENTS:
+                continue
+            severity, summary, detail = _INSECURE_ASSIGNMENTS[target.id]
+            if target.id == "DEBUG" and _is_true(node.value):
+                yield "debug enabled", severity, summary, detail
+            elif target.id == "ALLOWED_HOSTS" and _is_star_list(node.value):
+                yield "host check disabled", severity, summary, detail
+
+    if not isinstance(node, ast.Call):
+        return
+
+    # app.run(debug=True)
+    func = node.func
+    name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
+    if name == "run" and _is_true(_kwarg(node, "debug")):
+        yield ("debug enabled", Severity.CRITICAL,
+               "the development server is started with debug=True",
+               "Werkzeug's debugger exposes an interactive Python console to "
+               "anyone who can reach an error page. This is a development "
+               "server in any case; in production it should be behind a real "
+               "WSGI/ASGI server with debug off.")
+
+    # CORS: any origin AND credentials. Either alone is defensible; together
+    # they hand every site on the internet an authenticated session.
+    origins = _kwarg(node, "allow_origins") or _kwarg(node, "origins")
+    creds = _kwarg(node, "allow_credentials") or _kwarg(node, "supports_credentials")
+    if origins is not None and _is_star_list(origins) and _is_true(creds):
+        yield ("cors wide open with credentials", Severity.CRITICAL,
+               "CORS allows every origin AND credentials",
+               "Any origin plus credentials means any site a logged-in user "
+               "visits can read authenticated responses from this API. "
+               "Browsers reject the literal combination, which is why it is so "
+               "often 'fixed' by reflecting the request's Origin header back -- "
+               "the same hole with the warning removed. List the origins you "
+               "actually serve.")
+
+    # verify=False on a TLS call
+    verify = _kwarg(node, "verify")
+    if isinstance(verify, ast.Constant) and verify.value is False:
+        yield ("tls verification disabled", Severity.MAJOR,
+               "TLS certificate verification is disabled (verify=False)",
+               "Every connection made this way is open to interception: the "
+               "certificate is fetched and ignored. Usually added to get past "
+               "one self-signed certificate in development. Point at the CA "
+               "bundle for that host instead.")
+
+
+# ---------------------------------------------------------------------------
 # Detector: unassessable_file -- a file every AST detector silently skipped.
 #
 # BORROWED, KNOWINGLY, FROM A PEDIATRIC SEPSIS ENGINE.

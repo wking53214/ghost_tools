@@ -30,6 +30,7 @@ from .correlate import (
 )
 from .testsuite import render_report as render_test_report, scan as scan_tests
 from .mechanical import run_all
+from .project import render_report as render_project_report, scan as scan_project
 from .mutation import render_run, run_mutations
 from .schema import Finding, FindingSet, Severity
 from .secrets import render_report as render_secrets_report, scan as scan_secrets
@@ -214,6 +215,15 @@ def _build_parser() -> argparse.ArgumentParser:
              "always runs and needs no flag.",
     )
     parser.add_argument(
+        "--project", action=argparse.BooleanOptionalAction, default=True,
+        help="ON BY DEFAULT (--no-project to skip). Repository-shaped facts no "
+             "single file can show: a deploy artifact with no CI configuration in "
+             "front of it (MAJOR), and test files that no CI configuration runs "
+             "(MINOR). Pure filesystem inspection, instant, reads no file content. "
+             "Says nothing about a repository that has CI, and nothing about one "
+             "with neither tests nor a deploy artifact.",
+    )
+    parser.add_argument(
         "--ledger", action=argparse.BooleanOptionalAction, default=True,
         help="ON BY DEFAULT (--no-ledger to skip). Remember this run in "
              "<path>/.ghost_ledger.json and report what only history can say: a "
@@ -297,6 +307,15 @@ def _run_repository_checks(args, findings: List[Finding], checks: dict):
     else:
         _skipped("test status scan", "--no-tests")
         checks["tests"] = DECLINED
+
+    if args.project:
+        project_findings, project_report = scan_project(args.path)
+        print(render_project_report(project_report), file=sys.stderr)
+        findings.extend(project_findings)
+        checks["project"] = _state(project_report)
+    else:
+        _skipped("project scan", "--no-project")
+        checks["project"] = DECLINED
 
     if args.secrets:
         secrets_findings, secrets_report = scan_secrets(
