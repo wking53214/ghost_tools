@@ -139,9 +139,23 @@ _GIT_CHECK_TIMEOUT = 15.0
 # file type is exempt, and a secret in a test file is still a secret --
 # it is only rated by how much the rule established.
 #
+# 'curl-auth-header' is the same kind of rule, found the same way and
+# missed the first time. It anchors on an authorization-style header
+# inside a curl command and captures whatever value follows, so
+#   curl -H "X-API-Key: prod_key_123" https://your-domain/process
+# matches on the strength of the header name alone. Measured 2026-09-10,
+# it fired four times across the same library and every hit was a
+# placeholder in generated documentation -- prod_key_123 and
+# customer_abc123, pointed at your-domain and your-platform.
+#
+# It was rated CRITICAL until now for one reason: the first pass listed
+# the rules it had seen fire, and gitleaks had timed out on the only
+# repository where this one fires. A fix scoped to the rules that showed
+# up is scoped to the measurement, not to the problem.
+#
 # To extend: add a rule id here only if it matches entropy or proximity
 # rather than an issued prefix.
-_SHAPE_ONLY_RULES = frozenset({"generic-api-key"})
+_SHAPE_ONLY_RULES = frozenset({"curl-auth-header", "generic-api-key"})
 
 
 @dataclass
