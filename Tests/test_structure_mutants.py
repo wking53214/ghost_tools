@@ -66,6 +66,33 @@ MUTANTS = [
      '                if isinstance(t, ast.Name) and t.id == "__all__":\n',
      "                if False:\n"),
 
+    # --- the slopsquat surface (v0.17) ---
+    ("an invented package name is no longer reported", _S,
+     "    for package in unresolvable:\n", "    for package in []:\n"),
+    ("a guarded import is reported as an invented name", _S,
+     "        if pkg not in declared and pkg not in mapping and pkg not in guarded\n",
+     "        if pkg not in declared and pkg not in mapping\n"),
+    ("only ImportError counts as a guard, so ModuleNotFoundError leaks through", _S,
+     '        if name in ("ImportError", "ModuleNotFoundError", "Exception", "BaseException"):\n',
+     '        if name == "ImportError":\n'),
+    ("an installed package is reported as invented", _S,
+     "        if pkg not in declared and pkg not in mapping and pkg not in guarded\n",
+     "        if pkg not in declared and pkg not in guarded\n"),
+    ("a package this repository provides is reported as invented", _S,
+     '        and pkg.replace("-", "_") not in local\n', "\n"),
+    ("a declared package is reported as invented", _S,
+     "        if pkg not in declared and pkg not in mapping and pkg not in guarded\n",
+     "        if pkg not in mapping and pkg not in guarded\n"),
+    ("an invented package is downgraded to a nit", _S,
+     '            model, "unresolvable dependency", Severity.MAJOR,\n',
+     '            model, "unresolvable dependency", Severity.INFORMATIONAL,\n'),
+
+    ("the src layout is not recognised, so a repo imports itself from outside", _S,
+     '    for parent in _PACKAGE_PARENTS:\n', "    for parent in []:\n"),
+    ("a src directory that IS a package is descended into anyway", _S,
+     '        if d.is_dir() and not (d / "__init__.py").is_file():\n',
+     "        if d.is_dir():\n"),
+
     # --- it stops naming its gaps ---
     ("dynamic imports vanish from the model instead of being recorded", _S,
      '                    facts.unresolved.append(f"{dotted} calls {fn}() -- resolved at runtime")\n',
