@@ -87,6 +87,12 @@ MUTANTS = [
      '            model, "unresolvable dependency", Severity.MAJOR,\n',
      '            model, "unresolvable dependency", Severity.INFORMATIONAL,\n'),
 
+    ("the src layout is not recognised, so a repo imports itself from outside", _S,
+     '    for parent in _PACKAGE_PARENTS:\n', "    for parent in []:\n"),
+    ("a src directory that IS a package is descended into anyway", _S,
+     '        if d.is_dir() and not (d / "__init__.py").is_file():\n',
+     "        if d.is_dir():\n"),
+
     # --- it stops naming its gaps ---
     ("dynamic imports vanish from the model instead of being recorded", _S,
      '                    facts.unresolved.append(f"{dotted} calls {fn}() -- resolved at runtime")\n',

@@ -349,16 +349,39 @@ def _record_import(facts: ModuleFacts, module: str, package_roots: Set[str]) -> 
 
 # ------------------------------------------------------------------ scan
 
+#: Directories that hold packages without being one themselves. The src
+#: layout is mainstream, and a scan that does not know it reports a
+#: repository as importing a package it actually provides.
+#:
+#: Measured across a 37-repository library: TIE holds src/tie/__init__.py
+#: and GEMS holds src/gems/__init__.py, and both were reported as reaching
+#: for an unresolvable outside package called after themselves. A repo
+#: importing itself is the clearest possible false positive.
+_PACKAGE_PARENTS = ("src", "lib", "python")
+
+
 def _package_roots(root: Path) -> Set[str]:
     """Top-level importable names this repository defines. Used only to
     split imports into internal and external -- not to claim anything
     about layering."""
     roots = set()
-    for child in root.iterdir():
-        if child.is_dir() and (child / "__init__.py").is_file():
-            roots.add(child.name)
-        elif child.is_file() and child.suffix == ".py":
-            roots.add(child.stem)
+
+    def _scan(d: Path) -> None:
+        try:
+            children = list(d.iterdir())
+        except OSError:
+            return
+        for child in children:
+            if child.is_dir() and (child / "__init__.py").is_file():
+                roots.add(child.name)
+            elif child.is_file() and child.suffix == ".py":
+                roots.add(child.stem)
+
+    _scan(root)
+    for parent in _PACKAGE_PARENTS:
+        d = root / parent
+        if d.is_dir() and not (d / "__init__.py").is_file():
+            _scan(d)
     return roots
 
 
