@@ -51,6 +51,35 @@ ARCHIVE_DIRS = frozenset({
 # Files a repository writes when its job is to preserve something.
 PROVENANCE_FILES = ("PROVENANCE.md", "TRANSCRIPT.md", "MANIFEST.md")
 
+# Directories holding code kept as a FIXTURE rather than run. `specimens/`
+# is TOUCHSTONE's; the rest are the names the same idea usually takes.
+SPECIMEN_DIRS = frozenset({"specimens", "fixtures", "testdata", "corpus"})
+
+# Phrases a repository uses, in its own README, to say it is a corpus and
+# not a system. Matched only in the opening lines, because a sentence about
+# specimens halfway down a long README is discussing them, not declaring.
+# "not a system" is deliberately NOT here. It is a disclaimer both
+# categories use: GSA-Master-Kernel says "This is not a system. It is a
+# preserved design conversation", which is an archive, and matching on it
+# labelled that repository a specimen corpus. A phrase shared by two kinds
+# cannot distinguish them; only the specimen-specific ones do, and the
+# share test below still catches an archive that says nothing.
+_SPECIMEN_PHRASES = (
+    "specimen corpus", "specimen library", "test corpus", "fixture corpus",
+)
+
+# ... and to say it is finished. `(archived)` in a title, or a retirement
+# line naming a successor.
+_RETIRED_PHRASES = ("(archived)", "(retired)", "archived.", "retired ")
+# The successor is often on the LINE AFTER the phrase that introduces it --
+# VANGUARD's "folded into" ends its line and "[GSA-GATEWAY](...)" begins the
+# next -- so this crosses a line break, within a short bounded window.
+_FORWARDING = re.compile(
+    r"(?:folded into|moved to|superseded by|now lives (?:in|at)|"
+    r"canonical home for this content)[\s\S]{0,40}?\[?([A-Za-z0-9_.-]{3,})\]?",
+    re.I)
+README_LINES = 12
+
 # `artifact_1.py`, `report_3.py`: a numbered dump of turn N, not a module
 # anybody imports by name.
 _NUMBERED_ARTIFACT = re.compile(r"^(artifact|report|turn|cell|extract)_\d+\.py$", re.I)
@@ -72,6 +101,14 @@ ARCHIVE_SHARE_WITH_MANIFEST = 1 / 2
 class RootKind(str, Enum):
     SOURCE_TREE = "source_tree"
     CODE_ARCHIVE = "code_archive"
+    # Code that is broken ON PURPOSE, kept so tools can be tested against
+    # it. Its damaged files are the point of the repository, not a loss in
+    # it, and outlining them as absences reports the fixtures as failures.
+    SPECIMEN_CORPUS = "specimen_corpus"
+    # A repository that says it is finished and names where its content
+    # went. What looks lost here is somewhere else, usually somewhere the
+    # scan was never pointed at.
+    RETIRED = "retired"
 
 
 @dataclass(frozen=True)
@@ -80,10 +117,14 @@ class RootClassification:
     reason: str
     archived_files: int
     total_files: int
+    # Where a retired repository says its content went, when it says.
+    forwarding: str = ""
 
     @property
     def is_archive(self) -> bool:
-        return self.kind is RootKind.CODE_ARCHIVE
+        """True for every kind whose damaged files are not losses."""
+        return self.kind in (RootKind.CODE_ARCHIVE, RootKind.SPECIMEN_CORPUS,
+                             RootKind.RETIRED)
 
 
 def _is_archived_path(path: Path, root: Path) -> bool:
@@ -96,6 +137,28 @@ def _is_archived_path(path: Path, root: Path) -> bool:
     if "my activity" in parts:          # Google Takeout's own layout
         return True
     return bool(_NUMBERED_ARTIFACT.match(path.name))
+
+
+def _readme_head(root: Path) -> str:
+    """The opening lines of the README, where a repository declares itself.
+
+    Bounded deliberately. A README that mentions specimens in paragraph
+    nine is discussing them; one that says so in its first two lines is
+    telling you what the repository IS.
+    """
+    for name in ("README.md", "README.rst", "README.txt", "README"):
+        path = root / name
+        if path.is_file():
+            return "\n".join(path.read_text(errors="replace").splitlines()[:README_LINES])
+    return ""
+
+
+def _specimen_share(sources: Sequence[Path], root: Path) -> float:
+    if not sources:
+        return 0.0
+    under = sum(1 for p in sources
+                if SPECIMEN_DIRS & {q.lower() for q in p.relative_to(root).parts[:-1]})
+    return under / len(sources)
 
 
 def classify_root(root: Path, sources: Sequence[Path] | None = None) -> RootClassification:
@@ -117,6 +180,38 @@ def classify_root(root: Path, sources: Sequence[Path] | None = None) -> RootClas
     present = [name for name in PROVENANCE_FILES if (root / name).is_file()]
     archived = [p for p in sources if _is_archived_path(p, root)]
     total = len(sources)
+
+    # A repository that states what it is gets believed, when it states it
+    # where a declaration belongs. Measured 2026-09-10: TOUCHSTONE opens
+    # "A specimen corpus. Not a system." and VANGUARD opens
+    # "# VANGUARD (archived) ... folded into GSA-GATEWAY", and the six
+    # highest-confidence voids in the whole library came from those two.
+    head = _readme_head(root)
+    if head:
+        lowered = head.lower()
+        if any(phrase in lowered for phrase in _SPECIMEN_PHRASES):
+            return RootClassification(
+                RootKind.SPECIMEN_CORPUS,
+                "its README declares a specimen corpus rather than a system, so "
+                "its damaged files are fixtures",
+                len(archived), total)
+        if any(phrase in lowered for phrase in _RETIRED_PHRASES):
+            match = _FORWARDING.search(head)
+            target = match.group(1) if match else ""
+            reason = "its README declares the repository retired"
+            if target:
+                reason += f"; its content moved to {target}"
+            return RootClassification(RootKind.RETIRED, reason,
+                                      len(archived), total, forwarding=target)
+
+    # Python living under a fixture directory says the same thing without
+    # a README, and is checked second so an explicit statement wins.
+    if total and _specimen_share(sources, root) >= ARCHIVE_SHARE:
+        return RootClassification(
+            RootKind.SPECIMEN_CORPUS,
+            "its Python lives under fixture directories rather than an "
+            "importable source tree",
+            len(archived), total)
 
     # No archived Python at all is a source tree no matter what it documents.
     if total and archived:
