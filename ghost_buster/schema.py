@@ -101,6 +101,10 @@ class Category(str, Enum):
     TEST_STATUS = "test_status"  # a test that failed, flaked, is blocked, or is skipped without cause
     COMMITTED_SECRET = "committed_secret"  # a live-looking credential gitleaks found in git history
     HISTORY = "history"  # what the ledger knows and a single run cannot: regressions, rot, blind spots
+    # A name that describes where the code came from rather than what it
+    # does: domain vocabulary surviving below a domain seam, or a
+    # placeholder that outlived the afternoon it was written in.
+    NAMING = "naming"
     OTHER = "other"
 
 
