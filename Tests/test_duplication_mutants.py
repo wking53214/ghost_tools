@@ -21,6 +21,31 @@ _C = "ghost_buster/cli.py"
 
 # (label, file, exact text to replace, replacement)
 MUTANTS = [
+    # --- doc_test_count_drift claim-shape rules (v0.10.1) ---
+    ("claim-shape filter bypassed (deltas and quotations flagged again)", _M,
+     "            if claim_shape(before) is not None:\n                continue\n",
+     ""),
+    ("delta rule dropped ('gained 13 tests' reads as a total)", _M,
+     '    ("delta", re.compile(\n'
+     '        r"\\b(?:gained|gains|gain|added|adds|add|grew|grown|grows|growing|plus|minus|"\n'
+     '        r"removed|removes|dropped|drops|another|extra|net|more|fewer)\\b\\s*(?:by\\s+)?$",\n'
+     '        re.IGNORECASE)),\n',
+     '    ("delta", re.compile(r"(?!x)x")),\n'),
+    ("transition rule dropped ('went from 255 to 272 tests' reads as a total)", _M,
+     '    ("transition", re.compile(\n'
+     '        r"(?:\\bfrom\\s+\\d+\\s+to\\s+|\\b\\d+\\s*(?:->|-->|\\u2192)\\s*)$", re.IGNORECASE)),\n',
+     '    ("transition", re.compile(r"(?!x)x")),\n'),
+    ("quotation rule dropped (another project's quoted claim reads as ours)", _M,
+     '    ("quotation", re.compile(r"[\\"\'\\u201c\\u2018]\\s*$")),\n',
+     '    ("quotation", re.compile(r"(?!x)x")),\n'),
+    ("attribution rule dropped ('claimed 3 tests' reads as a total)", _M,
+     '    ("attribution", re.compile(r"\\b(?:claimed|reported|said)\\s*$", re.IGNORECASE)),\n',
+     '    ("attribution", re.compile(r"(?!x)x")),\n'),
+    ("backtick back in the quote set (a live claim under a code fence is suppressed)", _M,
+     '    ("quotation", re.compile(r"[\\"\'\\u201c\\u2018]\\s*$")),\n',
+     '    ("quotation", re.compile(r"[\\"\'`\\u201c\\u2018]\\s*$")),\n'),
+    ("lookback window widened past the adjacent word", _M,
+     "_CLAIM_LOOKBACK = 80\n", "_CLAIM_LOOKBACK = 0\n"),
     ("near_duplicate default min_lines reverted to 6", _M,
      "def detect_near_duplicate_functions(files: List[Path], min_lines: int = 10) -> List[Finding]:\n",
      "def detect_near_duplicate_functions(files: List[Path], min_lines: int = 6) -> List[Finding]:\n"),

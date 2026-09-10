@@ -719,6 +719,69 @@ def test_doc_test_count_drift_flags_a_real_stale_claim(tmp_path):
     assert "20 test" in findings[0].summary
 
 
+def _twenty_tests(tmp_path):
+    return _write(
+        tmp_path, "test_things.py",
+        "\n".join(f"def test_case_{i}():\n    assert True\n" for i in range(20)),
+    )
+
+
+def test_doc_test_count_drift_ignores_a_delta(tmp_path):
+    """"gained 13 tests" is a change, not a total. Real false positive on
+    this project's own CHANGELOG."""
+    readme = _write(tmp_path, "CHANGELOG.md",
+                    "- `Tests/test_x.py` gained 3 tests, including one pinning the fix.\n")
+    assert detect_doc_test_count_drift([readme, _twenty_tests(tmp_path)]) == []
+
+
+def test_doc_test_count_drift_ignores_a_recorded_transition(tmp_path):
+    """"went from 255 to 272 tests" was true when written. Real false
+    positive on this project's own PROVENANCE.md."""
+    readme = _write(tmp_path, "PROVENANCE.md", "ghost_tools went from 2 to 3 tests.\n")
+    assert detect_doc_test_count_drift([readme, _twenty_tests(tmp_path)]) == []
+
+
+def test_doc_test_count_drift_ignores_an_arrow_transition(tmp_path):
+    readme = _write(tmp_path, "CHANGELOG.md", "- Tests: 2 -> 3 tests.\n")
+    assert detect_doc_test_count_drift([readme, _twenty_tests(tmp_path)]) == []
+
+
+def test_doc_test_count_drift_ignores_another_projects_quoted_claim(tmp_path):
+    """The sharpest real false positive: this project's README quotes
+    HERALD's stale claim as the example that motivated the detector, and
+    the detector flagged the sentence explaining itself."""
+    readme = _write(tmp_path, "README.md",
+                    'HERALD\'s README claimed "3 tests passing" while the suite had grown.\n')
+    assert detect_doc_test_count_drift([readme, _twenty_tests(tmp_path)]) == []
+
+
+def test_doc_test_count_drift_ignores_an_unquoted_attribution(tmp_path):
+    readme = _write(tmp_path, "README.md", "That project's README claimed 3 tests passing.\n")
+    assert detect_doc_test_count_drift([readme, _twenty_tests(tmp_path)]) == []
+
+
+def test_doc_test_count_drift_still_flags_a_claim_after_a_code_fence(tmp_path):
+    """The regression that matters most. The first version of the
+    quotation rule included the backtick, so a live claim sitting under a
+    ```bash block -- exactly where this project's README states its own
+    count -- was read as quoted and silently suppressed. A false negative
+    is the one outcome worse than the false positives these rules remove.
+    """
+    readme = _write(
+        tmp_path, "README.md",
+        "## Tests\n\n```bash\npython -m pytest Tests/ -v\n```\n\n3 tests, 0 network calls.\n",
+    )
+    findings = detect_doc_test_count_drift([readme, _twenty_tests(tmp_path)])
+    assert len(findings) == 1
+    assert "3 test" in findings[0].summary
+
+
+def test_doc_test_count_drift_still_flags_an_ordinary_live_claim(tmp_path):
+    """The suppression rules must not swallow the plain case."""
+    readme = _write(tmp_path, "README.md", "The suite has 3 tests passing.\n")
+    assert len(detect_doc_test_count_drift([readme, _twenty_tests(tmp_path)])) == 1
+
+
 def test_doc_test_count_drift_ignores_claims_within_tolerance(tmp_path):
     """A doc that's merely a commit or two behind (small natural lag) is
     not a ghost -- both min_growth_ratio and min_absolute_growth must be
