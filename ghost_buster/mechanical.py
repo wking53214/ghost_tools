@@ -161,6 +161,7 @@ def detect_unauthenticated_route(files: List[Path]) -> List[Finding]:
         tree = _parse(path)
         if tree is None:
             continue
+        shown = _portable_path(path)   # once per file, not once per finding
         routes = [
             n for n in ast.walk(tree)
             if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and _is_route(n)
@@ -179,7 +180,7 @@ def detect_unauthenticated_route(files: List[Path]) -> List[Finding]:
                 layer=Layer.MECHANICAL,
                 severity=Severity.MAJOR,
                 status=Status.CONFIRMED,
-                summary=(f"{_portable_path(path)}: route '{node.name}' has no "
+                summary=(f"{shown}: route '{node.name}' has no "
                          f"authentication, while {len(protected)} of "
                          f"{len(routes)} routes in this module do"),
                 evidence=Evidence(
@@ -294,6 +295,7 @@ def detect_insecure_default(files: List[Path]) -> List[Finding]:
         tree = _parse(path)
         if tree is None:
             continue   # unassessable_file says so; see that detector
+        shown = _portable_path(path)   # once per file, not once per finding
         for node in ast.walk(tree):
             for kind, severity, summary, detail in _insecure_nodes(node):
                 out.append(Finding(
@@ -302,7 +304,7 @@ def detect_insecure_default(files: List[Path]) -> List[Finding]:
                     layer=Layer.MECHANICAL,
                     severity=severity,
                     status=Status.CONFIRMED,
-                    summary=f"{_portable_path(path)}: {summary}",
+                    summary=f"{shown}: {summary}",
                     evidence=Evidence(
                         file=str(path),
                         line_start=getattr(node, "lineno", None),
@@ -483,6 +485,7 @@ def detect_sql_injection(files: List[Path]) -> List[Finding]:
         tree = _parse(path)
         if tree is None:
             continue
+        shown = _portable_path(path)   # once per file, not once per finding
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
@@ -495,7 +498,7 @@ def detect_sql_injection(files: List[Path]) -> List[Finding]:
                     detector="sql_injection", category=Category.OTHER,
                     layer=Layer.MECHANICAL, severity=Severity.CRITICAL,
                     status=Status.CONFIRMED,
-                    summary=(f"{_portable_path(path)}: SQL built by {how} and then "
+                    summary=(f"{shown}: SQL built by {how} and then "
                              f"executed ({text.strip()[:60]!r})"),
                     evidence=Evidence(file=str(path),
                                       line_start=getattr(node, "lineno", None),
@@ -530,6 +533,7 @@ def detect_destructive_sql(files: List[Path]) -> List[Finding]:
         tree = _parse(path)
         if tree is None:
             continue
+        shown = _portable_path(path)   # once per file, not once per finding
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
@@ -548,7 +552,7 @@ def detect_destructive_sql(files: List[Path]) -> List[Finding]:
                         detector="destructive_sql", category=Category.OTHER,
                         layer=Layer.MECHANICAL, severity=Severity.MAJOR,
                         status=Status.CONFIRMED,
-                        summary=(f"{_portable_path(path)}: {what} is executed here "
+                        summary=(f"{shown}: {what} is executed here "
                                  f"({text.strip()[:60]!r})"),
                         evidence=Evidence(file=str(path),
                                           line_start=getattr(node, "lineno", None),
