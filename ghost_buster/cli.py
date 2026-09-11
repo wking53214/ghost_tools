@@ -12,11 +12,13 @@ opts in.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 from typing import Iterable, List, Optional, Dict
 
 from . import __version__, version_string
+from . import attest
 from .baseline import Baseline
 from .boundary import (
     build_joined_model, derive_findings as derive_boundary_findings,
@@ -363,6 +365,14 @@ def _build_parser() -> argparse.ArgumentParser:
              "the ledger never suppresses a finding and never tunes a threshold.",
     )
     parser.add_argument(
+        "--verify-chain", action="store_true",
+        help="read the ledger's digest chain and report the first break, then exit. "
+             "Each run records a digest of the baseline and case file it read and a "
+             "link to the run before it, so an edit to a past record is visible. This "
+             "detects edits, not adversaries: there is no key, so whoever can write "
+             "the ledger can recompute the chain. See ghost_buster/attest.py.",
+    )
+    parser.add_argument(
         "--ledger-path", type=Path, default=None, metavar="FILE",
         help="where the ledger lives (default: <path>/.ghost_ledger.json)",
     )
@@ -670,6 +680,11 @@ def main(argv: List[str] = None) -> int:
         ledger.record(
             findings, checks=checks, commit=_head_commit(args.path),
             tool_version=__version__, scanned=len(files),
+            # The records this run READ, as it read them. A later edit to
+            # either is then visible as a disagreement with this run.
+            records={"baseline": attest.digest_file(baseline_path),
+                     "casefile": attest.digest_file(
+                         args.casefile or (args.path / ".ghost_casefile.json"))},
         )
         history = ledger.derive(findings)
         print(render_ledger_report(ledger, history), file=sys.stderr)
@@ -721,6 +736,21 @@ def main(argv: List[str] = None) -> int:
     archive = archive_marked(args.path)
     if archive is not None:
         print(archive.receipt(), file=sys.stderr)
+
+    if args.verify_chain:
+        path = args.ledger_path or (args.path / ".ghost_ledger.json")
+        if not path.is_file():
+            print(f"ghost_buster: chain: no ledger at {path}", file=sys.stderr)
+            return 2
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            print(f"error: ledger {path}: {e}", file=sys.stderr)
+            return 2
+        runs = raw.get("runs") or []
+        breaks = attest.verify(runs)
+        print(attest.render(breaks, len(runs)))
+        return 1 if any("no link recorded" not in b.what for b in breaks) else 0
 
     if args.operate and archive is not None:
         print("refused: an archive is not a patient; remove .ghost_archive to operate", file=sys.stderr)

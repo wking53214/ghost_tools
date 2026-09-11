@@ -70,26 +70,54 @@ def test_two_distinct_findings_in_one_file_get_distinct_ids(tmp_path):
     assert len(longs) == 2, "the fixture is meant to hold two long functions"
     assert longs[0].summary == longs[1].summary, "and to give them one summary"
 
-    assert disambiguate_ids(longs) == 1
+    assert disambiguate_ids(longs) == 2, "both members of the pair are given their own id"
     assert longs[0].id != longs[1].id
 
 
-def test_the_first_occurrence_keeps_the_id_it_always_had(tmp_path):
-    """Otherwise every committed baseline is renumbered by this fix, and a
-    fix that reports the whole library as new findings is not a fix."""
+def test_each_member_of_a_colliding_group_is_suffixed_from_its_own_place(tmp_path):
+    """1.3.0 numbered them by position, so inserting one renumbered the
+    rest. The suffix now comes from the finding's own line range and
+    detail, which depend on nothing but itself."""
     longs = [f for f in run_all([_twin_methods(tmp_path)]) if f.detector == "long_function"]
-    before = sorted(longs, key=lambda f: f.evidence.line_start)[0].id
+    base = longs[0].id
     disambiguate_ids(longs)
-    first = sorted(longs, key=lambda f: f.evidence.line_start)[0]
-    assert first.id == before
-    assert not first.id.endswith("-2")
+    for f in longs:
+        assert f.id.startswith(base + "-")
+        assert len(f.id.rsplit("-", 1)[1]) == 6
 
 
-def test_the_later_occurrence_is_marked_and_ordered_by_place(tmp_path):
-    longs = [f for f in run_all([_twin_methods(tmp_path)]) if f.detector == "long_function"]
-    disambiguate_ids(longs)
-    later = sorted(longs, key=lambda f: f.evidence.line_start)[1]
-    assert later.id.endswith("-2")
+def test_a_new_sibling_does_not_renumber_the_others():
+    """The defect an external reviewer named in the 1.3.0 scheme: insert a
+    fourth occurrence above the others and every id below it shifted."""
+    a, b = _finding("'run' spans 91 lines", line=100), _finding("'run' spans 91 lines", line=300)
+    disambiguate_ids([a, b])
+    was = (a.id, b.id)
+
+    a2 = _finding("'run' spans 91 lines", line=100)
+    b2 = _finding("'run' spans 91 lines", line=300)
+    inserted = _finding("'run' spans 91 lines", line=10)
+    disambiguate_ids([a2, b2, inserted])
+
+    assert (a2.id, b2.id) == was, "a finding's identity moved because a sibling appeared"
+    assert inserted.id not in was
+
+
+def test_removing_a_sibling_does_not_renumber_the_others():
+    a, b, c = (_finding("'run' spans 91 lines", line=n) for n in (10, 100, 300))
+    disambiguate_ids([a, b, c])
+    was = (b.id, c.id)
+
+    b2, c2 = (_finding("'run' spans 91 lines", line=n) for n in (100, 300))
+    disambiguate_ids([b2, c2])
+    assert (b2.id, c2.id) == was, "fixing one finding renamed the ones left behind"
+
+
+def test_the_suffix_does_not_depend_on_the_order_they_were_scanned():
+    a, b = _finding("'run' spans 91 lines", line=100), _finding("'run' spans 91 lines", line=300)
+    disambiguate_ids([a, b])
+    a2, b2 = _finding("'run' spans 91 lines", line=100), _finding("'run' spans 91 lines", line=300)
+    disambiguate_ids([b2, a2])
+    assert (a2.id, b2.id) == (a.id, b.id)
 
 
 def test_accepting_one_of_two_no_longer_suppresses_the_other(tmp_path):
@@ -112,19 +140,8 @@ def test_a_distinct_detail_is_enough_to_split_a_shared_id():
     of one file, same summary, different detail."""
     pair = [_finding("the 'generic-api-key' secret is also in 1 copy", line=829, detail="first"),
             _finding("the 'generic-api-key' secret is also in 1 copy", line=833, detail="second")]
-    assert disambiguate_ids(pair) == 1
+    assert disambiguate_ids(pair) == 2
     assert len({f.id for f in pair}) == 2
-
-
-def test_the_order_is_the_findings_place_not_the_order_they_were_scanned():
-    """A mutant that numbered them in scan order survived until this
-    existed, because the detectors happen to emit in line order. Then one
-    reordering upstream would renumber every colliding pair."""
-    late = _finding("'run' spans 91 lines", line=400)
-    early = _finding("'run' spans 91 lines", line=10)
-    disambiguate_ids([late, early])          # scanned late-first
-    assert not early.id.endswith("-2"), "the earlier finding keeps the base id"
-    assert late.id.endswith("-2")
 
 
 def test_two_findings_at_one_line_are_split_by_their_detail_alone():
@@ -132,15 +149,14 @@ def test_two_findings_at_one_line_are_split_by_their_detail_alone():
     file, same summary, same line, different account of what was found."""
     pair = [_finding("the secret is also in 1 copy", line=829, detail="copy in twin_a.py"),
             _finding("the secret is also in 1 copy", line=829, detail="copy in twin_b.py")]
-    assert disambiguate_ids(pair) == 1
+    assert disambiguate_ids(pair) == 2
     assert len({f.id for f in pair}) == 2
 
 
 def test_three_in_one_file_all_separate():
     group = [_finding("'run' spans 91 lines", line=n) for n in (10, 200, 400)]
-    assert disambiguate_ids(group) == 2
+    assert disambiguate_ids(group) == 3
     assert len({f.id for f in group}) == 3
-    assert sorted(f.id for f in group)[-1].endswith("-3")
 
 
 def test_findings_that_do_not_collide_are_left_alone():

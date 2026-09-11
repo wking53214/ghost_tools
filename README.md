@@ -1,4 +1,4 @@
-# ghost_tools -- v1.3.0
+# ghost_tools -- v1.5.0
 
 A scanner that says what it could not see, and a surgeon that heals on a
 branch, learns from every cut, and offers the serum only to a candidate.
@@ -202,7 +202,13 @@ set and gates the surgeon's serum on them.
 
 ## What it remembers: the ledger
 
-`.ghost_ledger.json` sits next to the baseline and is committed like it.
+`.ghost_ledger.json` sits next to the baseline and is committed like it. Each
+run in it records a digest of the baseline and the case file as that run
+read them, and a link to the run before, so an edited or removed run is
+visible: `ghost-buster PATH --verify-chain` recomputes every link and
+names the first break. There is no key, so an editor who recomputes the
+chain leaves no trace. It detects edits, not adversaries, and
+`ghost_buster/attest.py` says so at length.
 The baseline answers *"is this present right now"*; the ledger answers
 *"what has been true over time"*. Three facts are unsayable in a set of
 ids, and all three matter:
@@ -1533,7 +1539,7 @@ package uses for its model-client tests. `test_branches.py`,
 repositories and pytest projects in `tmp_path` instead, the only honest way
 to test a ref-graph, git-history or suite-execution check (the secrets
 suite against a real gitleaks binary, skipped if one is not on PATH).
-`test_mutation.py` and the 43 `Tests/*_mutants.py` files run pytest in
+`test_mutation.py` and the 44 `Tests/*_mutants.py` files run pytest in
 subprocesses against scratch copies of the project, each mutant file
 breaking one component a named number of ways and requiring every mutant
 to fail a test; they account for most of the suite's wall-clock time. A

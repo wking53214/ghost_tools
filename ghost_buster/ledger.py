@@ -48,7 +48,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
 from .schema import Category, Evidence, Finding, Layer, Severity, Status
-from .schema import authoritative
+from . import attest
+from .schema import authoritative, primary
 
 DETECTOR = "ledger"
 SCHEMA_VERSION = 1
@@ -131,11 +132,16 @@ class RunRecord:
     tool_version: str
     checks: Dict[str, str] = field(default_factory=dict)
     counts: Dict[str, int] = field(default_factory=dict)
+    #: The records this run READ, as they were when it read them, and this
+    #: run's place in the chain. See attest.py for what that proves.
+    records: Dict[str, str] = field(default_factory=dict)
+    link: str = ""
 
     def to_dict(self) -> dict:
         return {
             "run_id": self.run_id, "at": self.at, "commit": self.commit,
             "tool_version": self.tool_version, "checks": dict(self.checks),
+            "records": dict(self.records), "link": self.link,
             "counts": dict(self.counts),
         }
 
@@ -146,6 +152,8 @@ class RunRecord:
             commit=str(d.get("commit", "")), tool_version=str(d.get("tool_version", "")),
             checks={str(k): str(v) for k, v in (d.get("checks") or {}).items()},
             counts={str(k): int(v) for k, v in (d.get("counts") or {}).items()},
+            records={str(k): str(v) for k, v in (d.get("records") or {}).items()},
+            link=str(d.get("link", "")),
         )
 
 
@@ -283,7 +291,7 @@ class Ledger:
     def record(
         self, findings: Sequence[Finding], *, checks: Dict[str, str],
         commit: str, tool_version: str, at: Optional[str] = None,
-        scanned: Optional[int] = None,
+        scanned: Optional[int] = None, records: Optional[Dict[str, str]] = None,
     ) -> RunRecord:
         """Fold one run into memory. `findings` is everything FOUND, before
         the baseline diff -- see the module docstring on why.
@@ -300,7 +308,8 @@ class Ledger:
         run = RunRecord(
             run_id=f"{at}:{commit[:12]}" if commit else at,
             at=at, commit=commit, tool_version=tool_version, checks=dict(checks),
-            counts={"found": len(findings)},
+            counts={"found": len(findings), "primary": len(primary(findings))},
+            records=dict(records or {}),
         )
 
         # The ledger never remembers its own output. Without this, a
@@ -358,6 +367,11 @@ class Ledger:
                     "note": f.disposition_note or "",
                 })
 
+        # The link is computed LAST, over the run exactly as it will be
+        # written: every count is set by now. Computing it at construction
+        # meant the stored link described a run that no longer existed by
+        # the time it was saved, and every link read back as broken.
+        run.link = attest.link(self.runs[-1].link if self.runs else "", run.to_dict())
         self.runs.append(run)
         self.totals["runs"] = self.run_count + 1
         if len(self.runs) > MAX_RUNS_KEPT:

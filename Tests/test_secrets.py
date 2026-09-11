@@ -55,8 +55,12 @@ def test_clean_repo_reports_zero_findings(tmp_path):
     assert findings == []
     assert report.ran is True
     assert report.leaks_found == 0
-    assert render_report(report) == \
+    # The count is the first line; 1.5.0 added a second naming what the
+    # target suppressed and how far the scan reached. Both are the receipt.
+    lines = render_report(report).splitlines()
+    assert lines[0] == \
         f"ghost_buster: secrets scan ({report.gitleaks_version}) found 0 committed secrets"
+    assert "configures no suppression" in lines[1]
 
 
 def test_committed_secret_is_flagged_even_after_removal_from_head(tmp_path):

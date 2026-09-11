@@ -102,9 +102,9 @@ import json
 import shutil
 import subprocess
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from .schema import Category, Evidence, Finding, Layer, Severity, Status
 
@@ -158,12 +158,78 @@ _GIT_CHECK_TIMEOUT = 15.0
 _SHAPE_ONLY_RULES = frozenset({"curl-auth-header", "generic-api-key"})
 
 
+#: Files a repository can use to tell gitleaks what not to report. They are
+#: honored by gitleaks itself, before this module sees a finding.
+SUPPRESSION_FILES = (".gitleaksignore", ".gitleaks.toml", "gitleaks.toml")
+
+
 @dataclass
 class SecretsScanReport:
     ran: bool
     reason: str = ""
     leaks_found: int = 0
     gitleaks_version: str = ""
+    #: Suppression the TARGET repository configured, as {name: entries}. An
+    #: entry count is None for a config file, whose rules are not countable
+    #: the way an ignore list's fingerprints are.
+    suppression: Dict[str, Optional[int]] = field(default_factory=dict)
+    #: What the scan could not have seen, in the scan's own words.
+    scope: str = ""
+
+    @property
+    def suppressed_by_target(self) -> bool:
+        return bool(self.suppression)
+
+    def disclosure(self) -> str:
+        """One line for the receipt, naming what the target silenced and
+        what the scan's own reach was. Both are facts about the evidence,
+        not findings about the code, so they belong on the receipt beside
+        the count rather than inside a finding."""
+        parts = []
+        for name in sorted(self.suppression):
+            entries = self.suppression[name]
+            parts.append(f"{name}" + (f" ({entries} entr{'y' if entries == 1 else 'ies'})"
+                                      if entries is not None else " (rules not counted)"))
+        said = ("the target repository configures suppression: " + ", ".join(parts)
+                if parts else "the target repository configures no suppression")
+        return f"{said}; {self.scope}" if self.scope else said
+
+
+def _count_ignore_entries(path: Path) -> Optional[int]:
+    """Fingerprints listed in a .gitleaksignore, ignoring blanks and
+    comments. A .toml is not counted: its rules are not a list."""
+    if path.suffix == ".toml":
+        return None
+    try:
+        lines = path.read_text(errors="replace").splitlines()
+    except OSError:
+        return None
+    return sum(1 for line in lines if line.strip() and not line.strip().startswith("#"))
+
+
+def target_suppression(root: Path) -> Dict[str, Optional[int]]:
+    """What the TARGET repository has told gitleaks to stay quiet about.
+
+    WHY THIS IS REPORTED RATHER THAN OVERRIDDEN
+
+    gitleaks honors a repository's own `.gitleaksignore` and
+    `.gitleaks.toml`, which is right for a developer scanning their own
+    project: a fingerprint they triaged once should stay quiet. It is the
+    wrong default to hide when the question is somebody else's repository,
+    because then the subject of the examination is configuring the
+    examiner, silently.
+
+    So the configuration is not disabled -- disabling it would make every
+    triaged false positive come back and the report unreadable -- it is
+    NAMED. A reader who sees `2 entries` beside a clean secrets line knows
+    to ask what those two are; a reader who sees nothing cannot.
+    """
+    found: Dict[str, Optional[int]] = {}
+    for name in SUPPRESSION_FILES:
+        path = root / name
+        if path.is_file():
+            found[name] = _count_ignore_entries(path)
+    return found
 
 
 def _is_git_repo(root: Path) -> bool:
@@ -316,6 +382,12 @@ def scan(root: Path, *, gitleaks_path: Optional[str] = None,
         return [], report
 
     report.gitleaks_version = _gitleaks_version(binary)
+    # Two facts about the evidence, established before the scan runs so they
+    # are on the report whether it finds anything or not: what the target
+    # told gitleaks to ignore, and how far this scan reaches.
+    report.suppression = target_suppression(root)
+    report.scope = ("scanned the checked-out branch's own history, not every "
+                    "ref (gitleaks' default, not --log-opts=--all)")
 
     with tempfile.TemporaryDirectory(prefix="ghost_secrets_") as tmp:
         report_path = Path(tmp) / "report.json"
@@ -366,8 +438,13 @@ def scan(root: Path, *, gitleaks_path: Optional[str] = None,
 
 
 def render_report(report: SecretsScanReport) -> str:
+    """The receipt. A count alone is not a result: what the target silenced
+    and how far the scan reached decide what the count means."""
     if not report.ran:
         return f"ghost_buster: secrets scan did not run: {report.reason}"
     plural = "" if report.leaks_found == 1 else "s"
     version = f" ({report.gitleaks_version})" if report.gitleaks_version else ""
-    return f"ghost_buster: secrets scan{version} found {report.leaks_found} committed secret{plural}"
+    line = (f"ghost_buster: secrets scan{version} found "
+            f"{report.leaks_found} committed secret{plural}")
+    disclosure = report.disclosure()
+    return f"{line}\n  {disclosure}" if disclosure else line
