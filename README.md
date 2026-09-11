@@ -98,14 +98,14 @@ state on every run** -- performed, impossible, or declined.
 |---|---|---|
 | the twenty registered detectors | on | (always run) |
 | unmerged branches | on | `--no-branches` |
-| test status | on | `--no-tests` |
+| test status | on, for a trusted repository (`--trust`, once) | `--no-tests` |
 | committed secrets | on | `--no-secrets` |
 | project checks (CI, deploy artifacts) | on | `--no-project` |
 | structural model | on | `--no-structure` |
 | correlation | on | `--no-correlate` |
 | ledger (memory) | on | `--no-ledger` |
 | cross-repository seam | asks, on a terminal; single-repo otherwise | `--join PATH` or `--single-repo` says so outright |
-| mutation (`--mutate`) | **off** | opt-in on cost: one pytest process per mutant |
+| mutation (`--mutate`) | **off**, and needs a trusted repository | opt-in on cost: one pytest process per mutant |
 | semantic layer | **off, and has no flag** | a library (`ghost_buster.semantic`), never wired into the CLI, because every call is paid |
 
 The table above is the source of truth for defaults. Every flag in it exists
@@ -124,9 +124,16 @@ on purpose is fine, and now leaves a receipt in the output.
 Two consequences worth knowing before you point this at an unfamiliar
 repository:
 
-- **A default run executes the project's test suite.** That is what
-  `--tests` does, and it now happens without being asked. Use `--no-tests`
-  on code you do not trust.
+- **A default run executes the project's test suite, once you have said
+  it may.** That is what `--tests` does. The first run on a repository
+  declines the test and mutation scans with a receipt naming the trust
+  store; `--trust` records consent once, keyed by the `origin` remote (so
+  a fresh clone of a trusted repository is trusted) or by path when there
+  is none, in `~/.config/ghost_tools/trust.json` or `$GHOST_TOOLS_TRUST`.
+  A file inside the repository would be the stranger's to write, so the
+  store is yours. `--no-tests` still declines on purpose, with its own
+  receipt, and `GHOST_TOOLS_TRUST=-` trusts everything for a harness that
+  scans its own fixtures, printed on the receipt line and never silent.
 - **A default run takes minutes, not seconds**, because of that suite.
   `--no-tests` gets the old fast structural pass back.
 
@@ -1408,7 +1415,7 @@ test suite runs.
 python -m pytest Tests/ -v
 ```
 
-1465 tests (measured 2026-09-11), 0 network calls, 0 API key required -- the semantic-layer
+1483 tests (measured 2026-09-11), 0 network calls, 0 API key required -- the semantic-layer
 tests verify the real parsing/fail-closed/injection-fencing logic via
 `StubModelClient`, the same technique `sentinel_os`'s own `interpretation/`
 package uses for its model-client tests. `test_branches.py`,

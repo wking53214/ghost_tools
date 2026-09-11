@@ -253,7 +253,7 @@ def test_weak():
     assert "vacuous_check" in text and "test_weak" in text and "threshold_ok" in text
 
 
-def test_cli_mutate_flag_emits_findings_as_json(tmp_path, capsys):
+def test_cli_mutate_flag_emits_findings_as_json(tmp_path, capsys, monkeypatch):
     root = _project(tmp_path, '''
 from mod import threshold_ok
 
@@ -261,7 +261,8 @@ def test_weak():
     assert threshold_ok(5) is not None
 ''')
     from ghost_buster.cli import main
-    rc = main([str(root), "--mutate", "--json", "--mutate-timeout", "60"])
+    monkeypatch.setenv("GHOST_TOOLS_TRUST", str(tmp_path / "trust.json"))
+    rc = main([str(root), "--trust", "--mutate", "--json", "--mutate-timeout", "60"])
     out = capsys.readouterr().out
     assert rc == 1                       # a MAJOR finding sets the exit status
     assert '"vacuous_check"' in out and "test_weak" in out
