@@ -39,9 +39,11 @@ MUTANTS = [
      "        if _looks_like_a_test(path):\n            continue\n"
      "        tree = _parse(path)\n"
      "        if tree is None:\n            continue\n"
+     "        shown = _portable_path(path)   # once per file, not once per finding\n"
      "        routes = [\n",
      "        tree = _parse(path)\n"
      "        if tree is None:\n            continue\n"
+     "        shown = _portable_path(path)   # once per file, not once per finding\n"
      "        routes = [\n"),
     ("every function counts as a route, not just decorated ones", _M,
      "            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and _is_route(n)\n",
@@ -79,10 +81,10 @@ MUTANTS = [
     ("a forgotten handler is downgraded to a nit", _M,
      "                severity=Severity.MAJOR,\n"
      "                status=Status.CONFIRMED,\n"
-     "                summary=(f\"{_portable_path(path)}: route '{node.name}' has no \"\n",
+     "                summary=(f\"{shown}: route '{node.name}' has no \"\n",
      "                severity=Severity.MINOR,\n"
      "                status=Status.CONFIRMED,\n"
-     "                summary=(f\"{_portable_path(path)}: route '{node.name}' has no \"\n"),
+     "                summary=(f\"{shown}: route '{node.name}' has no \"\n"),
     ("the finding stops naming the route", _M,
      '                    "route": node.name,\n', '                    "route": "",\n'),
 ]
