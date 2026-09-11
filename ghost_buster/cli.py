@@ -23,6 +23,7 @@ from .boundary import (
     render_report as render_boundary_report, render_single_repo_notice,
 )
 from .trust import check as trust_check, grant as trust_grant, declined_receipt
+from .kernel import check_kernel, render_report as render_kernel_report
 from .ledger import (
     COULD_NOT_RUN, DECLINED, Ledger, LedgerError, NOT_RUN, RAN,
     _head_commit, render_report as render_ledger_report,
@@ -303,6 +304,12 @@ def _build_parser() -> argparse.ArgumentParser:
              "with neither tests nor a deploy artifact.",
     )
     parser.add_argument(
+        "--kernel", type=Path, action="append", default=[], metavar="PATH",
+        help="a shared kernel (repeatable): a package whose classes this repository should import "
+             "rather than carry. A class here that is structurally identical to a kernel class is "
+             "kernel_shadow; one that shares its name and most of its methods but differs is "
+             "drifted_contract. Opt-in because it needs a path.")
+    parser.add_argument(
         "--join", type=Path, action="append", default=[], metavar="PATH",
         help="another repository to join to this one, repeatable. A cross-repo "
              "boundary is the one place both sides are blind: the importing "
@@ -544,6 +551,15 @@ def main(argv: List[str] = None) -> int:
         # matters less -- so it is named on every run rather than simply
         # being absent.
         print("ghost_buster: mutation analysis NOT RUN (opt-in: --mutate)", file=sys.stderr)
+
+    if args.kernel:
+        kernel_findings, kernel_report = check_kernel(files, args.kernel)
+        print(render_kernel_report(kernel_report), file=sys.stderr)
+        findings.extend(kernel_findings)
+        checks["kernel"] = RAN if kernel_report.ran else COULD_NOT_RUN
+    else:
+        checks["kernel"] = NOT_RUN
+        print("ghost_buster: kernel check NOT RUN (opt-in: --kernel PATH)", file=sys.stderr)
 
     join_paths = _resolve_join_mode(args, files)
     if join_paths:
