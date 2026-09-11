@@ -14,7 +14,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import Iterable, List
+from typing import Iterable, List, Optional, Dict
 
 from . import __version__, version_string
 from .baseline import Baseline
@@ -36,6 +36,10 @@ from .correlate import (
     run_connectors,
 )
 from .testsuite import render_report as render_test_report, scan as scan_tests
+from . import readiness
+from .speed import Profile
+from .casefile import Casefile, Prior
+from .operate import Refused, operate
 from .annotate import annotate
 from .mechanical import run_all
 from .project import render_report as render_project_report, scan as scan_project
@@ -103,7 +107,8 @@ def _collect_files(root: Path, extra_excludes: Iterable[str] = ()) -> List[Path]
     return out
 
 
-def _print_report(new: List[Finding], known: List[Finding]) -> None:
+def _print_report(new: List[Finding], known: List[Finding],
+                  priors: Optional[Dict[str, Prior]] = None) -> None:
     order = {Severity.CRITICAL: 0, Severity.MAJOR: 1, Severity.MINOR: 2, Severity.INFORMATIONAL: 3}
     new_sorted = sorted(new, key=lambda f: order[f.severity])
 
@@ -116,6 +121,11 @@ def _print_report(new: List[Finding], known: List[Finding]) -> None:
         print(f"      {f.summary}")
         if f.detail:
             print(f"      {f.detail}")
+        # The case file's history, beside the finding and never instead of
+        # it. "3 false" is a reason to look harder at the fourth, not a
+        # reason to not show it.
+        if priors and f.id in priors and priors[f.id].seen:
+            print(f"      {priors[f.id].render()}")
         print(f"      id: {f.id}")
         print()
 
@@ -156,6 +166,39 @@ def _build_parser() -> argparse.ArgumentParser:
              "repo-specific vendored tree, e.g. a checked-in copy of "
              "another repo. Virtualenvs, site-packages, VCS dirs and tool "
              "caches are always skipped.",
+    )
+    parser.add_argument(
+        "--operate", action="store_true",
+        help="OPT-IN. The surgeon operates: on a CLEAN tree, open a branch, apply "
+             "every remedy that carries a verification that can fail, re-examine "
+             "after each cut, commit each cut, record the outcomes in the case "
+             "file, and assess whether the patient is a candidate for enhancement. "
+             "The branch the patient came in on is never written to; that is "
+             "checked. Refuses on a dirty tree. See operate.py.",
+    )
+    parser.add_argument(
+        "--operate-branch", default=None, metavar="NAME",
+        help="the branch to operate on (default: ghost/operate-<timestamp>)",
+    )
+    parser.add_argument(
+        "--operate-dry-run", action="store_true",
+        help="with --operate: diagnose and assess candidacy, write nothing",
+    )
+    parser.add_argument(
+        "--profile", action="store_true",
+        help="instrument the scan and report work done more than once with the "
+             "same input -- parses, reads, subprocesses -- ranked by what it "
+             "cost. The static pitstop detectors run by default; this is the "
+             "measured complement, and it is how the 9.5-parses-per-file "
+             "redundancy in this toolkit was found. Adds a few percent to the run.",
+    )
+    parser.add_argument(
+        "--casefile", type=Path, default=None, metavar="PATH",
+        help="the surgeon's case file: history from ghost-triage decisions and "
+             "past operations, shown beside each finding it applies to. Never "
+             "hides a finding. Point every repository at one file and the tool "
+             "learns across the library. (default: <path>/.ghost_casefile.json "
+             "if it exists)",
     )
     parser.add_argument(
         "--annotate-names", action="store_true",
@@ -449,7 +492,15 @@ def main(argv: List[str] = None) -> int:
     # the ledger can notice a blind spot: "declined" and "could not run" are
     # facts worth remembering, not the absence of one.
     checks = {"structural": RAN}
-    findings = run_all(files)
+    profile = None
+    if args.profile:
+        import time
+        started = time.perf_counter()
+        with Profile() as profile:
+            findings = run_all(files)
+        profile_seconds = time.perf_counter() - started
+    else:
+        findings = run_all(files)
 
     if args.annotate_names:
         readme = args.annotate_readme or (args.path / "README.md")
@@ -599,10 +650,37 @@ def main(argv: List[str] = None) -> int:
               f"(fixed, renamed detector, or a baseline written from another checkout); "
               f"first: {stale[0].id} {stale[0].evidence.file}", file=sys.stderr)
 
+    casefile_path = args.casefile or (args.path / ".ghost_casefile.json")
+    priors = None
+    if casefile_path.is_file():
+        priors = Casefile(casefile_path).annotate(new)
+
+    if args.operate:
+        try:
+            op = operate(args.path, files, findings, checks,
+                         casefile=Casefile(casefile_path), branch=args.operate_branch,
+                         dry_run=args.operate_dry_run)
+        except Refused as e:
+            print(f"refused: {e}", file=sys.stderr)
+            return 2
+        print(op.render())
+        if not op.came_in_untouched:
+            print("error: the branch the patient came in on was modified; "
+                  "this should be impossible and is a bug", file=sys.stderr)
+            return 2
+        return 0
+
     if args.json:
         print(FindingSet(new).to_json())
     else:
-        _print_report(new, known)
+        _print_report(new, known, priors)
+        # Candidacy is read off this run's own findings and the record of
+        # which checks ran. Unknown counts against the patient.
+        print(readiness.assess(findings, checks).render())
+        print()
+        if profile is not None:
+            print(profile.render(profile_seconds))
+            print()
         if mutation_run is not None:
             print(render_run(mutation_run, verbose=args.mutate_verbose))  # ghost_buster: name-disagreement -- `mutation_run` is `run` in the signature
 

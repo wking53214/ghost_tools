@@ -44,6 +44,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Sequence, Set, Tuple
 
+from . import corpus
 from .schema import Category, Evidence, Finding, Layer, Severity, Status
 
 DISAGREEMENT_DETECTOR = "name_disagreement"
@@ -129,10 +130,7 @@ def is_test_path(path: Path) -> bool:
 
 
 def _parse(path: Path) -> ast.Module | None:
-    try:
-        return ast.parse(path.read_text(errors="replace"))
-    except (SyntaxError, ValueError, OSError):
-        return None
+    return corpus.parse(path)
 
 
 def _vocabulary(paths: Sequence[Path]) -> Counter:

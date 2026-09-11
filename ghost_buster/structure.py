@@ -38,6 +38,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
+from . import corpus
 from .schema import Category, Evidence, Finding, Layer, Severity, Status
 
 DETECTOR = "structure"
@@ -224,9 +225,8 @@ def _model_kind(node: ast.ClassDef) -> bool:
 
 
 def analyse_module(path: Path, root: Path, package_roots: Set[str]) -> Optional[ModuleFacts]:
-    try:
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    except (OSError, SyntaxError, UnicodeDecodeError):
+    tree = corpus.parse(path)
+    if tree is None:
         return None   # unassessable_file reports this; see mechanical.py
 
     rel = path.relative_to(root)

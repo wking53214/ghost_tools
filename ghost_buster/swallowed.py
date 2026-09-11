@@ -58,6 +58,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Sequence
 
+from . import corpus
 from .naming import is_test_path
 from .schema import Category, Evidence, Finding, Layer, Severity, Status
 
@@ -113,9 +114,8 @@ def find_swallowed(files: Sequence[Path]) -> List[Swallowed]:
     for path in (Path(f) for f in files):
         if is_test_path(path):
             continue
-        try:
-            tree = ast.parse(path.read_text(errors="replace"))
-        except (SyntaxError, ValueError, OSError):
+        tree = corpus.parse(path)
+        if tree is None:
             continue
         for node in ast.walk(tree):
             if isinstance(node, ast.ExceptHandler) and _swallows(node):

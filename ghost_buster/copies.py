@@ -68,6 +68,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Sequence, Tuple
 
+from . import corpus
 from .schema import Category, Evidence, Finding, Layer, Severity, Status
 
 DETECTOR = "drifted_copy"
@@ -94,9 +95,8 @@ def _structure(node: ast.AST) -> str:
 
 
 def _definitions(path: Path) -> Dict[str, str] | None:
-    try:
-        tree = ast.parse(path.read_text(errors="replace"))
-    except (SyntaxError, ValueError, OSError):
+    tree = corpus.parse(path)
+    if tree is None:
         return None
     return {node.name: _structure(node) for node in tree.body
             if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))}

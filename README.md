@@ -1,16 +1,59 @@
-# ghost_tools -- v0.17
+# ghost_tools -- v1.0
 
-Four commands, one pipeline. `ghost-buster` hunts down structural problems
-in code and, with `--mutate`, proves which tests pass without checking
-anything; `ghost-triage` records the human decision on each finding;
-`ghost-writer` turns the ones worth documenting (not fixing) into accurate
-docs; `blackhole-extrapolator` outlines the things that are not there at all.
+A scanner that says what it could not see, and a surgeon that heals on a
+branch, learns from every cut, and offers the serum only to a candidate.
 
     ghost-buster              things that are present and wrong
+    ghost-buster --operate    the surgeon: heal on a branch, re-examine, learn
+    ghost-buster --profile    work the scan did more than once
     ghost-buster --mutate     tests that pass with the thing they name broken
     ghost-triage              the human decision, recorded with its reason
     ghost-writer              the ones worth documenting
     blackhole-extrapolator    the ones that went up in smoke
+
+## The surgeon (v1.0)
+
+The repository is a patient on the table. The surgeon does not know what
+is wrong, so the examination comes first and is complete; then diagnosis;
+then, with consent, the operation; then re-examination after every cut,
+because a cut can reveal the spread. The objective is to leave the patient
+whole -- and, if the patient is a candidate, better than whole.
+
+**Workup.** `ghost-buster PATH` runs every detector over one shared corpus
+(every file read once, parsed once, under one policy) and reports what it
+found. It also reports what it **could not** see: files that would not
+parse, checks that could not run. That list is the same for every detector,
+which it was not before 0.18.
+
+**Diagnosis.** Readiness is read off the findings: parses completely, tests
+run and pass, no committed secrets, not a drifted copy, no
+swallowed-everything handlers, no hollow contracts. A criterion the scan
+could not assess counts **against** the patient. The gate fails closed.
+
+**Operate.** `--operate` opens a branch from a clean tree, applies every
+remedy that carries a verification that can fail, re-examines after each,
+commits each cut, and records what healed and what was exposed. The branch
+the patient came in on is never written to, and that is checked. A dirty
+tree is refused. In 1.0 one remedy qualifies -- `annotate`, whose every
+edit is verified by syntax-tree identity. Everything else the toolkit finds
+needs a judgement the tree does not contain and is left on the table for
+you, with the evidence beside it. A remedy joins the list the day it
+carries a check that can fail.
+
+**Learn.** The case file. `ghost-triage --casefile` records each decision;
+`ghost-buster --casefile` shows the history beside every finding it applies
+to; every cut records its outcome. A prior never hides a finding and never
+changes a severity -- it is shown beside the finding, and you decide with
+both in view. Point every repository at one file and the surgeon learns
+across the library.
+
+**The serum.** A candidate gets the enhancement pass: `--profile` counts the
+work the scan did more than once (that is how the 9.5-parses-per-file
+redundancy in this toolkit was found), and the pitstop detectors report
+what the tree can see. Enhancement applied to an unhealthy patient
+amplifies the rot, which is why candidacy is gated on health. No ceiling
+for a candidate, so long as nothing breaks -- and the breaking is what the
+checks are for.
 
 ## What runs by default (v0.11.0)
 
@@ -885,6 +928,46 @@ into two repositories.
 
 That ratio is the point. A detector that reported all 162 would be telling
 you about your Protocols.
+
+### The corpus: one read, one policy, one tree
+
+Every detector used to bring its own parser. Measured on ghost_tools itself:
+a single scan of 112 files called `ast.parse` **1,064 times** — 9.5 per file
+— and spent **52% of its wall clock** in the parser.
+
+That was the smaller problem. There were six implementations of "turn a file
+into a tree," and they disagreed: three decoded with `errors="replace"`,
+three with `encoding="utf-8"`. A file with one invalid byte was analysed by
+three detectors and invisible to fifteen, and nothing said so. One of the six
+let `OSError` escape, so an unreadable file crashed the run there and was
+skipped silently everywhere else.
+
+`ghost_buster/corpus.py` is the hammer: every file is read once, parsed once,
+under one stated policy, and the tree is handed to every detector read-only.
+
+| | before | after |
+|---|---|---|
+| parse calls, 112 files | 1,064 | 113 |
+| time in `ast.parse` | 2.14s (52%) | 0.54s |
+| `run_all` | 4.14s | **2.49s** |
+
+The policy is the interpreter's own: bytes are read, the encoding is what
+PEP 263 says (coding cookie, else UTF-8), the bytes are parsed. A file that
+can't be read or parsed becomes a **fact about the scan** — `corpus.unparsed()`
+— held once, reported once by `unassessable_file`, skipped identically by
+everyone. That list is the blind spot, and it is now the same list for every
+detector.
+
+Sharing a tree means nobody may mutate it. That is checked, not promised:
+`test_no_detector_mutates_the_tree` runs every registered detector and then
+compares every cached tree to a fresh parse of the same bytes, on a fixture
+and on the real package. The one component that legitimately edits trees in
+place — the mutation engine — asks for `corpus.fresh()` and gets its own
+uncached copy.
+
+Detectors stay independent in what they **conclude**: none reads another's
+findings, so a wrong finding still points at one detector. They are no longer
+independent in what they **see**, and that is deliberate.
 
 ### `--annotate-names`: one value, two names, written down twice
 
