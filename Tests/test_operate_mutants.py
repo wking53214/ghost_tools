@@ -19,9 +19,12 @@ MUTANTS = [
     ("a dirty tree is operated on", _O,
      '    if not dry_run and _git(root, "status", "--porcelain"):',
      "    if False:"),
+    # Re-pointed in 1.3.0: the return to the patient's own branch moved
+    # into the `finally` of _on_the_table, so that is where the mutant
+    # goes. Same claim, same kill, a structurally different site.
     ("the patient is left on the table", _O,
-     '    if not dry_run:\n        _git(root, "checkout", "-q", return_to)',
-     "    if False:\n        _git(root, \"checkout\", \"-q\", return_to)"),
+     '            _git(root, "reset", "-q", "--hard", "HEAD")\n            _git(root, "checkout", "-q", return_to)\n',
+     '            _git(root, "reset", "-q", "--hard", "HEAD")\n'),
     ("a detached patient is sent back to 'HEAD', which is the table", _O,
      "    return_to = came_in_on or head_before",
      '    return_to = came_in_on or "HEAD"'),
@@ -29,8 +32,8 @@ MUTANTS = [
      "        carried = [f for f in current if f.detector not in re_examines]",
      "        carried = []"),
     ("a dry run opens a branch anyway", _O,
-     '    if not dry_run:\n        _git(root, "checkout", "-q", "-b", branch)',
-     '    if True:\n        _git(root, "checkout", "-q", "-b", branch)'),
+     "    if dry_run:\n        # Nothing is written and no branch is opened",
+     "    if False:\n        # Nothing is written and no branch is opened"),
     ("a cut is not staged, so nothing is committed", _O,
      '        _git(root, "add", "-A")\n        _git(root, "commit", "-q", "-m",',
      '        pass\n        _git(root, "commit", "-q", "-m",'),
