@@ -11,7 +11,41 @@ branch, learns from every cut, and offers the serum only to a candidate.
     ghost-writer              the ones worth documenting
     blackhole-extrapolator    the ones that went up in smoke
 
-## The surgeon (v1.0)
+## Principles
+
+Seven rules, each one written down because a real defect happened without it.
+
+1. **Silence is the defect.** A check that does not run says so on every
+   run. A file that will not parse is a finding, not a skip. A scan reports
+   what it could not see beside what it saw, because "zero findings" and
+   "zero findings, having looked" print identically and only one is
+   information.
+2. **Fail closed.** A criterion the scan could not assess counts against
+   the patient. An unreadable ledger fails the run rather than starting a
+   clean history. A non-git directory is a hard stop, not a clean secrets
+   scan.
+3. **Say what was established, not what is suspected.** A deterministic
+   check is `CONFIRMED`; a model's claim is `REASONED` and never promotes
+   itself. Severity rates what the rule proved: a provider-issued key prefix
+   is CRITICAL, a high-entropy string near the word "key" is MAJOR.
+4. **Measured before built.** Every detector was calibrated on real
+   repositories before it shipped, every exclusion was a false positive
+   first, and the numbers are in `CHANGELOG.md` with the date. A check that
+   fires on nothing is not free.
+5. **Memory only adds.** The ledger never suppresses a finding, never
+   lowers a severity, never tunes a threshold. A self-tuning suppressor
+   walks itself to silence.
+6. **The tree is not modified except as declared, and that is checked.**
+   One writer exists, the surgeon, and it edits comments only, on a branch
+   it opened, with every edit verified by syntax-tree identity.
+7. **A human decides.** Triage is the gate. Nothing is fixed, suppressed or
+   documented without a recorded decision, and a prior is shown beside a
+   finding, never used to hide one.
+
+Version history lives in `CHANGELOG.md`. This file describes the tool as it
+is at the version in its title.
+
+## The surgeon
 
 The repository is a patient on the table. The surgeon does not know what
 is wrong, so the examination comes first and is complete; then diagnosis;
@@ -55,21 +89,28 @@ amplifies the rot, which is why candidacy is gated on health. No ceiling
 for a candidate, so long as nothing breaks -- and the breaking is what the
 checks are for.
 
-## What runs by default (v0.11.0)
+## What runs by default
 
 Every check is **on** unless you turn it off, and **every check reports its
 state on every run** -- performed, impossible, or declined.
 
 | Check | Default | Turn off with |
 |---|---|---|
-| structural detectors | on | (always run) |
+| the twenty registered detectors | on | (always run) |
 | unmerged branches | on | `--no-branches` |
 | test status | on | `--no-tests` |
 | committed secrets | on | `--no-secrets` |
+| project checks (CI, deploy artifacts) | on | `--no-project` |
+| structural model | on | `--no-structure` |
 | correlation | on | `--no-correlate` |
 | ledger (memory) | on | `--no-ledger` |
+| cross-repository seam | asks, on a terminal; single-repo otherwise | `--join PATH` or `--single-repo` says so outright |
 | mutation (`--mutate`) | **off** | opt-in on cost: one pytest process per mutant |
-| semantic layer (`--semantic`) | **off** | opt-in on cost: paid API calls |
+| semantic layer | **off, and has no flag** | a library (`ghost_buster.semantic`), never wired into the CLI, because every call is paid |
+
+The table above is the source of truth for defaults. Every flag in it exists
+in `ghost_buster/cli.py` with the default shown; the `--help` text says "ON
+BY DEFAULT" on each one that is.
 
 The half that matters more than the defaults: **a check that does not run
 says so.** Until v0.10.1 the repository checks were opt-in and a run that
@@ -89,7 +130,45 @@ repository:
 - **A default run takes minutes, not seconds**, because of that suite.
   `--no-tests` gets the old fast structural pass back.
 
-## What it remembers (v0.12.0)
+## What it checks
+
+Every registered detector, by name, with the severity it can reach. Each
+one is documented at length further down; this table is the index, and it
+is checked against `registered_detectors()` by the test suite.
+
+| Detector | Reports | Up to |
+|---|---|---|
+| `unassessable_file` | a file the corpus could not read or parse, so every detector below skipped it | MAJOR |
+| `merge_conflict_marker` | an unresolved `<<<<<<<` / `=======` / `>>>>>>>` triplet | CRITICAL |
+| `dead_code` | a definition nothing in the scan references | MINOR |
+| `dead_end_call` | a definition live code calls whose body does nothing, with no seam declared | MAJOR |
+| `long_function` | a function past the length threshold | MAJOR |
+| `duplicate_file` | a byte-identical file group, reported once | MAJOR |
+| `drifted_copy` | the same file in several places, no longer agreeing | MAJOR |
+| `near_duplicate_function` | two functions with the same structural fingerprint | MAJOR |
+| `intra_function_duplicate_block` | repeated branch bodies inside one function | MAJOR |
+| `swallowed_exception` | a handler that catches something and does nothing | MAJOR |
+| `doc_test_count_drift` | a test count in a markdown file the real suite has grown well past | MINOR |
+| `name_disagreement` | one value passed under two names, only where it is a bijection | MINOR |
+| `vestigial_domain_name` | an identifier carrying a domain this repository no longer has | MINOR |
+| `placeholder_name` | `foo`, `tmp`, `data2`: a name that says nothing, where that is decidable | MINOR |
+| `sql_injection` | SQL built by interpolation and then executed | CRITICAL |
+| `destructive_sql` | `DELETE` or `UPDATE` with no `WHERE`, or `TRUNCATE`, executed | MAJOR |
+| `insecure_default` | `DEBUG = True`, wide-open CORS with credentials, `verify=False` | CRITICAL |
+| `unauthenticated_route` | a route with no auth while most of its siblings have it | MAJOR |
+| `loop_invariant_call` | a call inside a loop whose arguments the loop cannot change (a serum pitstop) | MINOR |
+| `list_membership_in_loop` | membership tests against a list literal inside a loop (a serum pitstop) | MINOR |
+
+Beside the detectors, six repository-level checks and two passes over
+everything, each with its own section below: unmerged branches, test
+status, committed secrets, the project checks (`no_ci_configuration`), the
+structural model (`entry point target missing`, `undeclared dependency`),
+the seam between repositories (`--join`), the ledger (`regressed_finding`,
+`flapping_finding`, `persistent_finding`, `blind_spot`, trajectory), and
+correlation (four connectors). Readiness reads six criteria off the whole
+set and gates the surgeon's serum on them.
+
+## What it remembers: the ledger
 
 `.ghost_ledger.json` sits next to the baseline and is committed like it.
 The baseline answers *"is this present right now"*; the ledger answers
@@ -123,7 +202,7 @@ ledger fails the run rather than silently starting over, because an empty
 history reported as a clean one is the lie this whole feature exists to
 prevent.
 
-## Where one idea came from (v0.13.0)
+## Files that will not parse: `unassessable_file`
 
 `unassessable_file` is borrowed, knowingly, from a pediatric sepsis
 engine. `observe-perceive`'s `BayesianFusion` carries this comment,
@@ -147,7 +226,7 @@ MAJOR finding naming the file and the reason, because a file that will
 not parse is usually broken right now, which is the worst possible moment
 for every structural check to look away.
 
-## The founder checks (v0.14.0)
+## The founder checks
 
 Three checks built from research into what actually bites solo and
 early-stage teams. Each is deliberately narrower than its category name,
@@ -183,7 +262,7 @@ because a security check people learn to skim is worth less than none.
   makes every route look unprotected, which drops the module below the
   threshold and reports nothing. It fails quiet, deliberately.
 
-## The structural model (v0.15.0)
+## The structural model: `--structure`
 
 `ghost-buster --structure-report` reconstructs what a repository actually
 is, from evidence only: the packaging and distribution boundary, every
@@ -227,7 +306,7 @@ are now mapped through installed distribution metadata, and an import that
 cannot be mapped goes to `unresolved` rather than becoming a finding --
 because a missing declaration and an ordinary alias look identical.
 
-## The seam between two repositories (v0.16.0)
+## The seam between two repositories: `--join`
 
 A cross-repo boundary is the one place both sides are blind. The importing
 repository guards the import and skips its tests when the other is absent,
@@ -271,7 +350,7 @@ structural: anything carrying .conclusion, .method, .source_material ...
 can be recorded." No static analysis resolves that, and pretending
 otherwise would be inventing evidence, so those go to `unresolved`, named.
 
-## What AI-written code gets wrong (v0.17.0)
+## What AI-written code gets wrong
 
 Three checks built from 2026 research into AI-generated code, where 45%
 of output carries a security flaw and agency audits find 8 to 14 issues
@@ -361,13 +440,16 @@ gate is enforced in code (`ghost_writer/report.py`'s
 
 ## ghost_buster
 
-Two independent layers, three repository-level checks, and a correlation
-pass over all of them, every one producing the same `Finding` shape
-(`ghost_buster/schema.py`):
+Two layers, six repository-level checks, a ledger, and a correlation pass
+over all of them, every one producing the same `Finding` shape
+(`ghost_buster/schema.py`). The full inventory is the table under **What it
+checks** above; what follows is the reasoning behind each, in the order it
+was built.
 
-- **Mechanical** (`ghost_buster/mechanical.py`) -- deterministic, AST-based,
-  stdlib only. Every finding is `Status.CONFIRMED`; there's nothing to
-  doubt about a deterministic check. Seven detectors as of v0.9:
+- **Mechanical** (`ghost_buster/mechanical.py` and the modules beside it)
+  -- deterministic, AST-based, stdlib only. Every finding is
+  `Status.CONFIRMED`; there's nothing to doubt about a deterministic check.
+  The first seven, and what calibrating each on a real repository taught:
   `dead_code`, `long_function`, `near_duplicate_function`,
   `intra_function_duplicate_block`, `doc_test_count_drift`,
   `merge_conflict_marker`, `duplicate_file`.
@@ -550,7 +632,8 @@ pass over all of them, every one producing the same `Finding` shape
 - **Test status** (`ghost_buster/testsuite.py`, `--tests`) -- runs the
   project's own pytest suite and reports every test that did not pass,
   classified by what the outcome means rather than by pytest's four
-  words for it. Opt-in, because it executes the project's code; it never
+  words for it. On by default, and it executes the project's code, so
+  `--no-tests` on a tree you do not trust; it never
   installs a package, starts a service, or sets a variable, and the scan
   itself writes nothing into the project (no cache, no bytecode -- the
   project's tests may still have their own side effects; sentinel_os's
@@ -764,30 +847,34 @@ python -m ghost_buster.cli /path/to/repo --exclude some_vendored_dir
 python -m ghost_buster.cli /path/to/repo --mutate --mutate-verbose
 python -m ghost_buster.cli /path/to/repo --mutate --mutate-only test_policy --json > findings.json
 
-# flag branches with commits not reflected in the base branch (read-only git
-# plumbing; never fetches). Defaults to the first of origin/main, origin/master,
-# main, master that resolves; --branches-base overrides.
-python -m ghost_buster.cli /path/to/repo --branches
-python -m ghost_buster.cli /path/to/repo --branches --branches-base origin/develop
+# the three repository checks run by default. Unmerged branches: read-only
+# git plumbing, never fetches, base is the first of origin/main, origin/master,
+# main, master that resolves.
+python -m ghost_buster.cli /path/to/repo --branches-base origin/develop
+python -m ghost_buster.cli /path/to/repo --no-branches
 
-# run the project's pytest suite and classify every test that did not pass
-# (failing / flaky / blocked by a named dependency / skipped without cause /
-# stale skip). Executes the project's tests; never installs or starts anything.
-python -m ghost_buster.cli /path/to/repo --tests
-python -m ghost_buster.cli /path/to/repo --tests --tests-python /path/to/repo/.venv/bin/python --tests-reruns 5
+# test status runs the project's pytest suite and classifies every test that
+# did not pass (failing / flaky / blocked by a named dependency / skipped
+# without cause / stale skip). It executes the project's tests, so decline it
+# on code you do not trust; it never installs or starts anything.
+python -m ghost_buster.cli /path/to/repo --tests-python /path/to/repo/.venv/bin/python --tests-reruns 5
+python -m ghost_buster.cli /path/to/repo --no-tests
 
-# scan the checked-out branch's git history for committed secrets with
-# gitleaks (must be installed separately; never installed by this tool).
-# Read-only: never rewrites history, rotates a credential, or writes into
-# the target repository.
-python -m ghost_buster.cli /path/to/repo --secrets
-python -m ghost_buster.cli /path/to/repo --secrets --secrets-binary /opt/gitleaks/gitleaks
+# committed secrets: the checked-out branch's git history, through gitleaks
+# (must be installed separately; never installed by this tool). Read-only:
+# never rewrites history, rotates a credential, or writes into the target.
+python -m ghost_buster.cli /path/to/repo --secrets-binary /opt/gitleaks/gitleaks
+python -m ghost_buster.cli /path/to/repo --no-secrets
+
+# the fast structural pass: everything that reads the tree, nothing that
+# runs it or shells out
+python -m ghost_buster.cli /path/to/repo --no-tests --no-secrets --no-branches
 
 # correlation runs by default and needs no flag. To let the cross-repository
 # connectors fire, hand it another repo's --json output; LABEL= names it in
 # the report. --no-correlate skips the pass entirely.
-python -m ghost_buster.cli /path/to/other --secrets --json > /tmp/other.json
-python -m ghost_buster.cli /path/to/repo --secrets --correlate-with other=/tmp/other.json
+python -m ghost_buster.cli /path/to/other --json > /tmp/other.json
+python -m ghost_buster.cli /path/to/repo --correlate-with other=/tmp/other.json
 ```
 
 ### `drifted_copy`: the same file in several places, no longer agreeing
@@ -1103,7 +1190,9 @@ is now stated as what is actually true and actually tested:
 | `ghost-buster PATH` (default) | `.ghost_ledger.json` and nothing else |
 | `ghost-buster PATH --accept` | `.ghost_baseline.json` |
 | `ghost-buster PATH --annotate-names` | modifies `.py` files and the README, by comment only. The one deliberate exception |
-| `ghost-buster PATH --json` | nothing |
+| `ghost-buster PATH --operate` | a new branch `ghost/operate-<stamp>`, one commit per cut, comment-only edits; the branch the patient came in on is never written to, and the tree must be clean to start |
+| `ghost-buster PATH --operate --operate-dry-run` | nothing |
+| `ghost-buster PATH --json` | `.ghost_ledger.json`, the same as the default; `--no-ledger` leaves nothing |
 | `blackhole-extrapolator PATH` | nothing |
 | `--reconstruct-into DIR` | writes to `DIR`; the scanned tree untouched |
 | `--recover-from CORPUS --recover-into DIR` | writes to `DIR`; **both** the scanned tree and the corpus untouched |
@@ -1176,7 +1265,7 @@ list can't know about, like a vendored copy of a sibling repo.
 
 Exit code is `1` if any new CRITICAL/MAJOR finding exists, `0` otherwise --
 usable as a CI gate on the mechanical layer (the semantic layer needs an
-API key and isn't wired into the CLI by default; see below).
+API key and is not wired into the CLI at all; see below).
 
 The semantic layer is a library, used directly:
 
@@ -1281,22 +1370,25 @@ already-decided findings listed with their decision; it says on its face
 that nothing in it has been reviewed. The document mode and its gate are
 unchanged.
 
-## Non-goals, stated explicitly (v0.1 and likely beyond)
+## Non-goals, stated explicitly
 
-- **Neither tool ever fixes anything automatically.** `ghost_buster` finds
-  and reports; `ghost_writer` documents or proposes a correction. Applying
-  either is always a separate, human-initiated act.
-- The semantic layer never runs by default (costs real money per call);
-  it's opt-in, by design, every time.
+- **Nothing changes what a program means.** The surgeon (`--operate`) is
+  the one thing in the toolkit that edits a tree: comment-only remedies, on
+  a branch it opened, each edit verified by syntax-tree identity, the
+  incoming branch never written. `--annotate-names` is the same remedy
+  without the branch. Everything else finds, reports, or proposes, and
+  applying a proposal is a separate, human-initiated act.
+- The semantic layer never runs from the CLI (costs real money per call);
+  it is a library you call with your own key, by design, every time.
 - `ghost_writer` never touches a file except via the explicit `--out` flag
   writing a *new* report file -- it does not open and rewrite an existing
   README in place.
 
 ## Requirements
 
-Stdlib only for the mechanical layer and the whole `ghost_writer` package.
-`anthropic` (already a dependency in this environment) only if you
-construct an `AnthropicModelClient` -- everything else is fully testable
+No dependencies are declared, and none are needed for anything the CLI
+runs. The `anthropic` package is needed only if you construct an
+`AnthropicModelClient` yourself -- everything else is fully testable
 via `StubModelClient` with zero network access, which is how the entire
 test suite runs.
 
@@ -1306,7 +1398,7 @@ test suite runs.
 python -m pytest Tests/ -v
 ```
 
-1444 tests (measured 2026-09-11), 0 network calls, 0 API key required -- the semantic-layer
+1458 tests (measured 2026-09-11), 0 network calls, 0 API key required -- the semantic-layer
 tests verify the real parsing/fail-closed/injection-fencing logic via
 `StubModelClient`, the same technique `sentinel_os`'s own `interpretation/`
 package uses for its model-client tests. `test_branches.py`,
@@ -1314,46 +1406,16 @@ package uses for its model-client tests. `test_branches.py`,
 repositories and pytest projects in `tmp_path` instead, the only honest way
 to test a ref-graph, git-history or suite-execution check (the secrets
 suite against a real gitleaks binary, skipped if one is not on PATH).
-`test_mutation.py`, `test_gate_mutants.py`, `test_polish_mutants.py`,
-`test_branches_mutants.py`, `test_duplication_mutants.py`,
-`test_testsuite_mutants.py`, `test_secrets_mutants.py` and
-`test_correlate_mutants.py` run pytest in subprocesses against scratch
-copies of the project; they account for most of the suite's wall-clock
-time.
+`test_mutation.py` and the 36 `Tests/*_mutants.py` files run pytest in
+subprocesses against scratch copies of the project, each mutant file
+breaking one component a named number of ways and requiring every mutant
+to fail a test; they account for most of the suite's wall-clock time. A
+mutant whose "before" text no longer matches the source exactly once fails
+loudly rather than passing vacuously.
 
 ## Changelog
 
-- **v0.3.1** -- CLI file collection now skips virtualenvs / vendored
-  `site-packages` / `node_modules` / VCS dirs / tool caches, and takes a
-  repeatable `--exclude DIRNAME` for repo-specific vendored trees. Found by
-  running the mechanical layer across 18 real repos in one pass: one repo
-  with a `.venv` in its working tree reported 3,789 findings, of which 3,702
-  were inside `site-packages` (pytest's own source). `site-packages` is the
-  match that matters -- it catches an installed-package tree regardless of
-  the enclosing venv's directory name.
-- **v0.3** -- new mechanical detector `doc_test_count_drift`, the first
-  taxonomy-driven scrub of a real target repo (HERALD) done by hand
-  against the researched ghost list, then turned into a detector. CLI
-  file collection now includes `*.md` alongside `*.py` (every other
-  detector is unaffected -- markdown fails `_parse()` and is silently
-  skipped, same fail-closed behavior as any other unparseable file).
-- **v0.2** -- new mechanical detector `intra_function_duplicate_block`,
-  closing the "duplication inside one function" gap surfaced during the
-  HERALD dogfood run (see above). Includes a regression test for a real
-  bug caught during its own development: an `ast.walk`-based scope
-  boundary cannot be pruned at a nested `def`, so an early version leaked
-  a nested function's blocks into its enclosing function's comparison
-  set. Fixed by recursing through statement lists directly instead of
-  `ast.walk`.
-- **v0.1.2** -- fixed `near_duplicate_function` silently collapsing two
-  distinct same-named occurrences into one label (found via a real run
-  against HERALD).
-- **v0.1.1** -- fixed two `dead_code` false-positive classes (found via a
-  real run against ANVIL): `Protocol`/`ABC` interface classes, and
-  string-subscript-key dynamic dispatch.
-- **v0.1** -- initial release: `ghost_buster` (mechanical + semantic
-  layers) and `ghost_writer`.
-
+`CHANGELOG.md`, every version, with the measurement that motivated each.
 
 ---
 
