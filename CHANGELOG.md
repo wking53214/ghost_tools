@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.2.3 (2026-09-11)
+
+### An archive is not a patient
+Fifteen of 38 repositories failed "parses completely" in the pre-flight
+sweep, and nine of them exist to hold history: a corpus of exported
+transcripts, a set of specimens kept flattened on purpose, a retired
+repository. A readiness gate that fails them forever is a gate nobody
+reads. A committed `.ghost_archive` marker, whose text is the reason,
+leaves the scan as it was (findings are findings) and stops before
+candidacy: not assessed, the surgeon refuses, and the receipt line names
+the archive and its reason on every run. Six tests, four mutants, all
+killed.
+
 ## 1.2.2 (2026-09-11)
 
 ### The secrets criterion rates what the rule established
