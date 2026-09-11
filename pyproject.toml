@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ghost-tools"
-version = "1.2.3"
+version = "1.2.4"
 description = "Codebase integrity toolkit: finds structural ghosts, proves vacuous tests by mutation, outlines missing code, and turns human-triaged findings into accurate docs"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -67,3 +67,7 @@ addopts = "-n auto"
 
 [tool.ruff]
 line-length = 100
+# Tests/fixtures holds files verbatim, including one recovered original that a
+# test compares against byte for byte. Linting them would be linting data, and
+# fixing them would break the comparison they exist for.
+exclude = ["Tests/fixtures"]
