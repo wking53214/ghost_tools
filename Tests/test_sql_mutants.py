@@ -75,11 +75,13 @@ MUTANTS = [
     ("test files are scanned by the injection detector", _M,
      "        if _looks_like_a_test(path):\n            continue\n"
      "        tree = _parse(path)\n        if tree is None:\n            continue\n"
+     "        shown = _portable_path(path)   # once per file, not once per finding\n"
      "        for node in ast.walk(tree):\n"
      "            if not isinstance(node, ast.Call):\n                continue\n"
      "            for arg in _sql_call_arguments(node):\n"
      "                built = _interpolated_sql_parts(arg)\n",
      "        tree = _parse(path)\n        if tree is None:\n            continue\n"
+     "        shown = _portable_path(path)   # once per file, not once per finding\n"
      "        for node in ast.walk(tree):\n"
      "            if not isinstance(node, ast.Call):\n                continue\n"
      "            for arg in _sql_call_arguments(node):\n"
@@ -89,10 +91,10 @@ MUTANTS = [
     ("injection is downgraded from CRITICAL", _M,
      '                    layer=Layer.MECHANICAL, severity=Severity.CRITICAL,\n'
      "                    status=Status.CONFIRMED,\n"
-     '                    summary=(f"{_portable_path(path)}: SQL built by {how} and then "\n',
+     '                    summary=(f"{shown}: SQL built by {how} and then "\n',
      '                    layer=Layer.MECHANICAL, severity=Severity.MINOR,\n'
      "                    status=Status.CONFIRMED,\n"
-     '                    summary=(f"{_portable_path(path)}: SQL built by {how} and then "\n'),
+     '                    summary=(f"{shown}: SQL built by {how} and then "\n'),
     ("the finding stops naming how the statement was built", _M,
      '                    attributes={"built_by": how, "statement": text.strip()[:120]},\n',
      '                    attributes={"built_by": "", "statement": text.strip()[:120]},\n'),
