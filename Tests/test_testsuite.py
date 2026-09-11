@@ -18,7 +18,8 @@ import pytest
 
 from ghost_buster.cli import main
 from ghost_buster.schema import Category, Severity, Status
-from ghost_buster.testsuite import _index_local_modules, classify_dependency, render_report, scan
+from ghost_buster.testsuite import (_index_local_modules, classify_dependency, flaky_tests,
+                                    render_report, rerun_summary, scan)
 
 STALE_ENV = "GHOST_STALE_ENV_PROBE"
 ABSENT_ENV = "GHOST_ABSENT_ENV_PROBE"
@@ -260,6 +261,36 @@ def test_flaky_test_is_the_one_that_passed_on_isolated_rerun(shapes):
     # The attempt number lives in the detail, never the summary, so the
     # finding id does not change with how many attempts it took.
     assert "of 3" not in f.summary
+
+
+def test_the_report_records_every_rerun_by_name(shapes):
+    """The scan used to keep rerun outcomes in a temporary directory it
+    deleted; a run that said "2 flaky" could not, two minutes later, say
+    which two. Now the report carries every attempt."""
+    _, _, report = shapes
+    assert report.reruns, "the shapes project has failures that are rerun"
+    assert len(report.reruns) == report.reruns_performed
+    flaky = [r for r in report.reruns if r.nodeid.endswith("test_flaky[a b]")]
+    assert flaky and flaky[0].attempt == 1 and flaky[0].outcome == "passed"
+    deterministic = [r for r in report.reruns if r.nodeid.endswith("test_token_math")]
+    assert [r.attempt for r in deterministic] == [1, 2, 3]
+    assert all(r.outcome == "failed" for r in deterministic)
+    assert flaky_tests(report) == [flaky[0].nodeid]
+    assert "test_token_math" not in flaky_tests(report)
+
+
+def test_the_status_line_names_the_flaky_tests(shapes):
+    _, _, report = shapes
+    line = render_report(report)
+    assert "1 flaky: " in line and "test_flaky[a b]" in line
+    assert "test_token_math" not in line.split("flaky:")[1].split(";")[0]
+
+
+def test_rerun_summary_says_what_each_rerun_did(shapes):
+    _, _, report = shapes
+    text = rerun_summary(report)
+    assert "test_flaky[a b]: passed on rerun" in text
+    assert "test_token_math: failed then failed then failed on rerun" in text
 
 
 def test_failure_whose_source_mentions_a_service_word_is_still_failing(shapes):

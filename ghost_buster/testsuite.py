@@ -273,12 +273,48 @@ class TestStatusReport:
     xpassed: int = 0
     reruns_performed: int = 0
     flaky: int = 0
+    # Every isolated rerun, in order: which test, which attempt, what it
+    # did. The scan used to keep this only in a temporary directory that
+    # was deleted with the runner, so a flaky test's name survived nowhere
+    # but a finding that could be filtered out of view. Measured
+    # 2026-09-11: a scan reported "2 flaky" and two reruns later nothing
+    # could say which two. The record is part of the report now.
+    reruns: List["RerunRecord"] = field(default_factory=list)
     blocked: int = 0
     stale_skips: int = 0
     unjustified_skips: int = 0
     dependency_skips: int = 0
     pytest_exit: Optional[int] = None
     findings: List[Finding] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class RerunRecord:
+    """One isolated rerun of one test that failed in the suite."""
+
+    nodeid: str
+    attempt: int
+    outcome: str          # pytest's word for what the rerun did, or "no report"
+
+
+def flaky_tests(report: TestStatusReport) -> List[str]:
+    """The tests whose isolated rerun passed, in the order they were rerun."""
+    seen: List[str] = []
+    for r in report.reruns:
+        if r.outcome in ("passed", "xpassed") and r.nodeid not in seen:
+            seen.append(r.nodeid)
+    return seen
+
+
+def rerun_summary(report: TestStatusReport) -> str:
+    """One line naming what was rerun and how it went, for the status line."""
+    if not report.reruns:
+        return ""
+    by_test: Dict[str, List[str]] = {}
+    for r in report.reruns:
+        by_test.setdefault(r.nodeid, []).append(r.outcome)
+    return "; ".join(f"{nodeid}: {' then '.join(outcomes)} on rerun"
+                     for nodeid, outcomes in by_test.items())
 
 
 class _PytestRunner:
@@ -665,6 +701,8 @@ def _classify_failure(root: Path, outcome: TestOutcome, runner: _PytestRunner,
         report.reruns_performed += 1
         exit_code, records, _ = runner.run([outcome.nodeid])
         again = _aggregate(records).get(outcome.nodeid)
+        report.reruns.append(RerunRecord(outcome.nodeid, attempt,
+                                         again.outcome if again is not None else "no report"))
         if exit_code == 0 and again is not None and again.outcome in ("passed", "xpassed"):
             report.flaky += 1
             return _finding(
@@ -751,7 +789,7 @@ def render_report(report: TestStatusReport) -> str:
         parts.append(f"{report.xpassed} xpassed")
     classified = []
     if report.flaky:
-        classified.append(f"{report.flaky} flaky")
+        classified.append(f"{report.flaky} flaky: " + ", ".join(flaky_tests(report)))
     if report.blocked:
         classified.append(f"{report.blocked} blocked by a dependency")
     if report.stale_skips:

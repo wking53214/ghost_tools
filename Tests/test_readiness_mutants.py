@@ -16,6 +16,12 @@ TESTS = "Tests/test_readiness.py"
 _R = "ghost_buster/readiness.py"
 
 MUTANTS = [
+    ("the criterion counts the tests but does not name them", _R,
+     '                                  else f"{n} failing or flaky test(s): {_name_tests(bad)}"))',
+     '                                  else f"{n} failing or flaky test(s)"))'),
+    ("the name list never truncates", _R,
+     '    return shown + (f" (+{len(names) - limit} more)" if len(names) > limit else "")',
+     '    return ", ".join(names)'),
     ("unknown counts FOR the patient", _R,
      "        return all(c.met is True for c in self.criteria)",
      "        return all(c.met is not False for c in self.criteria)"),

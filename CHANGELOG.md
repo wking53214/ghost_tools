@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.2 (2026-09-11)
+
+### The rerun record
+The test scan kept its isolated-rerun outcomes in a temporary directory
+that was deleted with the runner. The first patient's dry run reported
+"2 flaky" and, two runs later, nothing could say which two. The report
+now carries every rerun (`TestStatusReport.reruns`: test, attempt,
+outcome), the status line names the flaky tests, `rerun_summary` says
+what each rerun did, and the readiness criterion names the tests
+behind its count instead of sending the reader back to the report.
+
 ## 1.0.1 (2026-09-11)
 
 ### The first patient becomes a candidate
