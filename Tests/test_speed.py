@@ -164,6 +164,45 @@ def test_a_memo_computed_once_behind_a_none_check_is_not_a_pitstop(tmp_path):
     assert find_pitstops(files) == []
 
 
+def test_a_container_built_fresh_and_filled_each_pass_is_not_a_pitstop(tmp_path):
+    """cns_map.py: `all_hashes = defaultdict(set)` at the top of each pass,
+    then `all_hashes[h].add(repo)`. The argument never changes; the
+    contents do, every pass. Hoisting it would share one container across
+    passes. The third serum reported two of these."""
+    files = _tree(tmp_path, {"m.py": '''\
+        def group(records, root, base):
+            for name, recs in records.items():
+                by_hash = defaultdict(set)
+                for x in recs:
+                    by_hash[x["hash"]].add(x["repo"])
+                kinds = defaultdict(int)
+                for x in recs:
+                    kinds[x["kind"]] += 1
+                bucket = make_bucket(root)
+                bucket.append(recs)
+                index = make_index(base)
+                for x in recs:
+                    index[x["id"]] = x
+                yield by_hash, kinds, bucket, index
+    '''})
+    assert find_pitstops(files) == []
+
+
+def test_a_call_whose_result_is_only_read_is_still_a_pitstop(tmp_path):
+    """The accumulator rule is about filling, not binding. A result that is
+    bound and then read stays the same work every pass."""
+    files = _tree(tmp_path, {"m.py": '''\
+        def scan(items, root):
+            out = []
+            for item in items:
+                cfg = load(root)
+                out.append(item + cfg["key"])
+            return out
+    '''})
+    found = find_pitstops(files)
+    assert [p.kind for p in found] == [INVARIANT_CALL]
+
+
 def test_a_name_bound_inside_the_loop_varies(tmp_path):
     """The first version checked only the loop target and reported 295
     invariant calls against ghost_tools, the first of them

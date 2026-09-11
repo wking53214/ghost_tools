@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.0.6 (2026-09-11)
+
+### What the serum learned, second lesson
+The library sweep on 1.0.4 reported two pitstops in CNS's evidence
+script: `all_hashes = defaultdict(set)` and `kinds = defaultdict(int)`,
+each at the top of a loop pass, each "with arguments the loop never
+changes". True, and wrong: the container is built for its contents, and
+`all_hashes[h].add(repo)` fills it every pass. Hoisting it would make
+every pass share one container, a bug dressed as a speedup.
+
+A call whose result is bound to a name that the same loop then fills (an
+item stored under it, a method called on it, an augmented assignment into
+it) is a fresh accumulator and is not reported. A result that is bound and
+only read is still the same work every pass and still is. Two new tests,
+two new mutants, CNS's two findings became zero, ghost_tools stays at
+zero.
+
 ## 1.0.5 (2026-09-11)
 
 ### The README describes the tool as it is

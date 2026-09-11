@@ -15,6 +15,13 @@ MUTANTS = [
     ("a memo behind a None check is reported as a pitstop", _S,
      "                            and id(node) not in memo\n",
      "                            and True\n"),
+    ("a container filled every pass is reported as invariant (cns_map's defaultdict again)", _S,
+     "                            and id(node) not in filled\n",
+     "                            and True\n"),
+    ("filling through a subscript store does not count", _S,
+     "            elif isinstance(node, (ast.Attribute, ast.Subscript)) and isinstance(node.ctx, ast.Store):\n"
+     "                target = node\n",
+     "            elif False:\n                target = node\n"),
     ("side effects in the loop are ignored (operate.py's rescan is 'invariant' again)", _S,
      "                            and not _may_change(parts, node)):\n",
      "                            and True):\n"),
