@@ -125,7 +125,7 @@ _GIT_CHECK_TIMEOUT = 15.0
 #
 # Measured 2026-09-10 across a 37-repository library: every one of the 32
 # 'generic-api-key' hits was a false positive. Ten were the header
-# {"x-api-key": "testkey-abc123"} in a test file. Eight were prose inside
+# {"x-api-key": "testkey-abc123"} in a test file. Eight were prose inside  # gitleaks:allow
 # exported conversation logs. Six were a fake key fed to a redaction demo
 # -- the detector found the bait the code exists to catch. Six were the
 # English word "anthropomorphic". Not one was a credential.
@@ -139,7 +139,7 @@ _GIT_CHECK_TIMEOUT = 15.0
 # file type is exempt, and a secret in a test file is still a secret --
 # it is only rated by how much the rule established.
 #
-# 'curl-auth-header' is the same kind of rule, found the same way and
+# 'curl-auth-header' is the same kind of rule, found the same way and  # gitleaks:allow
 # missed the first time. It anchors on an authorization-style header
 # inside a curl command and captures whatever value follows, so
 #   curl -H "X-API-Key: prod_key_123" https://your-domain/process
