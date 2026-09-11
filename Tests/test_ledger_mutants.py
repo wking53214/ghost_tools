@@ -17,6 +17,10 @@ from mutant_harness import assert_killed, run_tests_with_mutation
 LEDGER_TESTS = "Tests/test_ledger.py"
 _L = "ghost_buster/ledger.py"
 _C = "ghost_buster/cli.py"
+# The gathering half of the CLI moved to pipeline.py in 1.6.0. The
+# mutants below that point at it were re-aimed, not removed: the code
+# they mutate is the same code, in its new module.
+_P = "ghost_buster/pipeline.py"
 
 # (label, file, exact text to replace, replacement)
 MUTANTS = [
@@ -63,21 +67,21 @@ MUTANTS = [
     ("the ledger records its own output and compounds history on history", _L,
      "        findings = authoritative(f for f in findings if f.detector != DETECTOR)\n",
      "        findings = authoritative(findings)\n"),
-    ("history findings replace the run's findings instead of adding to them", _C,
-     "        findings.extend(history)\n", "        findings = list(history)\n"),
-    ("the ledger runs after the baseline diff, so --accept erases memory", _C,
-     "    if args.ledger:\n        ledger_path = args.ledger_path or (args.path / \".ghost_ledger.json\")\n",
-     "    if args.ledger and not args.accept:\n        ledger_path = args.ledger_path or (args.path / \".ghost_ledger.json\")\n"),
+    ("history findings replace the run's findings instead of adding to them", _P,
+     '    findings.extend(history)\n', '    findings = list(history)\n'),
+    ("the ledger runs after the baseline diff, so --accept erases memory", _P,
+     '    if not args.ledger:\n',
+     '    if not args.ledger or args.accept:\n'),
 
     # --- the CLI contract ---
     ("the ledger silently returns to opt-in", _C,
      '        "--ledger", action=argparse.BooleanOptionalAction, default=True,\n',
      '        "--ledger", action=argparse.BooleanOptionalAction, default=False,\n'),
-    ("declining the ledger leaves no receipt", _C,
-     '        _skipped("ledger", "--no-ledger")\n', "        pass\n"),
-    ("a corrupt ledger no longer fails the run", _C,
-     '            print(f"error: ledger {e}", file=sys.stderr)\n            return 2\n',
-     "            ledger = Ledger(ledger_path.with_suffix('.new'))\n"),
+    ("declining the ledger leaves no receipt", _P,
+     '        _skipped("ledger", "--no-ledger", say)\n', '        pass\n'),
+    ("a corrupt ledger no longer fails the run", _P,
+     '        raise Stop(f"error: ledger {e}") from e\n',
+     "        ledger = Ledger(ledger_path.with_suffix('.new'))\n"),
 ]
 
 

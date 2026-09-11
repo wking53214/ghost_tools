@@ -9,12 +9,16 @@ from mutant_harness import assert_killed, run_tests_with_mutation
 TRUST_TESTS = "Tests/test_trust.py"
 _T = "ghost_buster/trust.py"
 _C = "ghost_buster/cli.py"
+# The gathering half of the CLI moved to pipeline.py in 1.6.0. The
+# mutants below that point at it were re-aimed, not removed: the code
+# they mutate is the same code, in its new module.
+_P = "ghost_buster/pipeline.py"
 
 MUTANTS = [
-    ("the test scan runs for an untrusted repository", _C,
+    ("the test scan runs for an untrusted repository", _P,
      "    if args.tests and not args.trusted.trusted:\n",
      "    if False:\n"),
-    ("the mutation scan runs for an untrusted repository", _C,
+    ("the mutation scan runs for an untrusted repository", _P,
      "    if args.mutate and not args.trusted.trusted:\n",
      "    if False:\n"),
     ("--trust does not record anything", _C,

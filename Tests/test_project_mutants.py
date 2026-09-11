@@ -16,6 +16,10 @@ from mutant_harness import assert_killed, run_tests_with_mutation
 PROJECT_TESTS = "Tests/test_project.py"
 _P = "ghost_buster/project.py"
 _C = "ghost_buster/cli.py"
+# The gathering half of the CLI moved to pipeline.py in 1.6.0. The
+# mutants below that point at it were re-aimed, not removed: the code
+# they mutate is the same code, in its new module.
+_PL = "ghost_buster/pipeline.py"
 
 # (label, file, exact text to replace, replacement)
 MUTANTS = [
@@ -68,8 +72,8 @@ MUTANTS = [
     ("the project scan silently returns to opt-in", _C,
      '        "--project", action=argparse.BooleanOptionalAction, default=True,\n',
      '        "--project", action=argparse.BooleanOptionalAction, default=False,\n'),
-    ("declining the project scan leaves no receipt", _C,
-     '        _skipped("project scan", "--no-project")\n', "        pass\n"),
+    ("declining the project scan leaves no receipt", _PL,
+     '        _skipped("project scan", "--no-project", say)\n', '        pass\n'),
 ]
 
 

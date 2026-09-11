@@ -11,7 +11,7 @@
       "detector": "long_function",
       "shape": "long_function",
       "outcome": "real",
-      "note": "main is the scan pipeline in the order it runs, each check followed by its receipt line; the length is the number of checks, and a dispatch table would hide the order",
+      "note": "main was the scan pipeline in the order it runs, each check followed by its receipt line, and this note argued the length was the number of checks. An external review disagreed, and in 1.6.0 the gathering moved to pipeline.py: the order is still one readable sequence, now of four named stages rather than every statement inline. The finding was real and is closed by the split, not by this note; the record stays because the judgement was made",
       "when": "2026-09-11T08:27:35.111127+00:00"
     },
     {

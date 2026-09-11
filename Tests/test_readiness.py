@@ -155,8 +155,8 @@ def test_the_cli_reads_retirements_from_the_case_file(tmp_path, capsys, monkeypa
     (repo / "m.py").write_text("x = 1\n")
     fake = _f("committed_secret", Severity.MAJOR)
     report = type("R", (), {"ran": True, "reason": ""})()
-    monkeypatch.setattr("ghost_buster.cli.scan_secrets", lambda root, **kw: ([fake], report))
-    monkeypatch.setattr("ghost_buster.cli.render_secrets_report", lambda rep: "ghost_buster: secrets: stubbed")
+    monkeypatch.setattr("ghost_buster.pipeline.scan_secrets", lambda root, **kw: ([fake], report))
+    monkeypatch.setattr("ghost_buster.pipeline.render_secrets_report", lambda rep: "ghost_buster: secrets: stubbed")
     cf = Casefile(repo / ".ghost_casefile.json")
     cf.cases = [Case("committed_secret", "committed_secret", "false", "fixture", "2026-09-10T00:00:00",
                      fake.id, "m.py", "suppress")]

@@ -21,28 +21,5 @@
     "severity": "major",
     "status": "suppressed",
     "summary": "'_build_parser' spans 241 lines (threshold 80)"
-  },
-  {
-    "attributes": {},
-    "category": "complexity",
-    "confidence": null,
-    "detail": "Line-count proxy for the 'Long Method' smell, not true cyclomatic complexity -- a long function that's mostly a flat sequence of simple statements is a weaker signal than a short function with deep branching. Treat as a prompt to look, not a verdict.",
-    "detector": "long_function",
-    "disposition": null,
-    "disposition_note": "",
-    "evidence": {
-      "absolute_file": null,
-      "file": "ghost_buster/cli.py",
-      "line_end": 791,
-      "line_start": 506,
-      "related_files": [],
-      "snippet": null
-    },
-    "first_seen": "2026-09-11T18:33:32.579139+00:00",
-    "id": "ghost-14f702c5d1fb",
-    "layer": "mechanical",
-    "severity": "major",
-    "status": "suppressed",
-    "summary": "'main' spans 285 lines (threshold 80)"
   }
 ]

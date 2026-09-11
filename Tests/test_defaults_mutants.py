@@ -15,6 +15,10 @@ from mutant_harness import assert_killed, run_tests_with_mutation
 
 DEFAULTS_TESTS = "Tests/test_defaults.py"
 _C = "ghost_buster/cli.py"
+# The gathering half of the CLI moved to pipeline.py in 1.6.0. The
+# mutants below that point at it were re-aimed, not removed: the code
+# they mutate is the same code, in its new module.
+_P = "ghost_buster/pipeline.py"
 
 # (label, file, exact text to replace, replacement)
 MUTANTS = [
@@ -35,22 +39,22 @@ MUTANTS = [
      '        "--tests", action="store_true", default=True,\n'),
 
     # --- a declined check goes quiet again: the original bug ---
-    ("declining the branch scan leaves no receipt", _C,
-     '        _skipped("branch scan", "--no-branches")\n', "        pass\n"),
-    ("declining the test scan leaves no receipt", _C,
-     '        _skipped("test status scan", "--no-tests")\n', "        pass\n"),
-    ("declining the secrets scan leaves no receipt", _C,
-     '        _skipped("secrets scan", "--no-secrets")\n', "        pass\n"),
-    ("declining correlation leaves no receipt", _C,
-     '        _skipped("correlation", "--no-correlate")\n', "        pass\n"),
-    ("the receipt is written to stdout, where it corrupts --json", _C,
-     '    print(f"ghost_buster: {name} SKIPPED at your request ({flag})", file=sys.stderr)\n',
+    ("declining the branch scan leaves no receipt", _P,
+     '        _skipped("branch scan", "--no-branches", say)\n', '        pass\n'),
+    ("declining the test scan leaves no receipt", _P,
+     '        _skipped("test status scan", "--no-tests", say)\n', '        pass\n'),
+    ("declining the secrets scan leaves no receipt", _P,
+     '        _skipped("secrets scan", "--no-secrets", say)\n', '        pass\n'),
+    ("declining correlation leaves no receipt", _P,
+     '        _skipped("correlation", "--no-correlate", say)\n', '        pass\n'),
+    ("the receipt is written to stdout, where it corrupts --json", _P,
+     '    say(f"ghost_buster: {name} SKIPPED at your request ({flag})")\n',
      '    print(f"ghost_buster: {name} SKIPPED at your request ({flag})")\n'),
 
     # --- mutation's off-state goes unmentioned ---
-    ("mutation being off is no longer announced", _C,
-     '        print("ghost_buster: mutation analysis NOT RUN (opt-in: --mutate)", file=sys.stderr)\n',
-     "        pass\n"),
+    ("mutation being off is no longer announced", _P,
+     '        say("ghost_buster: mutation analysis NOT RUN (opt-in: --mutate)")\n',
+     '        pass\n'),
 ]
 
 
@@ -61,8 +65,6 @@ def test_defaults_mutant_is_killed(label, rel, old, new):
 
 def test_defaults_tests_pass_unmutated():
     """A mutant is only judged against a suite that passes as written."""
-    result = run_tests_with_mutation(
-        DEFAULTS_TESTS, _C, 'def _skipped(name: str, flag: str) -> None:\n',
-        'def _skipped(name: str, flag: str) -> None:\n',
-    )
+    anchor = 'def _skipped(name: str, flag: str, say) -> None:\n'
+    result = run_tests_with_mutation(DEFAULTS_TESTS, _P, anchor, anchor)
     assert result.returncode == 0, result.stdout[-2000:]

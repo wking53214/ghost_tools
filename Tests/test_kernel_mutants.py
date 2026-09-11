@@ -9,6 +9,10 @@ from mutant_harness import assert_killed, run_tests_with_mutation
 KERNEL_TESTS = "Tests/test_kernel.py"
 _K = "ghost_buster/kernel.py"
 _C = "ghost_buster/cli.py"
+# The gathering half of the CLI moved to pipeline.py in 1.6.0. The
+# mutants below that point at it were re-aimed, not removed: the code
+# they mutate is the same code, in its new module.
+_P = "ghost_buster/pipeline.py"
 
 MUTANTS = [
     ("a docstring counts as a change, so every documented copy reads as drifted", _K,
@@ -38,7 +42,7 @@ MUTANTS = [
     ("a shadow is downgraded", _K,
      "        severity=Severity.MAJOR,\n",
      "        severity=Severity.MINOR,\n"),
-    ("the CLI never runs it", _C,
+    ("the CLI never runs it", _P,
      "    if args.kernel:\n        kernel_findings, kernel_report = check_kernel(files, args.kernel)\n",
      "    if False:\n        kernel_findings, kernel_report = check_kernel(files, args.kernel)\n"),
 ]

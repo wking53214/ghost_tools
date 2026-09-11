@@ -19,6 +19,10 @@ BOUNDARY_TESTS = "Tests/test_boundary.py"
 _B = "ghost_buster/boundary.py"
 _S = "ghost_buster/structure.py"
 _C = "ghost_buster/cli.py"
+# The gathering half of the CLI moved to pipeline.py in 1.6.0. The
+# mutants below that point at it were re-aimed, not removed: the code
+# they mutate is the same code, in its new module.
+_P = "ghost_buster/pipeline.py"
 
 # (label, file, exact text to replace, replacement)
 MUTANTS = [
@@ -83,18 +87,17 @@ MUTANTS = [
      "        reaches.extend(f for f in found if f.package not in model.packages)\n"),
 
     # --- mode handling ---
-    ("a non-interactive run prompts anyway and hangs the build", _C,
+    ("a non-interactive run prompts anyway and hangs the build", _P,
      "    if args.single_repo or not sys.stdin.isatty():\n        return []\n",
      "    if args.single_repo:\n        return []\n"),
-    ("--single-repo is ignored", _C,
+    ("--single-repo is ignored", _P,
      "    if args.single_repo or not sys.stdin.isatty():\n",
      "    if not sys.stdin.isatty():\n"),
-    ("--join is ignored and every run is single-repo", _C,
+    ("--join is ignored and every run is single-repo", _P,
      "    if args.join:\n        return list(args.join)\n", ""),
-    ("a single-repo run stops saying its seams went unchecked", _C,
-     "        notice = render_single_repo_notice(args.path, files)\n"
-     "        if notice:\n            print(notice, file=sys.stderr)\n",
-     "        notice = None\n        if notice:\n            print(notice, file=sys.stderr)\n"),
+    ("a single-repo run stops saying its seams went unchecked", _P,
+     '        notice = render_single_repo_notice(args.path, files)\n        if notice:\n            say(notice)\n',
+     '        notice = None\n        if notice:\n            say(notice)\n'),
 ]
 
 

@@ -846,7 +846,7 @@ def test_doc_test_count_drift_included_in_run_all(tmp_path):
 
 # ------------------------------------------------------------ cli file collection
 
-from ghost_buster.cli import _collect_files, _EXCLUDED_DIRS  # noqa: E402
+from ghost_buster.pipeline import _collect_files, _EXCLUDED_DIRS  # noqa: E402
 
 
 def _touch(root: Path, rel: str) -> Path:
