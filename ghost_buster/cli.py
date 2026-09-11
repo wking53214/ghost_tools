@@ -24,6 +24,7 @@ from .boundary import (
 )
 from .trust import check as trust_check, grant as trust_grant, declined_receipt
 from .kernel import check_kernel, render_report as render_kernel_report
+from .archive import marked as archive_marked
 from .priors import build as build_priors, render as render_priors, to_json as priors_json
 from .ledger import (
     COULD_NOT_RUN, DECLINED, Ledger, LedgerError, NOT_RUN, RAN,
@@ -705,6 +706,13 @@ def main(argv: List[str] = None) -> int:
     if casefile_path.is_file():
         priors = Casefile(casefile_path).annotate(new)
 
+    archive = archive_marked(args.path)
+    if archive is not None:
+        print(archive.receipt(), file=sys.stderr)
+
+    if args.operate and archive is not None:
+        print("refused: an archive is not a patient; remove .ghost_archive to operate", file=sys.stderr)
+        return 2
     if args.operate:
         try:
             op = operate(args.path, files, findings, checks,
@@ -726,8 +734,11 @@ def main(argv: List[str] = None) -> int:
         _print_report(new, known, priors)
         # Candidacy is read off this run's own findings and the record of
         # which checks ran. Unknown counts against the patient.
-        retired = Casefile(casefile_path).retired() if casefile_path.is_file() else set()
-        print(readiness.assess(findings, checks, retired).render())
+        if archive is not None:
+            print(f"serum candidacy: not assessed (archive: {archive.reason or 'no reason given'})")
+        else:
+            retired = Casefile(casefile_path).retired() if casefile_path.is_file() else set()
+            print(readiness.assess(findings, checks, retired).render())
         print()
         if profile is not None:
             print(profile.render(profile_seconds))

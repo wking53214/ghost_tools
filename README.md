@@ -244,6 +244,18 @@ counted as held; so is a fix whose finding the ledger has never seen. The
 hold rate is over judged decisions only. Beside the verdicts, the three
 most recent reasons, because a reason is what the next person needs.
 
+## An archive is not a patient: `.ghost_archive`
+
+A repository that exists to hold history (a corpus, an export, specimens
+kept flattened on purpose) fails "parses completely" forever, and a gate
+that keeps saying so is a gate nobody reads. A committed `.ghost_archive`
+file at the root, whose text is the reason, makes the scan report findings
+as before and stop there: candidacy is not assessed, the surgeon refuses
+to operate, and the receipt line names the archive and its reason on every
+run, so an archive cannot be mistaken for a repository nobody has looked
+at. The marker is a decision recorded in the tree and reviewed like any
+other change. Nine repositories in the library carry one (2026-09-11).
+
 ## Files that will not parse: `unassessable_file`
 
 `unassessable_file` is borrowed, knowingly, from a pediatric sepsis
@@ -1490,7 +1502,7 @@ test suite runs.
 python -m pytest Tests/ -v
 ```
 
-1543 tests (measured 2026-09-11), 0 network calls, 0 API key required -- the semantic-layer
+1554 tests (measured 2026-09-11), 0 network calls, 0 API key required -- the semantic-layer
 tests verify the real parsing/fail-closed/injection-fencing logic via
 `StubModelClient`, the same technique `sentinel_os`'s own `interpretation/`
 package uses for its model-client tests. `test_branches.py`,

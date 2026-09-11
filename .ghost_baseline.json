@@ -10,12 +10,12 @@
     "evidence": {
       "absolute_file": null,
       "file": "ghost_buster/cli.py",
-      "line_end": 372,
-      "line_start": 139,
+      "line_end": 373,
+      "line_start": 140,
       "related_files": [],
       "snippet": null
     },
-    "first_seen": "2026-09-11T09:30:49.550895+00:00",
+    "first_seen": "2026-09-11T09:45:41.152589+00:00",
     "id": "ghost-8504b433bb13",
     "layer": "mechanical",
     "severity": "major",
@@ -33,16 +33,16 @@
     "evidence": {
       "absolute_file": null,
       "file": "ghost_buster/cli.py",
-      "line_end": 738,
-      "line_start": 494,
+      "line_end": 749,
+      "line_start": 495,
       "related_files": [],
       "snippet": null
     },
-    "first_seen": "2026-09-11T09:30:49.551022+00:00",
-    "id": "ghost-84c328ae5261",
+    "first_seen": "2026-09-11T09:45:41.152760+00:00",
+    "id": "ghost-e02d72ea602b",
     "layer": "mechanical",
     "severity": "major",
     "status": "suppressed",
-    "summary": "'main' spans 244 lines (threshold 80)"
+    "summary": "'main' spans 254 lines (threshold 80)"
   }
 ]
