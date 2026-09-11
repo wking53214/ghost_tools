@@ -1,5 +1,51 @@
 # Changelog
 
+## 1.3.0 (2026-09-11)
+
+### The tree goes back, whatever happened on the table
+`--operate` returned the repository to the branch it came in on with the
+last statement of a linear function. Any exception before it -- a remedy
+that raises, a detector that raises during the re-examination, a commit a
+hook rejects -- left the tree checked out on the operation branch, twice
+with uncommitted edits. Four forced failures reproduced it, one through
+the CLI, which printed `refused:` and exited 2 while leaving the
+repository switched. The branch the patient came in on was never written
+to, which is the property the module claimed and kept; being left
+switched is the property nobody checked.
+
+Restoration is now enforced by control flow: the branch switch and
+everything after it sit inside a context manager whose `finally` discards
+the tool's own uncommitted edits and checks the tree back out. An
+operation refuses a dirty tree at the door, so every uncommitted change at
+that point is one the tool made; commits are never discarded, because a
+cut that completed is evidence. When restoration itself fails, a new
+`LeftOnTheTable` names the branch the tree is on and carries the original
+failure as its cause, because silence there is the worst outcome.
+
+Eight tests, one per break point including a KeyboardInterrupt and a
+detached HEAD, and seven mutants, all killed.
+
+### Two defects are never one finding
+A finding's id hashes detector, path and summary, so two findings agreeing
+on all three shared an identity. Measured on the 38-repository library:
+3,292 findings, 8 colliding pairs, the sharpest two separate committed
+secrets four lines apart in one fixture. The baseline keys on the id, so
+accepting one suppressed the other; the ledger remembered two findings as
+one; a case-file decision about one disposed of the other.
+
+`schema.disambiguate_ids` runs over every scan before the ledger and the
+baseline. The first occurrence keeps the id it always had, so nothing
+already committed is renumbered; later occurrences of the same id, ordered
+by where they are rather than by scan order, take a `-2`, `-3` suffix. A
+finding reported twice from one place is still one finding and keeps one
+id. The line stays out of the hash itself, so an id still survives its
+finding moving down a file, which is the property the whole scheme exists
+for and is tested beside this one.
+
+Eleven tests and eight mutants, all killed. Two of the eight survived
+first and named real gaps in the tests: one pair that differed only in
+scan order, one that differed only in detail. Both are tests now.
+
 ## 1.2.4 (2026-09-11)
 
 ### A rebuild for the flattened files that have no original anywhere

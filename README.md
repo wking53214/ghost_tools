@@ -914,6 +914,17 @@ was built.
   two files scanned from two different checkout locations produce the same
   id.
 
+  A finding id hashes the detector, the project-relative path and the
+  summary, and deliberately not the line, so an id survives its finding
+  moving down a file. The cost of that choice is that two findings which
+  agree on all three share an identity, and measurement found it real: on
+  the 38-repository library, 8 pairs of findings shared an id, one pair
+  two separate committed secrets four lines apart in one fixture. Since
+  1.3.0 every scan separates them before the ledger or the baseline sees
+  them. The first occurrence keeps the id it always had; a later one at a
+  different place takes a `-2` suffix. A finding reported twice from the
+  same place is still one finding and keeps one id.
+
   Dogfooded on the live case that motivated it: a committed TLS private
   key in `sentinel_os/certs/key.pem`, also present in `observe`, which
   vendors a copy. Two separate scans previously reported two unrelated

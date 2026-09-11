@@ -344,3 +344,67 @@ class FindingSet:
 
     def __iter__(self):
         return iter(self.findings)
+
+
+def disambiguate_ids(findings: List[Finding]) -> int:
+    """Give every finding its own id, and say how many needed help.
+
+    THE DEFECT THIS CLOSES
+
+    A finding's id hashes three things: detector, project-relative path and
+    summary. Two findings that agree on all three therefore share an id,
+    and two distinct defects CAN agree on all three -- two same-named
+    methods of the same length in one file, two stale counts in one
+    document, two secrets four lines apart in one test fixture. Measured on
+    a 38-repository library: 3,292 findings, 8 colliding pairs, one of them
+    two separate committed secrets. A collision is not cosmetic. The
+    baseline keys on the id, so accepting one of the pair suppresses the
+    other; the ledger keys on it, so two findings are remembered as one;
+    the case file records a decision against one id, so a human judgement
+    about one defect silently disposes of another nobody read.
+
+    WHY NOT PUT THE LINE IN THE ID
+
+    Because the id must survive code motion. A finding that moves down a
+    file when an import is added is the same finding, and an id that
+    changed on every edit would report the whole file as new findings and
+    orphan every baseline entry. That property is measured and tested
+    (Tests/test_ghost_buster.py, Tests/test_branches.py) and is worth more
+    than the collision costs.
+
+    WHAT THIS DOES INSTEAD
+
+    The first occurrence keeps the id it always had, so nothing already in
+    a baseline is renumbered. Every later occurrence of the same id, in
+    scan order by location, gets a suffix derived from its own evidence --
+    `ghost-<hash>-2`, `-3` -- so the pair separates. Findings that do not
+    collide are untouched, which is all of them in the ordinary case.
+
+    The tradeoff, stated plainly: for a colliding group, an id depends on
+    how many siblings precede it. Fix the first of two and the second
+    inherits the base id, which reads as one finding healed and one
+    returning. That is a worse outcome than nothing only if you believe
+    two defects sharing one identity is acceptable, and the measurement
+    above is why this code does not.
+    """
+    by_id: Dict[str, List[Finding]] = {}
+    for f in findings:
+        by_id.setdefault(f.id, []).append(f)
+    renamed = 0
+    for base, group in by_id.items():
+        if len(group) < 2:
+            continue
+        # Identical findings (same place, same detail) are one finding
+        # reported twice, not two findings; they keep the shared id.
+        def place(f: Finding):
+            return (f.evidence.file, f.evidence.line_start or 0,
+                    f.evidence.line_end or 0, f.detail)
+        distinct = {place(f) for f in group}
+        if len(distinct) < 2:
+            continue
+        for n, f in enumerate(sorted(group, key=place), start=1):
+            if n == 1:
+                continue
+            f.id = f"{base}-{n}"
+            renamed += 1
+    return renamed

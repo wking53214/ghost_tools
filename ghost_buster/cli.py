@@ -53,6 +53,7 @@ from .structure import (
 )
 from .mutation import render_run, run_mutations
 from .schema import Finding, FindingSet, Severity
+from .schema import disambiguate_ids
 from .secrets import render_report as render_secrets_report, scan as scan_secrets
 
 
@@ -638,6 +639,17 @@ def main(argv: List[str] = None) -> int:
         print(render_correlation_report(correlations), file=sys.stderr)
         findings.extend(correlations)
         checks["correlate"] = RAN
+
+    # Every finding now has its own id, including the ones whose detector,
+    # path and summary happen to match another's. This runs before the
+    # ledger and the baseline because both key on the id: a collision that
+    # survived to here would be remembered as one finding and suppressed by
+    # one decision. See schema.disambiguate_ids.
+    collided = disambiguate_ids(findings)
+    if collided:
+        print(f"ghost_buster: {collided} finding(s) shared an id with an earlier "
+              "finding and were given their own; see the -2 suffix in the report",
+              file=sys.stderr)
 
     # THE LEDGER RUNS BEFORE THE BASELINE DIFF, DELIBERATELY.
     # It records what was FOUND, not what was reported. If it ran after

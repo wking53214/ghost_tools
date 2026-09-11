@@ -63,6 +63,7 @@ from __future__ import annotations
 
 import subprocess
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -84,6 +85,51 @@ def _retired(casefile) -> set:
 
 class Refused(Exception):
     """The surgeon will not operate, and says why."""
+
+
+class LeftOnTheTable(Exception):
+    """An operation failed AND the repository could not be put back.
+
+    Raised only when restoration itself fails, so the message can name the
+    branch the tree was left on. The original failure is the __cause__.
+    """
+
+
+@contextmanager
+def _on_the_table(root: Path, return_to: str):
+    """Everything between opening the table and closing it.
+
+    THE PROPERTY THIS ENFORCES
+
+    The tree goes back to the branch it came in on, whatever happens in
+    between: a remedy that raises, a detector that raises during the
+    re-examination, a commit a hook rejects, a disk that fills, a keyboard
+    interrupt. Before this existed the return was the last statement of a
+    linear function, so any exception left the repository checked out on
+    the operation branch -- twice with uncommitted edits, measured on four
+    forced failures including one through the CLI. The branch the patient
+    came in on was never written to, which was the property the module
+    claimed and kept; being left switched was the property nobody checked.
+
+    WHY THE RESET IS SAFE
+
+    An operation refuses a dirty tree at the door, so every uncommitted
+    change at this point is one the tool made. Discarding them restores
+    what the caller had; keeping them would hand back a tree with edits
+    nobody asked for. Committed cuts are not discarded: the branch stays,
+    holding whatever cuts completed, because those are evidence.
+    """
+    try:
+        yield
+    finally:
+        try:
+            _git(root, "reset", "-q", "--hard", "HEAD")
+            _git(root, "checkout", "-q", return_to)
+        except Exception as restore_failed:            # noqa: BLE001
+            raise LeftOnTheTable(
+                f"the operation failed and the tree could not be returned to "
+                f"{return_to}: {restore_failed}"
+            ) from restore_failed
 
 
 def _git(root: Path, *args: str) -> str:
@@ -205,11 +251,30 @@ def operate(root: Path, files: Sequence[Path], findings: Sequence[Finding],
 
     op = Operation(root=root, branch=branch, came_in_on=came_in_on, head_before=head_before,
                    readiness_before=readiness.assess(findings, checks, _retired(casefile)), dry_run=dry_run)
+    if dry_run:
+        # Nothing is written and no branch is opened, so there is nothing to
+        # put back; the table below runs unguarded.
+        _cut(op, root, files, findings, checks, casefile, rescan, dry_run=True)
+        op.head_after = _git(root, "rev-parse", "HEAD")
+        return op
+
+    _git(root, "checkout", "-q", "-b", branch)
+    with _on_the_table(root, return_to):
+        _cut(op, root, files, findings, checks, casefile, rescan, dry_run=False)
+    op.head_after = _git(root, "rev-parse", "HEAD")
+    return op
+
+
+def _cut(op: "Operation", root: Path, files: Sequence[Path], findings: Sequence[Finding],
+         checks: Dict[str, str], casefile: Optional[Casefile],
+         rescan: Callable[[Sequence[Path]], List[Finding]], *, dry_run: bool) -> None:
+    """The operation itself: apply, re-examine, commit, assess.
+
+    Split out of `operate` so the branch switch and its restoration can wrap
+    every statement of it, rather than only the statements that run when
+    nothing goes wrong.
+    """
     current = list(findings)
-
-    if not dry_run:
-        _git(root, "checkout", "-q", "-b", branch)
-
     step = 0
     re_examines = set(registered_detectors())
     for name, remedy in REMEDIES.items():
@@ -254,7 +319,3 @@ def operate(root: Path, files: Sequence[Path], findings: Sequence[Finding],
 
     if casefile is not None and not dry_run:
         casefile.save()
-    if not dry_run:
-        _git(root, "checkout", "-q", return_to)
-    op.head_after = _git(root, "rev-parse", "HEAD")
-    return op
