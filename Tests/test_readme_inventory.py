@@ -11,6 +11,8 @@ here rather than promised:
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import pathlib
 import re
 
@@ -49,12 +51,9 @@ def _cli_flags() -> set:
 
     argparse.ArgumentParser.add_argument = spy
     try:
-        parser = cli._build_parser() if hasattr(cli, "_build_parser") else None
-        if parser is None:
-            # the parser is built inside main(); --help exits after building
-            import contextlib, io
-            with contextlib.suppress(SystemExit), contextlib.redirect_stdout(io.StringIO()):
-                cli.main(["--help"])
+        # the parser is built inside main(); --help exits after building it
+        with contextlib.suppress(SystemExit), contextlib.redirect_stdout(io.StringIO()):
+            cli.main(["--help"])
     finally:
         argparse.ArgumentParser.add_argument = real
     flags = set(captured)
