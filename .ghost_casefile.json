@@ -1,0 +1,25 @@
+{
+  "cases": [
+    {
+      "detector": "long_function",
+      "shape": "long_function",
+      "outcome": "real",
+      "note": "_build_parser is the flag inventory, one add_argument per flag with its default and help beside it; splitting it would hide the one table the README's defaults test reads against",
+      "when": "2026-09-11T08:27:35.111115+00:00"
+    },
+    {
+      "detector": "long_function",
+      "shape": "long_function",
+      "outcome": "real",
+      "note": "main is the scan pipeline in the order it runs, each check followed by its receipt line; the length is the number of checks, and a dispatch table would hide the order",
+      "when": "2026-09-11T08:27:35.111127+00:00"
+    },
+    {
+      "detector": "intra_function_duplicate_block",
+      "shape": "intra_function_duplicate_block",
+      "outcome": "real",
+      "note": "readiness.assess states the six criteria one Criterion(...) per line on purpose: the list is the specification, and a loop over a table would make it harder to read than the finding it produces",
+      "when": "2026-09-11T08:27:35.111132+00:00"
+    }
+  ]
+}

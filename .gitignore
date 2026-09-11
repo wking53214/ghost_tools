@@ -1,7 +1,6 @@
 __pycache__/
 *.pyc
 .pytest_cache/
-.ghost_baseline.json
 __pycache__/
 *.py[cod]
 build/

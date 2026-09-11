@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.0.7 (2026-09-11)
+
+### It scans itself
+The workflow ran pytest and ruff; the tool's own scan of its own tree was
+a manual act. A `self-scan` job now runs `ghost-buster .` on every push
+against a committed `.ghost_baseline.json` and fails on any new MAJOR or
+CRITICAL. The baseline holds three findings, not sixty-eight: two long
+functions (`_build_parser`, the flag inventory; `main`, the pipeline in
+the order it runs) and one repeated statement (`readiness.assess`, six
+criteria one per line). Each carries its reason in `.ghost_casefile.json`,
+recorded through `ghost-triage`. The sixty-five MINOR findings are
+reported on every run and gate nothing; a baseline that hid them would be
+the audit-proof decision the last sweep report warned about.
+`Tests/test_self_scan.py` holds the policy: MAJOR and CRITICAL only, a
+reason for each, no stale entries.
+
+### Releases
+A `publish` workflow: a `v*` tag builds and publishes to PyPI through
+trusted publishing, no token stored, after checking the tag names the
+version `pyproject.toml` declares. The name `ghost-tools` is free on PyPI
+(checked 2026-09-11). PyPI has to be told about the workflow once before
+the first tag; until then the publish step fails and nothing else happens.
+
 ## 1.0.6 (2026-09-11)
 
 ### What the serum learned, second lesson

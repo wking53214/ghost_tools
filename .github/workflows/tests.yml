@@ -39,3 +39,31 @@ jobs:
         run: python -m pytest -q
       - name: Lint (hard gate)
         run: ruff check .
+
+  self-scan:
+    # The tool that argues silence is the defect scans itself on every push.
+    # The baseline holds three MAJOR findings, each with its reason in the
+    # case file beside it; everything MINOR is reported on every run and
+    # gates nothing. A new MAJOR or CRITICAL fails this job (exit 1).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # the secrets scan reads history
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install gitleaks
+        run: |
+          curl -sSL -o /tmp/gitleaks.tar.gz \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          sudo mv /tmp/gitleaks /usr/local/bin/gitleaks
+      - name: ghost-buster on ghost_tools
+        # --no-tests: the test job above runs the suite; --no-branches: a
+        # PR checkout has no base to compare; --no-ledger: nothing is
+        # committed back from CI, so a ledger here would only ever be one
+        # run long. Each is a declined check and says so in the output.
+        run: |
+          python -m ghost_buster.cli . --no-tests --no-branches --single-repo --no-ledger \
+            --casefile .ghost_casefile.json

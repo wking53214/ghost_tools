@@ -399,10 +399,20 @@ canonical `express_mongoose` conflation still fires.
 ## Install
 
 ```bash
-python -m pip install "git+https://github.com/wking53214/ghost_tools"
+python -m pip install ghost-tools                                   # a released version, from PyPI
+python -m pip install "git+https://github.com/wking53214/ghost_tools"  # main, as it sits
 ghost-buster /path/to/repo      # every check, on by default
 ghost-buster --version          # what you are running
 ```
+
+Releases are version tags (`v1.0.7`); a tag publishes to PyPI through the
+`publish` workflow with no stored token, and the tag has to name the
+version `pyproject.toml` declares or the workflow refuses.
+
+This repository scans itself on every push (the `self-scan` job). The
+committed baseline holds MAJOR findings only, three of them, each with its
+reason in `.ghost_casefile.json`; everything MINOR is reported on every run
+and gates nothing, and a test fails if a baseline entry goes stale.
 
 No dependencies. Python 3.11 or later. `python -m ghost_buster.cli` and the
 other module forms keep working for a checkout without an install.
@@ -1398,7 +1408,7 @@ test suite runs.
 python -m pytest Tests/ -v
 ```
 
-1462 tests (measured 2026-09-11), 0 network calls, 0 API key required -- the semantic-layer
+1465 tests (measured 2026-09-11), 0 network calls, 0 API key required -- the semantic-layer
 tests verify the real parsing/fail-closed/injection-fencing logic via
 `StubModelClient`, the same technique `sentinel_os`'s own `interpretation/`
 package uses for its model-client tests. `test_branches.py`,
