@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.1.0 (2026-09-11)
+
+### `--kernel PATH`: the classes a repository carries that the kernel provides
+When shared contracts are extracted into one package, the copies left
+behind are the migration's remaining work, and no single-repository scan
+can see them. A class in the scanned tree structurally identical to a
+kernel class (docstrings stripped) is `kernel_shadow`, MAJOR, import it
+instead. A class sharing its name and most of its members with a
+different structure is `drifted_contract`, MAJOR. A same-name class
+sharing little else is a coincidence: silent, and counted on the receipt
+line. The kernel's own files inside the scanned tree are skipped.
+
+Measured across the library with a 24-class kernel before shipping. First
+pass, method overlap only: 64 shadows, 12 drifted, 28 coincidences, and
+every enum that had gained a member read as a coincidence because an enum
+has no methods. Second pass, class-level members: 23 drifted, and four
+`Graph` copies that set their fields in `__init__` fell to coincidence.
+Third and shipped: methods when the kernel class has any, members when it
+has none: 64 shadows, 30 drifted contracts, 10 coincidences, each of the
+ten checked by hand. Eleven tests, ten mutants, all killed.
+
+The kernel is an argument, never a dependency: the tool stays stdlib-only
+and public, and the kernel stays wherever its owner keeps it.
+
 ## 1.0.8 (2026-09-11)
 
 ### Consent before running a stranger's code

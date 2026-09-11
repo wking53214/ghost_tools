@@ -105,6 +105,7 @@ state on every run** -- performed, impossible, or declined.
 | correlation | on | `--no-correlate` |
 | ledger (memory) | on | `--no-ledger` |
 | cross-repository seam | asks, on a terminal; single-repo otherwise | `--join PATH` or `--single-repo` says so outright |
+| shared kernel | **off** | opt-in because it needs a path: `--kernel PATH` |
 | mutation (`--mutate`) | **off**, and needs a trusted repository | opt-in on cost: one pytest process per mutant |
 | semantic layer | **off, and has no flag** | a library (`ghost_buster.semantic`), never wired into the CLI, because every call is paid |
 
@@ -170,7 +171,8 @@ Beside the detectors, six repository-level checks and two passes over
 everything, each with its own section below: unmerged branches, test
 status, committed secrets, the project checks (`no_ci_configuration`), the
 structural model (`entry point target missing`, `undeclared dependency`),
-the seam between repositories (`--join`), the ledger (`regressed_finding`,
+the seam between repositories (`--join`), the shared kernel (`--kernel`:
+`kernel_shadow`, `drifted_contract`), the ledger (`regressed_finding`,
 `flapping_finding`, `persistent_finding`, `blind_spot`, trajectory), and
 correlation (four connectors). Readiness reads six criteria off the whole
 set and gates the surgeon's serum on them.
@@ -356,6 +358,46 @@ Duck-typed contracts. One real adapter states its own: "CCC's intake is
 structural: anything carrying .conclusion, .method, .source_material ...
 can be recorded." No static analysis resolves that, and pretending
 otherwise would be inventing evidence, so those go to `unresolved`, named.
+
+## The shared kernel: `--kernel`
+
+When a library extracts the contracts its repositories agree on into one
+package, the repositories that still carry their own copy are the
+migration's remaining work, and no single-repository scan can see them:
+`drifted_copy` compares files inside one tree, and the kernel lives in
+another.
+
+    ghost-buster . --kernel ../cns
+
+Every top-level class in the kernel is hashed by structure with its
+docstrings stripped (the `ast.dump` hash `drifted_copy` uses, so a comment
+or a reformat does not register and a changed condition does). A class in
+the scanned tree with the same name is one of three things:
+
+| shape | finding | severity |
+|---|---|---|
+| identical | `kernel_shadow`: import it instead | MAJOR |
+| same name, most members shared, different structure | `drifted_contract` | MAJOR |
+| same name, little else | nothing, and counted on the receipt line | |
+
+The third row is the calibration. The overlap gate compares method names
+when the kernel class has any, and class-level names (an Enum's members, a
+dataclass's fields) when it has none, so an enum with a member added is a
+drifted contract and a `Node` in a tree-drawing module is not a copy of a
+graph kernel's `Node`. A kernel checkout sitting inside the scanned tree (a
+vendored copy, a submodule) is skipped: a kernel that shadows itself is the
+tool reporting its own argument. Disclosed scope: a member-less class with
+a different base (`class ValidationError(Exception)` beside the kernel's
+`class ValidationError(GovernanceError)`) has nothing to compare and is
+counted as a coincidence.
+
+**Measured before it shipped**, with a 24-class kernel against 37
+repositories: 64 shadows (34 in one repository that vendors the kernel's
+source of origin, 16 in another), 30 drifted contracts, 10 same-name
+classes left silent. The method-or-members gate came from that run: on
+methods alone, four `Graph` copies that declare their fields in `__init__`
+read as coincidences; on members alone, an enum family read as
+coincidences instead.
 
 ## What AI-written code gets wrong
 
@@ -1415,7 +1457,7 @@ test suite runs.
 python -m pytest Tests/ -v
 ```
 
-1483 tests (measured 2026-09-11), 0 network calls, 0 API key required -- the semantic-layer
+1505 tests (measured 2026-09-11), 0 network calls, 0 API key required -- the semantic-layer
 tests verify the real parsing/fail-closed/injection-fencing logic via
 `StubModelClient`, the same technique `sentinel_os`'s own `interpretation/`
 package uses for its model-client tests. `test_branches.py`,
