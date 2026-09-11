@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.2.1 (2026-09-11)
+
+### The calibration record
+"Measured before built" lived in prose: 24 repositories here, 162
+callables there, 643 of 655 somewhere else, each in the paragraph that
+happened to be written that day. `ghost_buster/calibration.json` now holds
+one record per detector and per repository-level check: the corpus, the
+date, the counts before and after each calibration, the named exclusions,
+what the detector discloses it cannot see, and the prose account to check
+against. Thirty records. Two of them (`long_function`, the ledger's
+thresholds) have no corpus, and say so: a threshold set by convention is
+not a measurement, and the record admits it rather than leaving the field
+blank. `Tests/test_calibration.py` holds every registered detector to
+having a record and every detector record to naming a detector that
+exists, so a detector cannot ship uncalibrated in silence and a record
+cannot outlive its detector.
+
 ## 1.2.0 (2026-09-11)
 
 ### `--priors`: what this team has decided, and whether it held

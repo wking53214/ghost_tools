@@ -30,8 +30,10 @@ Seven rules, each one written down because a real defect happened without it.
    is CRITICAL, a high-entropy string near the word "key" is MAJOR.
 4. **Measured before built.** Every detector was calibrated on real
    repositories before it shipped, every exclusion was a false positive
-   first, and the numbers are in `CHANGELOG.md` with the date. A check that
-   fires on nothing is not free.
+   first, and the numbers are in `ghost_buster/calibration.json` (one
+   record per detector: corpus, date, counts before and after, the named
+   exclusions, and the prose account in `CHANGELOG.md`). A record with no
+   corpus says so. A check that fires on nothing is not free.
 5. **Memory only adds.** The ledger never suppresses a finding, never
    lowers a severity, never tunes a threshold. A self-tuning suppressor
    walks itself to silence.
@@ -1481,7 +1483,7 @@ test suite runs.
 python -m pytest Tests/ -v
 ```
 
-1525 tests (measured 2026-09-11), 0 network calls, 0 API key required -- the semantic-layer
+1533 tests (measured 2026-09-11), 0 network calls, 0 API key required -- the semantic-layer
 tests verify the real parsing/fail-closed/injection-fencing logic via
 `StubModelClient`, the same technique `sentinel_os`'s own `interpretation/`
 package uses for its model-client tests. `test_branches.py`,
