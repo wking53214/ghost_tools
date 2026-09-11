@@ -15,7 +15,7 @@
       "related_files": [],
       "snippet": null
     },
-    "first_seen": "2026-09-11T08:47:40.925276+00:00",
+    "first_seen": "2026-09-11T09:30:49.550895+00:00",
     "id": "ghost-8504b433bb13",
     "layer": "mechanical",
     "severity": "major",
@@ -33,44 +33,16 @@
     "evidence": {
       "absolute_file": null,
       "file": "ghost_buster/cli.py",
-      "line_end": 737,
+      "line_end": 738,
       "line_start": 494,
       "related_files": [],
       "snippet": null
     },
-    "first_seen": "2026-09-11T08:47:40.925414+00:00",
-    "id": "ghost-fc3a443c26a2",
+    "first_seen": "2026-09-11T09:30:49.551022+00:00",
+    "id": "ghost-84c328ae5261",
     "layer": "mechanical",
     "severity": "major",
     "status": "suppressed",
-    "summary": "'main' spans 243 lines (threshold 80)"
-  },
-  {
-    "attributes": {},
-    "category": "duplication",
-    "confidence": null,
-    "detail": "Structural fingerprint match within one function, not a whole-function match (near_duplicate_function's detection is blind to this shape). Typical real cause: several branches each hand-build the same kind of object or perform the same sequence of calls -- worth a single shared helper if the branches really are doing the same thing, not just a coincidental resemblance.",
-    "detector": "intra_function_duplicate_block",
-    "disposition": null,
-    "disposition_note": "",
-    "evidence": {
-      "absolute_file": null,
-      "file": "ghost_buster/readiness.py",
-      "line_end": 119,
-      "line_start": 119,
-      "related_files": [
-        "ghost_buster/readiness.py:139-139",
-        "ghost_buster/readiness.py:143-143",
-        "ghost_buster/readiness.py:147-147",
-        "ghost_buster/readiness.py:133-133"
-      ],
-      "snippet": null
-    },
-    "first_seen": "2026-09-11T08:47:42.035756+00:00",
-    "id": "ghost-0424b53c8463",
-    "layer": "mechanical",
-    "severity": "major",
-    "status": "suppressed",
-    "summary": "'assess' repeats the same single statement 5 times (lines 119-119, 139-139, 143-143, 147-147, 133-133): same shape, names/literals differ"
+    "summary": "'main' spans 244 lines (threshold 80)"
   }
 ]

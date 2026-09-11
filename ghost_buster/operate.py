@@ -76,6 +76,12 @@ from .schema import Finding
 from .speed import Profile
 
 
+def _retired(casefile) -> set:
+    """The finding ids the case file has dismissed as false, or nothing."""
+    return casefile.retired() if casefile is not None else set()
+
+
+
 class Refused(Exception):
     """The surgeon will not operate, and says why."""
 
@@ -198,7 +204,7 @@ def operate(root: Path, files: Sequence[Path], findings: Sequence[Finding],
     branch = branch or f"ghost/operate-{datetime.now(timezone.utc):%Y%m%d-%H%M%S}"
 
     op = Operation(root=root, branch=branch, came_in_on=came_in_on, head_before=head_before,
-                   readiness_before=readiness.assess(findings, checks), dry_run=dry_run)
+                   readiness_before=readiness.assess(findings, checks, _retired(casefile)), dry_run=dry_run)
     current = list(findings)
 
     if not dry_run:
@@ -233,7 +239,7 @@ def operate(root: Path, files: Sequence[Path], findings: Sequence[Finding],
                 casefile.record_outcome(by_id[fid], EXPOSED, f"by {name}")
         current = after
 
-    op.readiness_after = readiness.assess(current, checks)
+    op.readiness_after = readiness.assess(current, checks, _retired(casefile))
     op.on_the_table = [f for f in current if f.detector not in ("name_disagreement",)]
 
     if op.readiness_after.candidate:

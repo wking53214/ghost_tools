@@ -173,5 +173,15 @@ class Casefile:
         """finding id -> the prior that applies to it. Nothing is hidden."""
         return {f.id: self.prior(f.detector, shape_of(f)) for f in findings}
 
+    def retired(self) -> set:
+        """Finding ids whose most recent decision was "false" (suppress).
+        A candidate somebody read and dismissed stays reported and stops
+        counting as unread; a later decision the other way un-retires it."""
+        latest: Dict[str, Case] = {}
+        for case in sorted(self.cases, key=lambda c: c.when):
+            if case.finding_id and case.outcome in ("real", "false"):
+                latest[case.finding_id] = case
+        return {fid for fid, case in latest.items() if case.outcome == "false"}
+
     def __len__(self) -> int:
         return len(self.cases)

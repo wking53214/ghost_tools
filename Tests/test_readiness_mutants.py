@@ -16,6 +16,15 @@ TESTS = "Tests/test_readiness.py"
 _R = "ghost_buster/readiness.py"
 
 MUTANTS = [
+    ("a candidate fails the gate like a credential", _R,
+     "        criteria.append(Criterion(SECRETS, established == 0, evidence))\n",
+     "        criteria.append(Criterion(SECRETS, not candidates and established == 0, evidence))\n"),
+    ("a credential is a candidate", _R,
+     '        established = _count(findings, "committed_secret", Severity.CRITICAL)\n',
+     '        established = 0\n'),
+    ("retirement is ignored, every candidate is unread", _R,
+     "        unread = [f for f in candidates if f.id not in retired]\n",
+     "        unread = list(candidates)\n"),
     ("the criterion counts the tests but does not name them", _R,
      '                                  else f"{n} failing or flaky test(s): {_name_tests(bad)}"))',
      '                                  else f"{n} failing or flaky test(s)"))'),

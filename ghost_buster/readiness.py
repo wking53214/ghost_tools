@@ -20,7 +20,10 @@ record of which checks ran. Nothing here re-derives anything.
 
     parses completely            no unassessable_file
     tests run and pass           tests RAN, no MAJOR test_status
-    no committed secrets         secrets RAN, no committed_secret
+    no committed secrets         secrets RAN, no CRITICAL committed_secret; a MAJOR
+                                 one is a shape-only candidate, reported beside the
+                                 verdict and retired by a "false" decision in the
+                                 case file, never a failure on its own
     not a drifted copy           no MAJOR drifted_copy
     no swallowed-everything      no MAJOR swallowed_exception
     no hollow contracts          no dead_end_call
@@ -37,7 +40,7 @@ with the library in view.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 from .ledger import RAN
 from .schema import Finding, Severity
@@ -110,9 +113,17 @@ def _count(findings: Iterable[Finding], detector: str,
                if f.detector == detector and (severity is None or f.severity is severity))
 
 
-def assess(findings: Iterable[Finding], checks: Dict[str, str]) -> Readiness:
-    """Read candidacy off what the scan already found and what it ran."""
+def assess(findings: Iterable[Finding], checks: Dict[str, str],
+           retired: Optional[Set[str]] = None) -> Readiness:
+    """Read candidacy off what the scan already found and what it ran.
+
+    `retired` is the set of finding ids the case file holds a "false"
+    decision for: a secrets candidate somebody read and found to be a
+    fixture, a word, a transcript. It changes what the evidence says, not
+    the verdict; only an established credential (CRITICAL) fails the gate.
+    """
     findings = list(findings)
+    retired = retired or set()
     criteria: List[Criterion] = []
 
     n = _count(findings, "unassessable_file")
@@ -129,9 +140,19 @@ def assess(findings: Iterable[Finding], checks: Dict[str, str]) -> Readiness:
         criteria.append(Criterion(TESTS, None, f"tests {checks.get('tests', 'not run')}; run with --tests"))
 
     if checks.get("secrets") == RAN:
-        n = _count(findings, "committed_secret")
-        criteria.append(Criterion(SECRETS, n == 0,
-                                  "none found" if n == 0 else f"{n} committed secret(s)"))
+        established = _count(findings, "committed_secret", Severity.CRITICAL)
+        candidates = [f for f in findings
+                      if f.detector == "committed_secret" and f.severity is not Severity.CRITICAL]
+        unread = [f for f in candidates if f.id not in retired]
+        if established:
+            evidence = f"{established} credential(s) established"
+        elif not candidates:
+            evidence = "none found"
+        else:
+            evidence = (f"none established; {len(unread)} candidate(s) to read"
+                        + (f", {len(candidates) - len(unread)} retired as false in the case file"
+                           if len(unread) < len(candidates) else ""))
+        criteria.append(Criterion(SECRETS, established == 0, evidence))
     else:
         criteria.append(Criterion(SECRETS, None, f"secrets {checks.get('secrets', 'not run')}; run with --secrets"))
 

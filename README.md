@@ -65,6 +65,13 @@ which it was not before 0.18.
 run and pass, no committed secrets, not a drifted copy, no
 swallowed-everything handlers, no hollow contracts. A criterion the scan
 could not assess counts **against** the patient. The gate fails closed.
+"No committed secrets" fails on an established credential (a
+provider-issued prefix, a private key: CRITICAL); a shape-only candidate
+(MAJOR) is reported beside the verdict as something to read, and a
+"false" decision recorded in the case file retires it. The pre-flight
+sweep found seven repositories failing this criterion on candidates alone,
+none of them a credential on the evidence, which is how a gate gets
+skimmed.
 
 **Operate.** `--operate` opens a branch from a clean tree, applies every
 remedy that carries a verification that can fail, re-examines after each,
@@ -485,7 +492,7 @@ Releases are version tags (`v1.0.7`); a tag publishes to PyPI through the
 version `pyproject.toml` declares or the workflow refuses.
 
 This repository scans itself on every push (the `self-scan` job). The
-committed baseline holds MAJOR findings only, three of them, each with its
+committed baseline holds MAJOR findings only, two of them as of 1.2.2, each with its
 reason in `.ghost_casefile.json`; everything MINOR is reported on every run
 and gates nothing, and a test fails if a baseline entry goes stale.
 
@@ -1483,7 +1490,7 @@ test suite runs.
 python -m pytest Tests/ -v
 ```
 
-1533 tests (measured 2026-09-11), 0 network calls, 0 API key required -- the semantic-layer
+1543 tests (measured 2026-09-11), 0 network calls, 0 API key required -- the semantic-layer
 tests verify the real parsing/fail-closed/injection-fencing logic via
 `StubModelClient`, the same technique `sentinel_os`'s own `interpretation/`
 package uses for its model-client tests. `test_branches.py`,
