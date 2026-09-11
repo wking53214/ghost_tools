@@ -197,6 +197,44 @@ def _memoised(loop_parts: List[ast.AST]) -> Set[int]:
     return out
 
 
+def _filled_each_pass(loop_parts: List[ast.AST]) -> Set[int]:
+    """Calls whose result is a fresh accumulator: `x = f(...)` inside the
+    loop, with `x` then filled in the same loop -- an item stored under it
+    (`x[k] = v`, `x[k].add(v)`, `x[k] += 1`), a method called on it, or an
+    augmented assignment into it. Hoisting the call would make every pass
+    share one container, which is a bug, not a speedup. The third serum
+    reported two `defaultdict(set)` constructions this way; a
+    `defaultdict` whose argument never changes is still built for its
+    contents, and the contents change every pass."""
+    out: Set[int] = set()
+    for part in loop_parts:
+        for node in ast.walk(part):
+            if not (isinstance(node, ast.Assign) and isinstance(node.value, ast.Call)):
+                continue
+            names = {t.id for t in node.targets if isinstance(t, ast.Name)}
+            if names and _filled(loop_parts, names):
+                out.add(id(node.value))
+    return out
+
+
+def _filled(loop_parts: List[ast.AST], names: Set[str]) -> bool:
+    for part in loop_parts:
+        for node in ast.walk(part):
+            if isinstance(node, ast.AugAssign):
+                target = node.target
+            elif isinstance(node, (ast.Attribute, ast.Subscript)) and isinstance(node.ctx, ast.Store):
+                target = node
+            elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+                target = node.func.value
+            else:
+                continue
+            while isinstance(target, (ast.Attribute, ast.Subscript)):
+                target = target.value
+            if isinstance(target, ast.Name) and target.id in names:
+                return True
+    return False
+
+
 def _add(out: List[Pitstop], seen: Set[Pitstop], stop: Pitstop) -> None:
     if stop not in seen:
         seen.add(stop)
@@ -225,6 +263,7 @@ def find_pitstops(files: Sequence[Path]) -> List[Pitstop]:
             variant = _variant_in(loop)
             parts = _iterated(loop)
             memo = _memoised(parts)
+            filled = _filled_each_pass(parts)
             for part in parts:
                 for node in ast.walk(part):
                     # x in SOME_LIST, where SOME_LIST is a module-level list literal
@@ -243,6 +282,7 @@ def find_pitstops(files: Sequence[Path]) -> List[Pitstop]:
                             and all(isinstance(a, (ast.Name, ast.Constant)) for a in node.args)
                             and not (_names(node) & variant)
                             and id(node) not in memo
+                            and id(node) not in filled
                             and not _may_change(parts, node)):
                         _add(out, seen, Pitstop(path, node.lineno, INVARIANT_CALL,
                                                 f"`{node.func.id}(...)` with arguments the loop never changes"))
