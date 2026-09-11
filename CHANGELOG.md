@@ -1,5 +1,82 @@
 # Changelog
 
+## 1.0.0 (2026-09-11)
+
+The thesis: a scanner that says what it could not see, and a surgeon that
+heals on a branch, learns from every cut, and offers the serum only to a
+candidate.
+
+### The surgeon
+`--operate`. On a CLEAN tree, open a branch, apply every remedy that carries
+a verification that can fail, re-examine after each cut, commit each cut,
+record what healed and what was exposed in the case file, and assess
+candidacy for enhancement. The branch the patient came in on is never
+written to, and that is checked by comparing its HEAD before and after.
+Refuses a dirty tree and a tree that is not a repository. A dry run
+diagnoses and writes nothing.
+
+One remedy qualifies in 1.0: annotate, whose every edit is verified by
+syntax-tree identity. A drifted copy, a swallowed exception, a hollow
+contract each need a judgement the tree does not contain and are left on
+the table for a human with the evidence beside them. A remedy joins the
+list the day it carries a check that can fail, not before.
+
+The first patient was ghost_tools itself, and its first operation found
+two bugs in the surgeon. A patient that came in on a detached HEAD was
+sent back to "HEAD", which is the table, so the untouched check fired;
+it now goes back to the commit it came in on. And eight committed secrets
+were reported "healed" by writing comments: the re-examination is
+run_all, which does not run gitleaks, so the secrets were simply absent
+from the second look. A finding from a layer the re-examination does not
+run is now carried forward unchanged and never counted as healed. Both
+are pinned by tests and by mutants.
+
+A third, caught by the suite: the surgeon's one identifier that said
+`patient` put that word into the vestigial-domain detector's reference
+corpus (this tool's own source), and the detector went blind to it in
+every scan. Renamed. The metaphor lives in the prose, not the names.
+
+### The case file
+`ghost_buster/casefile.py`. Until now ghost-triage's decisions flowed one
+way, forward into ghost-writer, and never back: a finding suppressed three
+times in three repositories was presented the fourth time with the
+confidence it had the first. `ghost-triage --casefile` records each
+decision; `ghost-buster --casefile` shows the history beside every finding
+it applies to; `--operate` records what each cut healed and exposed. A
+prior NEVER hides a finding and never changes a severity. Cases are keyed
+by the kind of finding, not the file, and an unseen shape falls back to the
+detector.
+
+### Readiness
+`ghost_buster/readiness.py`. Enhancement applied to an unhealthy codebase
+amplifies what is there, so candidacy is gated on health and the gate
+fails CLOSED: a criterion the scan could not assess counts against the
+patient. Six criteria, every one read off findings the scan already
+produced: parses completely, tests run and pass, no committed secrets, not
+a drifted copy, no swallowed-everything handlers, no hollow contracts.
+"Someone depends on it" is a cross-repository fact and is left out rather
+than guessed; the full-dose serum is gated on it by a human.
+
+### Speed
+`ghost_buster/speed.py`. Two kinds of pitstop, reported at different
+confidence because they are different evidence. `--profile` instruments a
+run and counts work done more than once with the same input -- parses,
+reads, subprocesses -- ranked by cost; it is how the 9.5-parses-per-file
+redundancy was found, and the corpus in 0.18.0 was its first dose. Two
+static detectors, `list_membership_in_loop` and `loop_invariant_call`, read
+shapes off the tree at MINOR, because the tree cannot tell a list of four
+from a list of four million.
+
+The invariant-call rule was wrong twice before it was right, and each was
+caught by measuring against ghost_tools: 295 findings when only the loop
+target was checked (`tree = parse(path)` inside the body varies too), 70
+when constant-time builtins counted (55 were str/len/type), 9 after both
+fixes, each once after nested loops stopped double-reporting.
+
+### Also
+`is_test_path` shared by four detectors. Full suite 1,400+ tests, every
+new module with mutants.
+
 ## 0.18.0 (2026-09-11)
 
 ### ghost_buster

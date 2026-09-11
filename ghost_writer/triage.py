@@ -28,6 +28,7 @@ import sys
 from pathlib import Path
 from typing import Iterable, List, Optional, Tuple
 
+from ghost_buster.casefile import Casefile
 from ghost_buster.schema import Finding, FindingSet
 
 DISPOSITIONS = ("fix", "suppress", "document")
@@ -83,6 +84,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
     parser.add_argument("--list", action="store_true", help="list findings still awaiting a decision")
     parser.add_argument("--out", type=Path, default=None, help="write to this file instead of in place")
+    parser.add_argument(
+        "--casefile", type=Path, default=None, metavar="PATH",
+        help="also record each decision in this case file, so the next scan can show "
+             "what happened the last time this kind of finding came up. Point every "
+             "repository at one file and the surgeon learns across the library. "
+             "Never hides a finding; only attaches history to it.",
+    )
     args = parser.parse_args(argv)
 
     if not args.findings.is_file():
@@ -100,6 +108,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         target = args.out or args.findings
         target.write_text(FindingSet(items).to_json(), encoding="utf-8")
         print(f"recorded {len(args.set)} decision(s) in {target}")
+        if args.casefile:
+            decided_ids = {ident for ident, _, _ in args.set}
+            just_decided = [f for f in items if f.disposition
+                            and any(f.id.startswith(i) for i in decided_ids)]
+            casefile = Casefile(args.casefile)
+            learned = casefile.record_dispositions(just_decided)
+            casefile.save()
+            print(f"case file {args.casefile}: {learned} lesson(s) added, {len(casefile)} total")
 
     if args.list or not args.set:
         waiting = pending(items)

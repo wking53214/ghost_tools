@@ -1530,6 +1530,7 @@ from .copies import DETECTOR as DRIFTED_COPY_DETECTOR          # noqa: E402
 from .copies import detect_drifted_copies                      # noqa: E402
 from .deadend import DETECTOR as DEAD_END_DETECTOR             # noqa: E402
 from .deadend import detect_dead_end_calls                     # noqa: E402
+from .speed import INVARIANT_CALL, LIST_IN_LOOP, detect_pitstops  # noqa: E402
 from .swallowed import DETECTOR as SWALLOWED_DETECTOR          # noqa: E402
 from .swallowed import detect_swallowed_exceptions             # noqa: E402
 from .naming import (                                            # noqa: E402
@@ -1547,6 +1548,10 @@ register(DISAGREEMENT_DETECTOR)(detect_name_disagreements)
 register(DEAD_END_DETECTOR)(detect_dead_end_calls)
 register(DRIFTED_COPY_DETECTOR)(detect_drifted_copies)
 register(SWALLOWED_DETECTOR)(detect_swallowed_exceptions)
+# One registration produces two detector names; the registry keys on
+# the name the finding carries, so both must be visible to a baseline.
+register(LIST_IN_LOOP)(lambda files: [f for f in detect_pitstops(files) if f.detector == LIST_IN_LOOP])
+register(INVARIANT_CALL)(lambda files: [f for f in detect_pitstops(files) if f.detector == INVARIANT_CALL])
 
 
 def run_all(files: Iterable[Path]) -> List[Finding]:
