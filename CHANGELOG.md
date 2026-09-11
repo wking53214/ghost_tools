@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.0.4 (2026-09-11)
+
+### Serum, dose one, and what the serum learned
+ghost_tools 1.0.3 was the first patient to meet all six readiness
+criteria, and the first to be offered the serum. It ranked twelve static
+pitstops. Five were hoistable invariant calls; hoisted, and measured
+with the same profiler: run_all 2.76s before, 2.85s after, five runs
+each. No effect. The calls were cheap and ran once per finding. The
+static rule saw a shape, not a cost.
+
+The other seven were not pitstops at all, and the detector now knows the
+three reasons why. A call is not invariant when something else in the
+loop can change what its arguments name: another call that receives the
+same name (`remedy(root, files)` before `rescan(files)`), a method called
+on it (`scratch.restore(...)`), or a store into it. A membership test
+against a constant of eight elements or fewer costs what a set costs and
+is not reported. A call inside `if x is None: x = f(...)` runs once, not
+once per pass. Twelve pitstops on ghost_tools became zero; six new tests
+and five new mutants, all killed.
+
+The serum's first verdict on its first patient: healthy, lean, nothing
+measurable to gain. The serum's first lesson: a static pitstop is a
+hypothesis, and only the profiler is evidence.
+
 ## 1.0.3 (2026-09-11)
 
 ### The bait reproduced itself

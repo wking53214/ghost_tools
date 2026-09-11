@@ -106,16 +106,94 @@ class Pitstop:
     what: str
 
 
-def _list_literals_bound(tree: ast.Module) -> Set[str]:
-    """Names bound to a list or tuple literal at module level. The one case
-    where the tree KNOWS the container is a list and not something a set
-    would break."""
-    out: Set[str] = set()
+# A membership test against a constant this small is not a scan worth
+# reporting: `x in ("self", "cls")` costs what a set lookup costs. The
+# first serum reported three of these (a two-tuple and two three-tuples)
+# and hoisting them would have changed nothing measurable.
+_SMALL_LITERAL = 8
+
+
+def _list_literals_bound(tree: ast.Module) -> Dict[str, int]:
+    """Names bound to a list or tuple literal at module level, with the
+    literal's length. The one case where the tree KNOWS the container is a
+    list and not something a set would break, and knows how long it is."""
+    out: Dict[str, int] = {}
     for node in tree.body:
         if isinstance(node, ast.Assign) and isinstance(node.value, (ast.List, ast.Tuple)):
             for t in node.targets:
                 if isinstance(t, ast.Name):
-                    out.add(t.id)
+                    out[t.id] = len(node.value.elts)
+    return out
+
+
+def _may_change(loop_parts: List[ast.AST], call: ast.Call) -> bool:
+    """Could something else in this loop change what `call`'s arguments
+    refer to between iterations? The tree cannot see side effects, so it
+    looks for the shapes that usually carry them, and abstains on any:
+
+      - another call in the loop that receives one of the same names as a
+        bare argument (`remedy(root, files)` before `rescan(files)`: the
+        remedy edited what `files` names);
+      - a method called on one of those names (`scratch.restore(original)`
+        before `_run_test(scratch, ...)`);
+      - an attribute or subscript of one of those names assigned to.
+
+    Constant-time builtins (`str(path)`) and constructor-looking callees
+    (`Finding(file=...)`) do not count: they read, they do not change.
+    The first serum ranked four invariant calls that were nothing of the
+    kind, all of them one of these three shapes."""
+    args = {a.id for a in call.args if isinstance(a, ast.Name)}
+    if not args:
+        return False
+    for part in loop_parts:
+        for node in ast.walk(part):
+            if node is call:
+                continue
+            if isinstance(node, ast.Call):
+                callee = node.func
+                if (isinstance(callee, ast.Attribute) and isinstance(callee.value, ast.Name)
+                        and callee.value.id in args):
+                    return True
+                if (isinstance(callee, ast.Name) and callee.id not in _CHEAP
+                        and not callee.id[:1].isupper()):
+                    passed = {a.id for a in node.args if isinstance(a, ast.Name)}
+                    passed |= {k.value.id for k in node.keywords if isinstance(k.value, ast.Name)}
+                    if passed & args:
+                        return True
+            elif isinstance(node, (ast.Attribute, ast.Subscript)) and isinstance(node.ctx, ast.Store):
+                base = node.value
+                while isinstance(base, (ast.Attribute, ast.Subscript)):
+                    base = base.value
+                if isinstance(base, ast.Name) and base.id in args:
+                    return True
+    return False
+
+
+def _memoised(loop_parts: List[ast.AST]) -> Set[int]:
+    """Calls that run once per loop, not once per pass: the value of
+    `x = f(...)` inside `if x is None:` or `if not x:`. A memo is the
+    hoist already done, lazily; reporting it asks for what is there."""
+    out: Set[int] = set()
+    for part in loop_parts:
+        for node in ast.walk(part):
+            if not isinstance(node, ast.If):
+                continue
+            test = node.test
+            guarded = None
+            if (isinstance(test, ast.Compare) and len(test.ops) == 1 and isinstance(test.ops[0], ast.Is)
+                    and isinstance(test.left, ast.Name) and isinstance(test.comparators[0], ast.Constant)
+                    and test.comparators[0].value is None):
+                guarded = test.left.id
+            elif isinstance(test, ast.UnaryOp) and isinstance(test.op, ast.Not) and isinstance(test.operand, ast.Name):
+                guarded = test.operand.id
+            if guarded is None:
+                continue
+            for stmt in node.body:
+                if (isinstance(stmt, ast.Assign)
+                        and any(isinstance(tg, ast.Name) and tg.id == guarded for tg in stmt.targets)):
+                    # every call in the memoised value, nested ones included:
+                    # `declares = bool(_declared_dependencies(root))` runs once
+                    out |= {id(c) for c in ast.walk(stmt.value) if isinstance(c, ast.Call)}
     return out
 
 
@@ -145,13 +223,16 @@ def find_pitstops(files: Sequence[Path]) -> List[Pitstop]:
             if not isinstance(loop, _LOOPS):
                 continue
             variant = _variant_in(loop)
-            for part in _iterated(loop):
+            parts = _iterated(loop)
+            memo = _memoised(parts)
+            for part in parts:
                 for node in ast.walk(part):
                     # x in SOME_LIST, where SOME_LIST is a module-level list literal
+                    # long enough for the scan to matter
                     if (isinstance(node, ast.Compare) and len(node.ops) == 1
                             and isinstance(node.ops[0], (ast.In, ast.NotIn))
                             and isinstance(node.comparators[0], ast.Name)
-                            and node.comparators[0].id in lists):
+                            and lists.get(node.comparators[0].id, 0) > _SMALL_LITERAL):
                         _add(out, seen, Pitstop(path, node.lineno, LIST_IN_LOOP,
                                                 f"`in {node.comparators[0].id}`, a module-level list"))
                     # a call whose arguments cannot change between iterations
@@ -160,7 +241,9 @@ def find_pitstops(files: Sequence[Path]) -> List[Pitstop]:
                             and node.func.id not in _CHEAP
                             and node.args and not node.keywords
                             and all(isinstance(a, (ast.Name, ast.Constant)) for a in node.args)
-                            and not (_names(node) & variant)):
+                            and not (_names(node) & variant)
+                            and id(node) not in memo
+                            and not _may_change(parts, node)):
                         _add(out, seen, Pitstop(path, node.lineno, INVARIANT_CALL,
                                                 f"`{node.func.id}(...)` with arguments the loop never changes"))
     return out
