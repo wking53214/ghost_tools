@@ -24,6 +24,7 @@ from .boundary import (
 )
 from .trust import check as trust_check, grant as trust_grant, declined_receipt
 from .kernel import check_kernel, render_report as render_kernel_report
+from .priors import build as build_priors, render as render_priors, to_json as priors_json
 from .ledger import (
     COULD_NOT_RUN, DECLINED, Ledger, LedgerError, NOT_RUN, RAN,
     _head_commit, render_report as render_ledger_report,
@@ -194,6 +195,11 @@ def _build_parser() -> argparse.ArgumentParser:
              "measured complement, and it is how the 9.5-parses-per-file "
              "redundancy in this toolkit was found. Adds a few percent to the run.",
     )
+    parser.add_argument(
+        "--priors", action="store_true",
+        help="print what the case file knows, per detector: how many decisions, how often false, "
+             "how often the decision held against the ledger, and the latest reasons. Scans nothing. "
+             "With --json, as data.")
     parser.add_argument(
         "--casefile", type=Path, default=None, metavar="PATH",
         help="the surgeon's case file: history from ghost-triage decisions and "
@@ -495,6 +501,14 @@ def main(argv: List[str] = None) -> int:
         print(f"ghost_buster: trust: {args.trusted.identity}: {args.trusted.reason}", file=sys.stderr)
     elif args.trusted.store is None:
         print(f"ghost_buster: trust: {args.trusted.reason}", file=sys.stderr)
+
+    if args.priors:
+        casefile_path = args.casefile or (args.path / ".ghost_casefile.json")
+        ledger_path = args.ledger_path or (args.path / ".ghost_ledger.json")
+        ledger = Ledger(ledger_path) if ledger_path.is_file() else None
+        rows = build_priors(Casefile(casefile_path), ledger)
+        print(priors_json(rows) if args.json else render_priors(rows, casefile_path, ledger_path if ledger else None))
+        return 0
 
     if not args.path.is_dir():
         print(f"error: {args.path} is not a directory", file=sys.stderr)

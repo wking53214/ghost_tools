@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.2.0 (2026-09-11)
+
+### `--priors`: what this team has decided, and whether it held
+The case file recorded decisions and the ledger recorded what findings
+did over time, and nothing read them together. `--priors` does: per kind
+of finding, how many decisions, how often the decision was "false", how
+often it held, and the latest reasons. A fix held when the finding is gone
+and has not returned; it is `open` while the tree still has it and
+`returned` if it came back. A suppression or a documentation decision
+holds until a later decision on the same finding says otherwise.
+
+To judge a decision the case file has to know which finding it was about
+and which word was used, so a case now carries the finding id, the file,
+and the decision (`fix`, `suppress`, `document`). Cases recorded before
+this carry none and are `unknown`, never counted as held; an old case file
+loads unchanged. Twelve tests, seven mutants, all killed.
+
 ## 1.1.0 (2026-09-11)
 
 ### `--kernel PATH`: the classes a repository carries that the kernel provides

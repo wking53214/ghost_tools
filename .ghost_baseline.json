@@ -10,17 +10,17 @@
     "evidence": {
       "absolute_file": null,
       "file": "ghost_buster/cli.py",
-      "line_end": 366,
-      "line_start": 138,
+      "line_end": 372,
+      "line_start": 139,
       "related_files": [],
       "snippet": null
     },
-    "first_seen": "2026-09-11T08:44:10.950239+00:00",
-    "id": "ghost-a00874d155e8",
+    "first_seen": "2026-09-11T08:47:40.925276+00:00",
+    "id": "ghost-8504b433bb13",
     "layer": "mechanical",
     "severity": "major",
     "status": "suppressed",
-    "summary": "'_build_parser' spans 228 lines (threshold 80)"
+    "summary": "'_build_parser' spans 233 lines (threshold 80)"
   },
   {
     "attributes": {},
@@ -33,17 +33,17 @@
     "evidence": {
       "absolute_file": null,
       "file": "ghost_buster/cli.py",
-      "line_end": 723,
-      "line_start": 488,
+      "line_end": 737,
+      "line_start": 494,
       "related_files": [],
       "snippet": null
     },
-    "first_seen": "2026-09-11T08:44:10.950379+00:00",
-    "id": "ghost-1c15b573d733",
+    "first_seen": "2026-09-11T08:47:40.925414+00:00",
+    "id": "ghost-fc3a443c26a2",
     "layer": "mechanical",
     "severity": "major",
     "status": "suppressed",
-    "summary": "'main' spans 235 lines (threshold 80)"
+    "summary": "'main' spans 243 lines (threshold 80)"
   },
   {
     "attributes": {},
@@ -66,7 +66,7 @@
       ],
       "snippet": null
     },
-    "first_seen": "2026-09-11T08:44:11.876497+00:00",
+    "first_seen": "2026-09-11T08:47:42.035756+00:00",
     "id": "ghost-0424b53c8463",
     "layer": "mechanical",
     "severity": "major",
