@@ -532,10 +532,11 @@ def test_suite_that_exceeds_the_timeout_did_not_run(tmp_path):
     assert "timed out" in report.reason
 
 
-def test_cli_tests_flag_runs_the_suite_and_reports(tmp_path, capsys):
+def test_cli_tests_flag_runs_the_suite_and_reports(tmp_path, capsys, monkeypatch):
+    monkeypatch.setenv("GHOST_TOOLS_TRUST", str(tmp_path / "trust.json"))
     proj = _project(tmp_path, {"test_bad.py": "def test_bad():\n    assert False\n"})
     (proj / "module.py").write_text("x = 1\n")
-    rc = main([str(proj), "--tests", "--tests-reruns", "1", "--json",
+    rc = main([str(proj), "--trust", "--tests", "--tests-reruns", "1", "--json",
                "--baseline", str(tmp_path / "b.json")])
     out, err = capsys.readouterr()
     assert rc == 1
@@ -543,7 +544,7 @@ def test_cli_tests_flag_runs_the_suite_and_reports(tmp_path, capsys):
     assert '"detector": "test_status"' in out
 
 
-def test_cli_reports_a_failing_test_with_no_flag_at_all(tmp_path, capsys):
+def test_cli_reports_a_failing_test_with_no_flag_at_all(tmp_path, capsys, monkeypatch):
     """v0.11.0 inverted this test's premise, deliberately.
 
     Until 0.10.1 the suite scan was opt-in, and this test asserted that a
@@ -551,9 +552,15 @@ def test_cli_reports_a_failing_test_with_no_flag_at_all(tmp_path, capsys):
     about it. That is the shape the default flip exists to end: a check
     that is off by default and silent about being off reports a healthy
     project that is not one.
+
+    1.0.8 added consent: the repository is trusted once, beforehand, and
+    the run itself still carries no flag at all.
     """
+    from ghost_buster import trust
+    monkeypatch.setenv(trust.ENV, str(tmp_path / "trust.json"))
     proj = _project(tmp_path, {"test_bad.py": "def test_bad():\n    assert False\n"})
     (proj / "module.py").write_text("x = 1\n")
+    trust.grant(proj)
     rc = main([str(proj), "--json", "--baseline", str(tmp_path / "b.json")])
     out, err = capsys.readouterr()
     assert rc == 1, "a failing test is MAJOR, so the run fails"

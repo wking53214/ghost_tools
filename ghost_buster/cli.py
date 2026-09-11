@@ -22,6 +22,7 @@ from .boundary import (
     build_joined_model, derive_findings as derive_boundary_findings,
     render_report as render_boundary_report, render_single_repo_notice,
 )
+from .trust import check as trust_check, grant as trust_grant, declined_receipt
 from .ledger import (
     COULD_NOT_RUN, DECLINED, Ledger, LedgerError, NOT_RUN, RAN,
     _head_commit, render_report as render_ledger_report,
@@ -249,6 +250,12 @@ def _build_parser() -> argparse.ArgumentParser:
              "origin/master, main, master that resolves)",
     )
     parser.add_argument(
+        "--trust", action="store_true",
+        help="record consent for this repository's code to run here (its test suite, and "
+             "its mutants under --mutate), in a store that belongs to you: "
+             "$GHOST_TOOLS_TRUST or ~/.config/ghost_tools/trust.json. Without a record the "
+             "test and mutation scans are DECLINED with a receipt; nothing else changes.")
+    parser.add_argument(
         "--tests", action=argparse.BooleanOptionalAction, default=True,
         help="ON BY DEFAULT (--no-tests to skip). Runs the project's pytest suite and report every test that did not pass: "
              "failing (MAJOR), flaky (fails in the suite, passes rerun alone; MAJOR), "
@@ -433,7 +440,10 @@ def _run_repository_checks(args, findings: List[Finding], checks: dict):
         checks["branches"] = DECLINED
 
     test_report = None
-    if args.tests:
+    if args.tests and not args.trusted.trusted:
+        print(declined_receipt("test status scan", args.trusted), file=sys.stderr)
+        checks["tests"] = DECLINED
+    elif args.tests:
         test_findings, test_report = scan_tests(
             args.path, python=args.tests_python, reruns=args.tests_reruns,
             timeout=args.tests_timeout,
@@ -471,6 +481,13 @@ def _run_repository_checks(args, findings: List[Finding], checks: dict):
 def main(argv: List[str] = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
+    # Consent to run this repository's code, resolved once and carried on
+    # args so every check that executes code asks the same answer.
+    args.trusted = trust_grant(args.path) if args.trust else trust_check(args.path)
+    if args.trust:
+        print(f"ghost_buster: trust: {args.trusted.identity}: {args.trusted.reason}", file=sys.stderr)
+    elif args.trusted.store is None:
+        print(f"ghost_buster: trust: {args.trusted.reason}", file=sys.stderr)
 
     if not args.path.is_dir():
         print(f"error: {args.path} is not a directory", file=sys.stderr)
@@ -511,7 +528,10 @@ def main(argv: List[str] = None) -> int:
               file=sys.stderr)
 
     mutation_run = None
-    if args.mutate:
+    if args.mutate and not args.trusted.trusted:
+        print(declined_receipt("mutation analysis", args.trusted), file=sys.stderr)
+        checks["mutate"] = DECLINED
+    elif args.mutate:
         mutation_run = run_mutations(
             args.path, files, max_mutants_per_candidate=args.mutate_max,
             timeout=args.mutate_timeout, only=args.mutate_only,

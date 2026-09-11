@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.0.8 (2026-09-11)
+
+### Consent before running a stranger's code
+A default run executed the target's test suite, and `--mutate` ran it
+hundreds of times, and the only guard was remembering `--no-tests`. The
+tool that refuses to hang a CI build now refuses to run a stranger's code
+by accident: the test and mutation scans run only for a repository whose
+consent is on record, in a store that belongs to the user
+(`~/.config/ghost_tools/trust.json`, or `$GHOST_TOOLS_TRUST`), never in
+the repository, which would be the stranger's to write.
+
+`--trust` records consent once. A repository is identified by its
+`origin` remote, normalised so `git@github.com:o/r.git` and
+`https://github.com/O/R` are one repository, or by its resolved path when
+there is none. Without a record the scans are DECLINED with a receipt
+naming the store and the flag; readiness reads tests as unknown; the
+ledger ages the gap. `--no-tests` still declines on purpose with its own
+receipt. `GHOST_TOOLS_TRUST=-` trusts everything, for a harness scanning
+its own fixtures, and says so on the receipt line. A corrupt store trusts
+nothing. Ten tests, seven mutants, all killed.
+
+### The baseline moves when the code does
+This change made `_build_parser` and `main` longer, so their
+`long_function` ids changed and the self-scan test refused the stale
+entries, as designed. `tools/self_baseline.py` regenerates the baseline
+from a fresh scan under the same policy (MAJOR and CRITICAL only) and
+refuses any finding the case file holds no reason for, so a new MAJOR
+stays a decision and never becomes a reflex.
+
 ## 1.0.7 (2026-09-11)
 
 ### It scans itself
