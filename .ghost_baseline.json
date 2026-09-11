@@ -1,0 +1,76 @@
+[
+  {
+    "attributes": {},
+    "category": "complexity",
+    "confidence": null,
+    "detail": "Line-count proxy for the 'Long Method' smell, not true cyclomatic complexity -- a long function that's mostly a flat sequence of simple statements is a weaker signal than a short function with deep branching. Treat as a prompt to look, not a verdict.",
+    "detector": "long_function",
+    "disposition": "document",
+    "disposition_note": "_build_parser is the flag inventory, one add_argument per flag with its default and help beside it; splitting it would hide the one table the README's defaults test reads against",
+    "evidence": {
+      "absolute_file": null,
+      "file": "ghost_buster/cli.py",
+      "line_end": 352,
+      "line_start": 136,
+      "related_files": [],
+      "snippet": null
+    },
+    "first_seen": "2026-09-11T08:26:38.253578+00:00",
+    "id": "ghost-7e4a991fcf00",
+    "layer": "mechanical",
+    "severity": "major",
+    "status": "suppressed",
+    "summary": "'_build_parser' spans 216 lines (threshold 80)"
+  },
+  {
+    "attributes": {},
+    "category": "complexity",
+    "confidence": null,
+    "detail": "Line-count proxy for the 'Long Method' smell, not true cyclomatic complexity -- a long function that's mostly a flat sequence of simple statements is a weaker signal than a short function with deep branching. Treat as a prompt to look, not a verdict.",
+    "detector": "long_function",
+    "disposition": "document",
+    "disposition_note": "main is the scan pipeline in the order it runs, each check followed by its receipt line; the length is the number of checks, and a dispatch table would hide the order",
+    "evidence": {
+      "absolute_file": null,
+      "file": "ghost_buster/cli.py",
+      "line_end": 687,
+      "line_start": 471,
+      "related_files": [],
+      "snippet": null
+    },
+    "first_seen": "2026-09-11T08:26:38.253778+00:00",
+    "id": "ghost-0dfed8dab151",
+    "layer": "mechanical",
+    "severity": "major",
+    "status": "suppressed",
+    "summary": "'main' spans 216 lines (threshold 80)"
+  },
+  {
+    "attributes": {},
+    "category": "duplication",
+    "confidence": null,
+    "detail": "Structural fingerprint match within one function, not a whole-function match (near_duplicate_function's detection is blind to this shape). Typical real cause: several branches each hand-build the same kind of object or perform the same sequence of calls -- worth a single shared helper if the branches really are doing the same thing, not just a coincidental resemblance.",
+    "detector": "intra_function_duplicate_block",
+    "disposition": "document",
+    "disposition_note": "readiness.assess states the six criteria one Criterion(...) per line on purpose: the list is the specification, and a loop over a table would make it harder to read than the finding it produces",
+    "evidence": {
+      "absolute_file": null,
+      "file": "ghost_buster/readiness.py",
+      "line_end": 119,
+      "line_start": 119,
+      "related_files": [
+        "ghost_buster/readiness.py:139-139",
+        "ghost_buster/readiness.py:143-143",
+        "ghost_buster/readiness.py:147-147",
+        "ghost_buster/readiness.py:133-133"
+      ],
+      "snippet": null
+    },
+    "first_seen": "2026-09-11T08:26:39.100545+00:00",
+    "id": "ghost-0424b53c8463",
+    "layer": "mechanical",
+    "severity": "major",
+    "status": "suppressed",
+    "summary": "'assess' repeats the same single statement 5 times (lines 119-119, 139-139, 143-143, 147-147, 133-133): same shape, names/literals differ"
+  }
+]
