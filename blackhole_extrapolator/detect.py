@@ -450,6 +450,7 @@ def detect_missing_imports(path: Path, search_roots: Sequence[Path],
     available = _available_modules(search_roots)
 
     declares: bool | None = None
+    root = path_root(path)
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
             module = (node.module or "").split(".")[0]
@@ -485,7 +486,7 @@ def detect_missing_imports(path: Path, search_roots: Sequence[Path],
         if declares is None:
             # Once per file, and only when a finding needs it: the manifest
             # read used to happen inside the loop for every unresolved import.
-            declares = bool(_declared_dependencies(path_root(path)))
+            declares = bool(_declared_dependencies(root))
         manifest = ("the project declares dependencies and this is not among them"
                     if declares else
                     "the project declares no dependencies anywhere, so nothing "
