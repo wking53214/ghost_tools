@@ -352,6 +352,51 @@ class FindingSet:
 AUTHORITATIVE = frozenset({Status.CONFIRMED, Status.CONFIRMED_BY_REVIEW, Status.SUPPRESSED})
 
 
+#: Detectors whose findings are computed FROM other findings rather than
+#: from the tree: a correlation joins two findings, a ledger finding is a
+#: fact about a finding's history, a trajectory finding is a fact about a
+#: series of runs. Registered here rather than inferred, so adding one is a
+#: decision somebody makes on purpose.
+#: Kept here rather than imported from the three modules that produce
+#: them, because schema.py is what they all import and a cycle would be a
+#: worse answer than a list. Tests/test_primary_and_derived.py compares
+#: this set against the live registries on every run, so it cannot go
+#: stale quietly -- the first draft of it was wrong in both directions.
+DERIVED_DETECTORS = frozenset({
+    # correlate.py's connectors: a statement about two findings
+    "secret_in_duplicated_file", "doc_count_contradicted_by_run",
+    "conflict_marker_breaks_tests", "secret_in_multiple_repositories",
+    # ledger.py and trajectory.py: a statement about a finding's history
+    # or about a series of runs
+    "ledger", "trajectory",
+})
+
+
+def is_derived(finding: Finding) -> bool:
+    return finding.detector in DERIVED_DETECTORS
+
+
+def primary(findings: Iterable[Finding]) -> List[Finding]:
+    """The findings a measurement of the TREE may rest on.
+
+    WHY THE DISTINCTION IS LOAD-BEARING
+
+    A correlation is a true statement, and it is a statement about two
+    findings rather than about a line of code. Counting it beside its own
+    inputs counts the same defect twice, and the trajectory series is
+    findings per file: add a connector and density rises with no change to
+    the code at all, which the series would read as deterioration.
+
+    So the tree's measurements are counted separately from the statements
+    made about them. Both are reported; only the first is a denominator.
+    """
+    return [f for f in findings if not is_derived(f)]
+
+
+def derived(findings: Iterable[Finding]) -> List[Finding]:
+    return [f for f in findings if is_derived(f)]
+
+
 def authoritative(findings: Iterable[Finding]) -> List[Finding]:
     """The findings a gate, a baseline or the ledger may read.
 
@@ -400,18 +445,28 @@ def disambiguate_ids(findings: List[Finding]) -> int:
 
     WHAT THIS DOES INSTEAD
 
-    The first occurrence keeps the id it always had, so nothing already in
-    a baseline is renumbered. Every later occurrence of the same id, in
-    scan order by location, gets a suffix derived from its own evidence --
-    `ghost-<hash>-2`, `-3` -- so the pair separates. Findings that do not
+    Every member of a colliding group takes a suffix derived from its OWN
+    place: `ghost-<hash>-<6 hex of where it is>`. Findings that do not
     collide are untouched, which is all of them in the ordinary case.
 
-    The tradeoff, stated plainly: for a colliding group, an id depends on
-    how many siblings precede it. Fix the first of two and the second
-    inherits the base id, which reads as one finding healed and one
-    returning. That is a worse outcome than nothing only if you believe
-    two defects sharing one identity is acceptable, and the measurement
-    above is why this code does not.
+    WHY THE SUFFIX IS NOT AN ORDINAL
+
+    1.3.0 numbered them 1, 2, 3 by position, and an external reviewer put
+    the obvious question: insert a fourth occurrence above the others and
+    every id below it shifts, so a finding's identity depended on how many
+    siblings preceded it. That is the churn the whole scheme exists to
+    avoid, moved rather than removed.
+
+    A suffix computed from the finding's own line range and detail depends
+    on nothing but itself. Insert a sibling, fix a sibling, reorder the
+    scan: the other members keep their ids. The remaining sensitivity is
+    the honest one -- a colliding finding that MOVES changes identity,
+    because where it is was the only thing distinguishing it from its
+    twin in the first place.
+
+    The cost, stated plainly: a colliding finding already in a baseline is
+    renumbered once by this change, because the 1.3.0 ordinal ids are not
+    reproducible. Eight pairs in a 38-repository library; re-accept them.
     """
     by_id: Dict[str, List[Finding]] = {}
     for f in findings:
@@ -428,9 +483,8 @@ def disambiguate_ids(findings: List[Finding]) -> int:
         distinct = {place(f) for f in group}
         if len(distinct) < 2:
             continue
-        for n, f in enumerate(sorted(group, key=place), start=1):
-            if n == 1:
-                continue
-            f.id = f"{base}-{n}"
+        for f in group:
+            where = "|".join(str(part) for part in place(f))
+            f.id = f"{base}-{hashlib.sha256(where.encode('utf-8')).hexdigest()[:6]}"
             renamed += 1
     return renamed

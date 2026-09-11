@@ -208,7 +208,14 @@ def assess(runs: Sequence) -> Assessment:
     z_score = 0.0
     density = 0.0
     for run in series:
-        density = run.counts["found"] / run.counts["scanned"]
+        # Primary findings only: the series is a measurement of the TREE,
+        # and a correlation is a statement about two findings. Counting
+        # derived findings here makes adding a connector look like the
+        # code got worse. Runs written before `primary` existed have only
+        # `found`, and using it keeps their point on the series rather
+        # than dropping history to make the new rule look tidy.
+        counted = run.counts.get("primary", run.counts["found"])
+        density = counted / run.counts["scanned"]
         moment = _at(run.at)
         if previous is None or moment is None:
             dt = 1.0

@@ -1,5 +1,67 @@
 # Changelog
 
+## 1.5.0 (2026-09-11)
+
+Four evidence-boundary items from an external review of 1.3.0, in the
+order that review recommended.
+
+### What the target told the scanner to ignore is part of the evidence
+gitleaks honors a repository's own `.gitleaksignore` and `.gitleaks.toml`
+before this module sees a finding. For a developer scanning their own
+project that is right. When the question is somebody else's repository it
+means the subject of the examination configures the examiner, and it did
+so silently: a scan of a repository with a suppressed leak printed the
+same line as a scan of a repository with none.
+
+The configuration is not disabled, because disabling it would bring back
+every triaged false positive and make the report unreadable. It is named:
+the receipt says which suppression files the target carries and how many
+fingerprints each holds, and states the scan's own reach (the checked-out
+branch's history, not every ref) on the same line. A test plants a real
+leak, silences it with its own fingerprint, and holds both receipts to
+the difference.
+
+### A statement about two findings is not a measurement of the tree
+The trajectory series is findings per file scanned, and correlations were
+in that numerator. Add a connector and density rises with no change to
+the code, which the series would read as deterioration. Findings now
+divide into primary (the tree's own) and derived (correlations, ledger
+history, trajectory); the ledger records both counts and the series uses
+primary. Runs written before this keep the number they were written with
+rather than being silently restated.
+
+The first draft of the derived list was wrong in both directions, naming
+detectors that do not exist and missing three that do, so a test now
+compares it against the live registries.
+
+### An identity does not depend on how many siblings precede it
+1.3.0 separated colliding findings with an ordinal suffix, and the
+reviewer put the obvious question: insert an occurrence above the others
+and every id below it shifts. The suffix is now derived from the
+finding's own place, so inserting, removing or reordering siblings leaves
+the rest untouched. The remaining sensitivity is the honest one: a
+colliding finding that MOVES changes identity, because where it is was
+the only thing distinguishing it from its twin. Colliding findings
+already in a baseline are renumbered once by this; there were eight pairs
+in the library.
+
+### A digest chain, and what it does not prove
+Each run records a digest of the baseline and case file as it read them,
+and a link binding it to the run before, so an edited or removed run is
+visible and a later edit to a record disagrees with the run that used it.
+`--verify-chain` reports the first break.
+
+There is no key, so an editor who recomputes the chain leaves no trace.
+That limit is a test, not a footnote: `test_an_editor_who_recomputes_the_chain_leaves_no_trace`
+fails if the chain ever becomes something stronger than `attest.py`
+claims. Getting the stronger property means signing the head with a key
+the repository does not hold, which is a decision about key custody
+rather than a line of code.
+
+Twelve new mutants, all killed. Writing the chain caught a real bug in
+itself: the link was computed before the run's counts were final, so
+every link read back as broken on an untouched ledger.
+
 ## 1.4.0 (2026-09-11)
 
 Six items from the forensic pass that #57 did not close. Two were

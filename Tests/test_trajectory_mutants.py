@@ -30,9 +30,11 @@ MUTANTS = [
      "    if len(series) < 0:\n"),
 
     # --- the density decision ---
+    # Re-pointed in 1.5.0: the numerator became the primary count, so the
+    # mutant drops the denominator from the new expression.
     ("velocity is taken over raw counts instead of density", _T,
-     '        density = run.counts["found"] / run.counts["scanned"]\n',
-     '        density = float(run.counts["found"])\n'),
+     '        density = counted / run.counts["scanned"]\n',
+     '        density = float(counted)\n'),
 
     # --- direction and surprise ---
     ("a rising trend stops being reported", _T,
