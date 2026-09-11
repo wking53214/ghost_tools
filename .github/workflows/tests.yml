@@ -13,8 +13,8 @@ jobs:
       matrix:
         python-version: ["3.11", "3.12"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install
@@ -22,7 +22,7 @@ jobs:
           python -m pip install --upgrade pip
           # pytest-xdist is not optional: pyproject sets `addopts = "-n auto"`,
           # so pytest exits with `unrecognized arguments: -n` without it. It also
-          # cuts this job from ~16 minutes to a few, because the suite is 584
+          # cuts this job from ~16 minutes to a few, because the suite is 592
           # mutants each running a whole test file in a fresh interpreter.
           python -m pip install pytest pytest-xdist ruff==0.15.22
       - name: Install gitleaks
@@ -47,10 +47,10 @@ jobs:
     # gates nothing. A new MAJOR or CRITICAL fails this job (exit 1).
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
           fetch-depth: 0   # the secrets scan reads history
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: "3.12"
       - name: Install gitleaks

@@ -560,6 +560,30 @@ goes to `fix`, not into a README pretending it's a design decision. This
 gate is enforced in code (`ghost_writer/report.py`'s
 `dispositioned_for_documentation`), not just convention.
 
+### Gathering and presenting are two modules
+
+`ghost_buster/pipeline.py` gathers; `ghost_buster/cli.py` presents.
+`gather(args)` runs every check the arguments ask for and returns an
+`Evidence` record: the files read, the findings, the state of each check,
+and the reports the human output renders. Everything after that call in
+`main()` is interface -- the baseline diff, what to print, and what to
+exit with.
+
+The split exists because `cli.py` had grown to 795 lines around a
+285-line `main()` that did all of it, which the tool's own
+`long_function` detector rated MAJOR on its own source. `gather` reports
+through an injected `say`, so nothing in the gathering stage can put
+prose on stdout, where `--json` is read. It is a sequence of five named
+stages in the order they run:
+
+| stage | what it does |
+| --- | --- |
+| `_run_opt_in_analyses` | `--mutate` and `--kernel`, the two checks that cost enough to be off by default |
+| `_run_model_checks` | `--join` (the cross-repository boundary) and `--structure` |
+| `_run_repository_checks` | `--branches`, `--tests`, `--secrets` |
+| `_correlate` | connects findings to each other and to prior runs; reads, never scans |
+| `_record_in_ledger` | folds the run into the history, then derives what the history says |
+
 ## ghost_buster
 
 Two layers, six repository-level checks, a ledger, and a correlation pass
@@ -1539,7 +1563,7 @@ package uses for its model-client tests. `test_branches.py`,
 repositories and pytest projects in `tmp_path` instead, the only honest way
 to test a ref-graph, git-history or suite-execution check (the secrets
 suite against a real gitleaks binary, skipped if one is not on PATH).
-`test_mutation.py` and the 44 `Tests/*_mutants.py` files run pytest in
+`test_mutation.py` and the 45 `Tests/*_mutants.py` files run pytest in
 subprocesses against scratch copies of the project, each mutant file
 breaking one component a named number of ways and requiring every mutant
 to fail a test; they account for most of the suite's wall-clock time. A

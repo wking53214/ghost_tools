@@ -19,6 +19,10 @@ from mutant_harness import assert_killed, run_tests_with_mutation
 STRUCTURE_TESTS = "Tests/test_structure.py"
 _S = "ghost_buster/structure.py"
 _C = "ghost_buster/cli.py"
+# The gathering half of the CLI moved to pipeline.py in 1.6.0. The
+# mutants below that point at it were re-aimed, not removed: the code
+# they mutate is the same code, in its new module.
+_P = "ghost_buster/pipeline.py"
 
 # (label, file, exact text to replace, replacement)
 MUTANTS = [
@@ -107,9 +111,9 @@ MUTANTS = [
     ("the structure scan silently returns to opt-in", _C,
      '        "--structure", action=argparse.BooleanOptionalAction, default=True,\n',
      '        "--structure", action=argparse.BooleanOptionalAction, default=False,\n'),
-    ("declining the structure scan leaves no receipt", _C,
-     '        _skipped("structure scan", "--no-structure")\n', "        pass\n"),
-    ("--structure-out writes nothing", _C,
+    ("declining the structure scan leaves no receipt", _P,
+     '        _skipped("structure scan", "--no-structure", say)\n', '        pass\n'),
+    ("--structure-out writes nothing", _P,
      "                args.structure_out.write_text(model.to_json(), encoding=\"utf-8\")\n",
      "                pass\n"),
 ]

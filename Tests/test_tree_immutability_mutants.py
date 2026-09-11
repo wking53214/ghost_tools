@@ -23,6 +23,10 @@ from mutant_harness import assert_killed, run_tests_with_mutation
 TESTS = "Tests/test_tree_immutability.py"
 _G = "Tests/tree_guard.py"
 _BUSTER = "ghost_buster/cli.py"
+# The gathering half of the CLI moved to pipeline.py in 1.6.0. The
+# mutants below that point at it were re-aimed, not removed: the code
+# they mutate is the same code, in its new module.
+_PIPELINE = "ghost_buster/pipeline.py"
 _RECONSTRUCT = "blackhole_extrapolator/reconstruct.py"
 _RECOVER = "blackhole_extrapolator/recover.py"
 
@@ -53,7 +57,7 @@ MUTANTS = [
      "IGNORE = ()"),
 
     # ---- real product code breaks the real promise
-    ("ghost_buster annotates without being asked", _BUSTER,
+    ("ghost_buster annotates without being asked", _PIPELINE,
      "    if args.annotate_names:", "    if True:"),
     ("a reconstruction is written beside the original", _RECONSTRUCT,
      '    target = into / (path.stem + ".reconstructed.py")',

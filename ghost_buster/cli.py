@@ -15,48 +15,23 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Iterable, List, Optional, Dict
+from typing import List, Optional, Dict
 
-from . import __version__, version_string
+from . import version_string
 from . import attest
 from .baseline import Baseline
-from .boundary import (
-    build_joined_model, derive_findings as derive_boundary_findings,
-    render_report as render_boundary_report, render_single_repo_notice,
-)
-from .trust import check as trust_check, grant as trust_grant, declined_receipt
-from .kernel import check_kernel, render_report as render_kernel_report
+from .trust import check as trust_check, grant as trust_grant
 from .archive import marked as archive_marked
 from .priors import build as build_priors, render as render_priors, to_json as priors_json
 from .ledger import (
-    COULD_NOT_RUN, DECLINED, Ledger, LedgerError, NOT_RUN, RAN,
-    _head_commit, render_report as render_ledger_report,
+    Ledger,
 )
-from .trajectory import (
-    derive as trajectory_derive, render_report as render_trajectory_report,
-)
-from .branches import scan as scan_branches
-from .correlate import (
-    load_prior_run,
-    render_report as render_correlation_report,
-    run_connectors,
-)
-from .testsuite import render_report as render_test_report, scan as scan_tests
 from . import readiness
-from .speed import Profile
 from .casefile import Casefile, Prior
 from .operate import Refused, operate
-from .annotate import annotate
-from .mechanical import run_all
-from .project import render_report as render_project_report, scan as scan_project
-from .structure import (
-    build_model, derive_findings as derive_structure_findings,
-    render_model, render_report as render_structure_report,
-)
-from .mutation import render_run, run_mutations
+from .mutation import render_run
 from .schema import Finding, FindingSet, Severity
-from .schema import disambiguate_ids
-from .secrets import render_report as render_secrets_report, scan as scan_secrets
+from .pipeline import Stop, gather
 
 
 # Directory names never descended into. `site-packages` is the load-bearing
@@ -66,52 +41,6 @@ from .secrets import render_report as render_secrets_report, scan as scan_secret
 # working tree was reporting thousands of findings from pytest's own source.
 # The rest are VCS internals and tool caches. Matched against any component
 # of a path, so a nested occurrence is still excluded.
-_EXCLUDED_DIRS = frozenset({
-    "__pycache__",
-    "site-packages",
-    ".venv", "venv",
-    "node_modules",
-    ".git", ".hg", ".svn",
-    ".tox", ".nox", ".eggs",
-    ".mypy_cache", ".pytest_cache", ".ruff_cache", ".hypothesis",
-    ".ipynb_checkpoints",
-    # Build output. Measured on ghost_tools itself: a stray `build/` from a
-    # wheel build made every module in the package byte-identical to a copy
-    # of itself, 16 duplicate_file groups of pure noise.
-    "build", "dist",
-})
-
-
-def _collect_files(root: Path, extra_excludes: Iterable[str] = ()) -> List[Path]:
-    """.py for every code detector, plus .md so doc_test_count_drift (v0.3)
-    has something to read -- every other detector calls _parse() on
-    whatever it's handed, which fails closed (returns None, gets skipped)
-    on non-Python text, so widening the *type* list is safe.
-
-    Skips any path with a directory component in _EXCLUDED_DIRS (virtualenvs
-    / vendored site-packages / VCS dirs / tool caches) or in `extra_excludes`
-    -- the latter for a repo-specific vendored tree, e.g. a checked-in copy
-    of a sibling repo -- and any dot-prefixed file. Exclusion is by directory
-    NAME anywhere in the path, so pointing the scan directly at, say, a
-    `venv/` would also come back empty; scan the project root.
-    """
-    excluded = _EXCLUDED_DIRS | set(extra_excludes)
-    # Each real path once: a symlinked file is otherwise listed under both
-    # names, and every function in it becomes its own near-duplicate.
-    # Measured on OBSERVE, which keeps genuine symlinks.
-    seen_real = set()
-    out = []
-    for p in sorted(list(root.rglob("*.py")) + list(root.rglob("*.md"))):
-        if not excluded.isdisjoint(p.parts) or p.name.startswith("."):
-            continue
-        if any(part.endswith(".egg-info") for part in p.parts[:-1]):
-            continue
-        real = p.resolve()
-        if real in seen_real:
-            continue
-        seen_real.add(real)
-        out.append(p)
-    return out
 
 
 def _print_report(new: List[Finding], known: List[Finding],
@@ -384,123 +313,67 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _resolve_join_mode(args, files) -> List[Path]:
-    """Joined or single, and never by silently assuming.
-
-    --join says so outright. --single-repo says so outright. With neither,
-    ASK -- but only when stdin is a terminal. A prompt in CI hangs the
-    build forever, and a tool that hangs a build gets removed from the
-    build, so a non-interactive run scans one repository and says on the
-    receipt line that it did. Nobody should mistake a single-repo scan for
-    a joined one.
-    """
-    if args.join:
-        return list(args.join)
-    if args.single_repo or not sys.stdin.isatty():
-        return []
-    notice = render_single_repo_notice(args.path, files)
-    if notice is None:
-        return []      # nothing reaches across a boundary; no question to ask
-    print(notice, file=sys.stderr)
-    print("ghost_buster: scan this repository alone, or join another? "
-          "Enter path(s) to join, separated by spaces, or press Enter for "
-          "single-repo: ", end="", file=sys.stderr, flush=True)
+def _verify_chain(args) -> int:
+    """--verify-chain: read the ledger's own digest chain and report where
+    it breaks. An alternate mode, not part of a scan -- it looks at the
+    record rather than at the tree, so it returns before anything is
+    scanned. See attest.verify for what a chain does and does not prove."""
+    path = args.ledger_path or (args.path / ".ghost_ledger.json")
+    if not path.is_file():
+        print(f"ghost_buster: chain: no ledger at {path}", file=sys.stderr)
+        return 2
     try:
-        answer = input().strip()
-    except (EOFError, KeyboardInterrupt):
-        print(file=sys.stderr)
-        return []
-    return [Path(p) for p in answer.split() if p]
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        print(f"error: ledger {path}: {e}", file=sys.stderr)
+        return 2
+    runs = raw.get("runs") or []
+    breaks = attest.verify(runs)
+    print(attest.render(breaks, len(runs)))
+    return 1 if any("no link recorded" not in b.what for b in breaks) else 0
 
 
-def _skipped(name: str, flag: str) -> None:
-    """An opt-out leaves a receipt.
-
-    WHY THIS FUNCTION EXISTS (v0.11.0)
-
-    Every repository check used to be off unless asked for, and a run that
-    did not perform one said nothing at all about it. Measured on a real
-    repository: a scan with --branches --secrets reported 34 findings and
-    exit 1, looked complete, and never mentioned that test status had not
-    been examined. The suite it did not run was hiding five clinical
-    missed detections behind skips.
-
-    So the checks are on by default now, and -- the half that matters more
-    -- a skipped check announces itself on the same channel as a performed
-    one. Whoever reads the output learns what was NOT looked at without
-    having to reconstruct the command line.
-    """
-    print(f"ghost_buster: {name} SKIPPED at your request ({flag})", file=sys.stderr)
-
-
-def _state(report) -> str:
-    """A check that ran is the only state meaning the question was asked.
-    `report.ran` False means it could not -- no git, no tests, no gitleaks."""
-    return RAN if getattr(report, "ran", False) else COULD_NOT_RUN
+def _operate(args, evidence, casefile_path, archive) -> int:
+    """--operate: the only mode that writes to the target. Everything it
+    needs was already established by the scan; this decides whether to
+    let it run and what to say about the result."""
+    if archive is not None:
+        print("refused: an archive is not a patient; remove .ghost_archive to operate",
+              file=sys.stderr)
+        return 2
+    try:
+        op = operate(args.path, evidence.files, evidence.findings, evidence.checks,
+                     casefile=Casefile(casefile_path), branch=args.operate_branch,
+                     dry_run=args.operate_dry_run)
+    except Refused as e:
+        print(f"refused: {e}", file=sys.stderr)
+        return 2
+    print(op.render())
+    if not op.came_in_untouched:
+        print("error: the branch the patient came in on was modified; "
+              "this should be impossible and is a bug", file=sys.stderr)
+        return 2
+    return 0
 
 
-def _run_repository_checks(args, findings: List[Finding], checks: dict):
-    """The three checks that take a repository rather than a file list:
-    --branches, --tests, --secrets. All three are ON by default; each
-    appends to `findings` and prints its own one-line report to stderr,
-    and each announces itself when turned off. Returns the
-    TestStatusReport when --tests ran (the correlation layer needs the
-    measured counts), else None.
-
-    Extracted from main() for the same reason as _build_parser: these are
-    one cohesive stage, and main() was over the long_function threshold."""
-    if args.branches:
-        branch_findings, branch_report = scan_branches(args.path, args.branches_base)
-        if branch_report.ran:
-            print(
-                f"ghost_buster: branch scan compared {branch_report.branches_scanned} "
-                f"branch(es) against '{branch_report.base_branch}'", file=sys.stderr,
-            )
-        else:
-            print(f"ghost_buster: branch scan did not run: {branch_report.reason}", file=sys.stderr)
-        findings.extend(branch_findings)
-        checks["branches"] = _state(branch_report)
+def _present(args, evidence, new, known, priors, archive, casefile_path) -> None:
+    """The human report: the findings themselves, then what the run says
+    about the repository as a whole. Writes to stdout and decides nothing
+    -- main() owns the exit code."""
+    _print_report(new, known, priors)
+    # Candidacy is read off this run's own findings and the record of
+    # which checks ran. Unknown counts against the patient.
+    if archive is not None:
+        print(f"serum candidacy: not assessed (archive: {archive.reason or 'no reason given'})")
     else:
-        _skipped("branch scan", "--no-branches")
-        checks["branches"] = DECLINED
-
-    test_report = None
-    if args.tests and not args.trusted.trusted:
-        print(declined_receipt("test status scan", args.trusted), file=sys.stderr)
-        checks["tests"] = DECLINED
-    elif args.tests:
-        test_findings, test_report = scan_tests(
-            args.path, python=args.tests_python, reruns=args.tests_reruns,
-            timeout=args.tests_timeout,
-        )
-        print(render_test_report(test_report), file=sys.stderr)
-        findings.extend(test_findings)
-        checks["tests"] = _state(test_report)
-    else:
-        _skipped("test status scan", "--no-tests")
-        checks["tests"] = DECLINED
-
-    if args.project:
-        project_findings, project_report = scan_project(args.path)
-        print(render_project_report(project_report), file=sys.stderr)
-        findings.extend(project_findings)
-        checks["project"] = _state(project_report)
-    else:
-        _skipped("project scan", "--no-project")
-        checks["project"] = DECLINED
-
-    if args.secrets:
-        secrets_findings, secrets_report = scan_secrets(
-            args.path, gitleaks_path=args.secrets_binary, timeout=args.secrets_timeout,
-        )
-        print(render_secrets_report(secrets_report), file=sys.stderr)
-        findings.extend(secrets_findings)
-        checks["secrets"] = _state(secrets_report)
-    else:
-        _skipped("secrets scan", "--no-secrets")
-        checks["secrets"] = DECLINED
-
-    return test_report
+        retired = Casefile(casefile_path).retired() if casefile_path.is_file() else set()
+        print(readiness.assess(evidence.findings, evidence.checks, retired).render())
+    print()
+    if evidence.profile is not None:
+        print(evidence.profile.render(evidence.profile_seconds))
+        print()
+    if evidence.mutation_run is not None:
+        print(render_run(evidence.mutation_run, verbose=args.mutate_verbose))  # ghost_buster: name-disagreement -- `mutation_run` is `run` in the signature
 
 
 def main(argv: List[str] = None) -> int:
@@ -526,185 +399,17 @@ def main(argv: List[str] = None) -> int:
         print(f"error: {args.path} is not a directory", file=sys.stderr)
         return 2
 
-    baseline_path = args.baseline or (args.path / ".ghost_baseline.json")
-    files = _collect_files(args.path, args.exclude)
-    if not files:
-        # A scan of nothing is not a clean scan. A checkout under a directory
-        # named venv, node_modules or .tox, an empty directory, or a wrong
-        # path all used to print "0 new finding(s)" and exit 0 (measured
-        # 2026-09-08).
-        print(f"error: no .py or .md files to scan under {args.path} "
-              f"(excluded directory names: {', '.join(sorted(_EXCLUDED_DIRS | set(args.exclude)))})",
-              file=sys.stderr)
+    # The evidence, gathered by pipeline.py. Everything from here down is
+    # interface: the baseline diff, what to print, and what to exit with.
+    try:
+        evidence = gather(args)
+    except Stop as e:
+        print(e, file=sys.stderr)
         return 2
-    print(f"ghost_buster: scanning {len(files)} file(s) under {args.path}", file=sys.stderr)
-    # Every check's state, recorded whatever it is. This dict is the reason
-    # the ledger can notice a blind spot: "declined" and "could not run" are
-    # facts worth remembering, not the absence of one.
-    checks = {"structural": RAN}
-    profile = None
-    if args.profile:
-        import time
-        started = time.perf_counter()
-        with Profile() as profile:
-            findings = run_all(files)
-        profile_seconds = time.perf_counter() - started
-    else:
-        findings = run_all(files)
-
-    if args.annotate_names:
-        readme = args.annotate_readme or (args.path / "README.md")
-        disagreements, changed, wrote_readme = annotate(files, readme, root=args.path)
-        print(f"ghost_buster: {len(disagreements)} name disagreement(s); "
-              f"annotated {len(changed)} file(s); "
-              f"{'updated' if wrote_readme else 'no change to'} {readme}",
-              file=sys.stderr)
-
-    mutation_run = None
-    if args.mutate and not args.trusted.trusted:
-        print(declined_receipt("mutation analysis", args.trusted), file=sys.stderr)
-        checks["mutate"] = DECLINED
-    elif args.mutate:
-        mutation_run = run_mutations(
-            args.path, files, max_mutants_per_candidate=args.mutate_max,
-            timeout=args.mutate_timeout, only=args.mutate_only,
-        )
-        findings.extend(mutation_run.findings)
-        checks["mutate"] = RAN
-    else:
-        checks["mutate"] = NOT_RUN
-        # Opt-in on cost (one pytest process per mutant), not because it
-        # matters less -- so it is named on every run rather than simply
-        # being absent.
-        print("ghost_buster: mutation analysis NOT RUN (opt-in: --mutate)", file=sys.stderr)
-
-    if args.kernel:
-        kernel_findings, kernel_report = check_kernel(files, args.kernel)
-        print(render_kernel_report(kernel_report), file=sys.stderr)
-        findings.extend(kernel_findings)
-        checks["kernel"] = RAN if kernel_report.ran else COULD_NOT_RUN
-    else:
-        checks["kernel"] = NOT_RUN
-        print("ghost_buster: kernel check NOT RUN (opt-in: --kernel PATH)", file=sys.stderr)
-
-    join_paths = _resolve_join_mode(args, files)
-    if join_paths:
-        roots = [args.path] + list(join_paths)
-        files_by_root = {
-            str(Path(r).resolve()): _collect_files(Path(r), args.exclude)
-            for r in roots if Path(r).is_dir()
-        }
-        joined = build_joined_model(roots, files_by_root)
-        boundary_findings = derive_boundary_findings(joined, files_by_root)
-        print(render_boundary_report(joined, boundary_findings), file=sys.stderr)
-        findings.extend(boundary_findings)
-        checks["boundary"] = RAN if joined.ran else COULD_NOT_RUN
-    else:
-        checks["boundary"] = NOT_RUN
-        notice = render_single_repo_notice(args.path, files)
-        if notice:
-            print(notice, file=sys.stderr)
-        else:
-            print("ghost_buster: boundary scan NOT RUN (single repository; "
-                  "no unprovided packages reached for)", file=sys.stderr)
-
-    if args.structure:
-        model = build_model(args.path, files)
-        structure_findings = derive_structure_findings(model)
-        print(render_structure_report(model, structure_findings), file=sys.stderr)
-        findings.extend(structure_findings)
-        checks["structure"] = RAN if model.ran else COULD_NOT_RUN
-        if args.structure_out:
-            try:
-                args.structure_out.write_text(model.to_json(), encoding="utf-8")
-            except OSError as e:
-                print(f"error: --structure-out {args.structure_out}: "
-                      f"{type(e).__name__}: {e}", file=sys.stderr)
-                return 2
-        if args.structure_report:
-            print(render_model(model), file=sys.stderr)
-    else:
-        _skipped("structure scan", "--no-structure")
-        checks["structure"] = DECLINED
-
-    test_report = _run_repository_checks(args, findings, checks)
-
-    if args.no_correlate:
-        _skipped("correlation", "--no-correlate")
-        checks["correlate"] = DECLINED
-    else:
-        prior_runs = []
-        for prior_path in args.correlate_with:
-            try:
-                prior_runs.append(load_prior_run(prior_path))
-            except ValueError as e:
-                # A typo'd --correlate-with is a usage error, not a silently
-                # empty correlation: failing quiet here would mean reporting
-                # "nothing to connect" for a cross-repo leak that is real.
-                print(f"error: --correlate-with {e}", file=sys.stderr)
-                return 2
-        correlations = run_connectors(
-            findings, prior_runs=prior_runs, test_report=test_report,
-        )
-        print(render_correlation_report(correlations), file=sys.stderr)
-        findings.extend(correlations)
-        checks["correlate"] = RAN
-
-    # Every finding now has its own id, including the ones whose detector,
-    # path and summary happen to match another's. This runs before the
-    # ledger and the baseline because both key on the id: a collision that
-    # survived to here would be remembered as one finding and suppressed by
-    # one decision. See schema.disambiguate_ids.
-    collided = disambiguate_ids(findings)
-    if collided:
-        print(f"ghost_buster: {collided} finding(s) shared an id with an earlier "
-              "finding and were given their own; see the -2 suffix in the report",
-              file=sys.stderr)
-
-    # THE LEDGER RUNS BEFORE THE BASELINE DIFF, DELIBERATELY.
-    # It records what was FOUND, not what was reported. If it ran after
-    # the diff, `--accept` would quietly erase history: a finding you
-    # agreed to stop hearing about would also stop being remembered, and
-    # a regression years later would read as a first sighting.
-    if args.ledger:
-        ledger_path = args.ledger_path or (args.path / ".ghost_ledger.json")
-        try:
-            ledger = Ledger(ledger_path)
-        except LedgerError as e:
-            # Same posture as a corrupt baseline: a usage error, never a
-            # silent fresh start. Starting over would report an empty
-            # history as though it were a clean one.
-            print(f"error: ledger {e}", file=sys.stderr)
-            return 2
-        checks["ledger"] = RAN
-        ledger.record(
-            findings, checks=checks, commit=_head_commit(args.path),
-            tool_version=__version__, scanned=len(files),
-            # The records this run READ, as it read them. A later edit to
-            # either is then visible as a disagreement with this run.
-            records={"baseline": attest.digest_file(baseline_path),
-                     "casefile": attest.digest_file(
-                         args.casefile or (args.path / ".ghost_casefile.json"))},
-        )
-        history = ledger.derive(findings)
-        print(render_ledger_report(ledger, history), file=sys.stderr)
-        findings.extend(history)
-
-        # Direction and surprise across runs. Emitted after the ledger has
-        # folded this run in, so the current measurement is part of the
-        # series it is judged against, and reported on the same channel as
-        # every other check -- including when it declines to judge.
-        trend = trajectory_derive(ledger.runs, root_label=str(args.path))
-        print(render_trajectory_report(ledger.runs), file=sys.stderr)
-        findings.extend(trend)
-        try:
-            ledger.save()
-        except OSError as e:
-            print(f"error: ledger {ledger_path} could not be written: "
-                  f"{type(e).__name__}: {e}", file=sys.stderr)
-            return 2
-    else:
-        _skipped("ledger", "--no-ledger")
+    # The two the baseline diff and the exit code are computed from. The
+    # rest of the Evidence goes to whichever helper needs it.
+    findings = evidence.findings
+    baseline_path = evidence.baseline_path
 
     try:
         baseline = Baseline(baseline_path)
@@ -738,55 +443,15 @@ def main(argv: List[str] = None) -> int:
         print(archive.receipt(), file=sys.stderr)
 
     if args.verify_chain:
-        path = args.ledger_path or (args.path / ".ghost_ledger.json")
-        if not path.is_file():
-            print(f"ghost_buster: chain: no ledger at {path}", file=sys.stderr)
-            return 2
-        try:
-            raw = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError) as e:
-            print(f"error: ledger {path}: {e}", file=sys.stderr)
-            return 2
-        runs = raw.get("runs") or []
-        breaks = attest.verify(runs)
-        print(attest.render(breaks, len(runs)))
-        return 1 if any("no link recorded" not in b.what for b in breaks) else 0
+        return _verify_chain(args)
 
-    if args.operate and archive is not None:
-        print("refused: an archive is not a patient; remove .ghost_archive to operate", file=sys.stderr)
-        return 2
     if args.operate:
-        try:
-            op = operate(args.path, files, findings, checks,
-                         casefile=Casefile(casefile_path), branch=args.operate_branch,
-                         dry_run=args.operate_dry_run)
-        except Refused as e:
-            print(f"refused: {e}", file=sys.stderr)
-            return 2
-        print(op.render())
-        if not op.came_in_untouched:
-            print("error: the branch the patient came in on was modified; "
-                  "this should be impossible and is a bug", file=sys.stderr)
-            return 2
-        return 0
+        return _operate(args, evidence, casefile_path, archive)
 
     if args.json:
         print(FindingSet(new).to_json())
     else:
-        _print_report(new, known, priors)
-        # Candidacy is read off this run's own findings and the record of
-        # which checks ran. Unknown counts against the patient.
-        if archive is not None:
-            print(f"serum candidacy: not assessed (archive: {archive.reason or 'no reason given'})")
-        else:
-            retired = Casefile(casefile_path).retired() if casefile_path.is_file() else set()
-            print(readiness.assess(findings, checks, retired).render())
-        print()
-        if profile is not None:
-            print(profile.render(profile_seconds))
-            print()
-        if mutation_run is not None:
-            print(render_run(mutation_run, verbose=args.mutate_verbose))  # ghost_buster: name-disagreement -- `mutation_run` is `run` in the signature
+        _present(args, evidence, new, known, priors, archive, casefile_path)
 
     return 1 if any(f.severity in (Severity.CRITICAL, Severity.MAJOR) for f in new) else 0
 

@@ -18,6 +18,10 @@ from mutant_harness import assert_killed, run_tests_with_mutation
 GHOST_BUSTER_TESTS = "Tests/test_ghost_buster.py"
 _M = "ghost_buster/mechanical.py"
 _C = "ghost_buster/cli.py"
+# The gathering half of the CLI moved to pipeline.py in 1.6.0. The
+# mutants below that point at it were re-aimed, not removed: the code
+# they mutate is the same code, in its new module.
+_P = "ghost_buster/pipeline.py"
 
 # (label, file, exact text to replace, replacement)
 MUTANTS = [
@@ -76,12 +80,12 @@ MUTANTS = [
     ("intra complexity floor raised to 25 (loses a gate.py branch)", _M,
      "    files: List[Path], min_statements: int = 3, min_complexity: int = 20\n",
      "    files: List[Path], min_statements: int = 3, min_complexity: int = 25\n"),
-    ("symlinked directories scanned twice again", _C,
+    ("symlinked directories scanned twice again", _P,
      "        real = p.resolve()\n        if real in seen_real:\n            continue\n        seen_real.add(real)\n",
      "        real = p\n        if real in seen_real:\n            continue\n        seen_real.add(real)\n"),
-    ("build/ and dist/ no longer excluded", _C,
+    ("build/ and dist/ no longer excluded", _P,
      '    "build", "dist",\n', ""),
-    ("egg-info directories no longer excluded", _C,
+    ("egg-info directories no longer excluded", _P,
      '        if any(part.endswith(".egg-info") for part in p.parts[:-1]):\n            continue\n', ""),
 ]
 

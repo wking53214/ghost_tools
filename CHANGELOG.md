@@ -1,5 +1,64 @@
 # Changelog
 
+## 1.6.0 (2026-09-11)
+
+The last three items from the external review of 1.3.0: a calibration
+record that says whether it can be re-run, a 795-line CLI split in two,
+and a build pinned to the code it claims to run.
+
+### A calibration record now says whether anyone can re-run it
+Thirty records carried a rate measured on a corpus, and nothing that
+would let a reader reproduce it. Each record gains a `reproduce` block
+naming the corpus, the commit of each repository in it, the ghost_buster
+version, and the command. Twenty-nine of the thirty set it to null with
+the reason stated in plain words: the measurement predates the manifest
+and the trees have since moved, so re-running the command today would
+answer a different question. That is the honest state, and it is now
+visible in the record rather than absent from it.
+
+The thirty-first record, `finding_identity`, is reproducible: it carries
+a manifest of all 38 library repositories at the commits the sweep read,
+and its command reproduces the 16 measured id collisions. The renderer
+distinguishes the two kinds, so a reproducible record is not confused
+with a remembered one.
+
+### Gathering evidence and presenting it are two jobs
+`cli.py` was 795 lines around a 450-statement `main()` that walked the
+tree, ran twenty detectors and three repository checks, correlated,
+wrote the ledger, diffed the baseline, chose the exit code and printed
+the report. The tool's own long_function detector rated it MAJOR on its
+own source, and that finding sat accepted in the self-scan baseline.
+
+`ghost_buster/pipeline.py` now gathers and returns an `Evidence` record;
+`cli.py` presents it. The behaviour is unchanged, verified by running the
+1.5.0 binary and this one against the same trees and diffing the JSON and
+the receipts.
+
+Lifting 450 lines between modules breaks quietly, and this one did, twice.
+Three receipts lost their `file=sys.stderr` in the conversion to the
+injected receipt channel, which is invisible in a terminal and corrupts
+`--json` piped to a file. `profile_seconds` was assigned only under
+`--profile`, safe while its only reader sat behind the same condition,
+and an `UnboundLocalError` on every run without the flag once the
+`Evidence` record read it unconditionally. Both were found by the
+old-against-new diff rather than by the suite, so both are now mutants in
+`Tests/test_pipeline_boundary_mutants.py`.
+
+Twenty-six existing mutants, and one control anchor, pointed at lines the
+split had moved, and every one of them failed loudly rather than passing
+vacuously: the harness requires its site to occur exactly once in the file
+it names. All of them were re-aimed at the same code in its new place,
+none deleted, with the reason recorded beside each file's new module
+constant.
+
+### The build is pinned to the code it claims to run
+Every GitHub Actions step referenced a tag. A tag is a pointer somebody
+else can move, so the environment that runs these tests and the one that
+publishes the package could both change without a commit here. Every
+action is now pinned to a commit digest with the tag kept in a trailing
+comment, and a test reads the workflows and fails on any unpinned
+reference.
+
 ## 1.5.0 (2026-09-11)
 
 Four evidence-boundary items from an external review of 1.3.0, in the
