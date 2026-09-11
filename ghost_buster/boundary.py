@@ -46,6 +46,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
+from . import corpus
 from .schema import Category, Evidence, Finding, Layer, Severity, Status
 from .structure import _PACKAGE_PARENTS, _stdlib_names, StructuralModel, build_model
 
@@ -267,9 +268,8 @@ def build_joined_model(roots: Sequence, files_by_root: Dict[str, List[Path]]) ->
         root_path = Path(root)
         for m in model.modules:
             path = root_path / m.path
-            try:
-                tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-            except (OSError, SyntaxError, UnicodeDecodeError):
+            tree = corpus.parse(path)
+            if tree is None:
                 continue
             imports, notes = guarded_imports(tree, root, m.dotted)
             joined.reaches.extend(i for i in imports if not _is_stdlib(i.package))
@@ -445,9 +445,8 @@ def render_single_repo_notice(root, files: List[Path]) -> Optional[str]:
     reaches, dormant = [], 0
     for m in model.modules:
         path = root / m.path
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        except (OSError, SyntaxError, UnicodeDecodeError):
+        tree = corpus.parse(path)
+        if tree is None:
             continue
         found, _ = guarded_imports(tree, str(root), m.dotted)
         reaches.extend(f for f in found

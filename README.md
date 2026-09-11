@@ -886,6 +886,46 @@ into two repositories.
 That ratio is the point. A detector that reported all 162 would be telling
 you about your Protocols.
 
+### The corpus: one read, one policy, one tree
+
+Every detector used to bring its own parser. Measured on ghost_tools itself:
+a single scan of 112 files called `ast.parse` **1,064 times** — 9.5 per file
+— and spent **52% of its wall clock** in the parser.
+
+That was the smaller problem. There were six implementations of "turn a file
+into a tree," and they disagreed: three decoded with `errors="replace"`,
+three with `encoding="utf-8"`. A file with one invalid byte was analysed by
+three detectors and invisible to fifteen, and nothing said so. One of the six
+let `OSError` escape, so an unreadable file crashed the run there and was
+skipped silently everywhere else.
+
+`ghost_buster/corpus.py` is the hammer: every file is read once, parsed once,
+under one stated policy, and the tree is handed to every detector read-only.
+
+| | before | after |
+|---|---|---|
+| parse calls, 112 files | 1,064 | 113 |
+| time in `ast.parse` | 2.14s (52%) | 0.54s |
+| `run_all` | 4.14s | **2.49s** |
+
+The policy is the interpreter's own: bytes are read, the encoding is what
+PEP 263 says (coding cookie, else UTF-8), the bytes are parsed. A file that
+can't be read or parsed becomes a **fact about the scan** — `corpus.unparsed()`
+— held once, reported once by `unassessable_file`, skipped identically by
+everyone. That list is the blind spot, and it is now the same list for every
+detector.
+
+Sharing a tree means nobody may mutate it. That is checked, not promised:
+`test_no_detector_mutates_the_tree` runs every registered detector and then
+compares every cached tree to a fresh parse of the same bytes, on a fixture
+and on the real package. The one component that legitimately edits trees in
+place — the mutation engine — asks for `corpus.fresh()` and gets its own
+uncached copy.
+
+Detectors stay independent in what they **conclude**: none reads another's
+findings, so a wrong finding still points at one detector. They are no longer
+independent in what they **see**, and that is deliberate.
+
 ### `--annotate-names`: one value, two names, written down twice
 
 The complaint this answers is the one every SQL join produces. A column is

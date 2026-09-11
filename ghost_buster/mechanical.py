@@ -22,6 +22,7 @@ import re
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional, Set, Tuple
 
+from . import corpus
 from .schema import Category, Evidence, Finding, Layer, Severity, Status, _portable_path
 
 DetectorFn = Callable[[List[Path]], List[Finding]]
@@ -43,25 +44,17 @@ def registered_detectors() -> Dict[str, DetectorFn]:
 def _parse(path: Path):
     """None means THIS DETECTOR COULD NOT ASSESS THIS FILE. It does not mean
     the file is clean. See detect_unassessable_file below, which is the only
-    reason that distinction is visible to anyone."""
-    try:
-        return ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    except (SyntaxError, UnicodeDecodeError):
-        return None
+    reason that distinction is visible to anyone.
+
+    Delegates to corpus.parse: one read, one policy, one tree shared by every
+    detector. Until 2026-09-11 this was one of six parse implementations, and
+    they disagreed about which files existed."""
+    return corpus.parse(path)
 
 
 def _parse_failure(path: Path):
     """The reason _parse would return None, or None if it would succeed."""
-    try:
-        ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        return None
-    except SyntaxError as e:
-        line = f" at line {e.lineno}" if e.lineno else ""
-        return f"SyntaxError{line}: {e.msg}"
-    except UnicodeDecodeError as e:
-        return f"UnicodeDecodeError: not valid {e.encoding} at byte {e.start}"
-    except (OSError, ValueError) as e:
-        return f"{type(e).__name__}: {e}"
+    return corpus.failure(path)
 
 
 # ---------------------------------------------------------------------------
@@ -1557,10 +1550,20 @@ register(SWALLOWED_DETECTOR)(detect_swallowed_exceptions)
 
 
 def run_all(files: Iterable[Path]) -> List[Finding]:
-    """Run every registered mechanical detector against the given file
-    list. Detectors are independent and order-independent by design
-    (see registered_detectors)."""
+    """Run every registered mechanical detector against the given file list.
+
+    Detectors share one corpus: every file is read and parsed once, under
+    one policy, and the tree is handed to each detector read-only (see
+    corpus.py). They remain order-independent in what they CONCLUDE -- no
+    detector consumes another's findings -- but they are no longer
+    independent in what they SEE, and that is deliberate. Until 2026-09-11
+    each brought its own parser, and a file with one bad byte was visible to
+    three of them and invisible to fifteen.
+
+    The corpus is reset at the start of every run so a scan never reads a
+    tree left over from a previous one."""
     file_list = list(files)
+    corpus.reset()
     findings: List[Finding] = []
     for name, fn in registered_detectors().items():
         findings.extend(fn(file_list))

@@ -71,6 +71,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Sequence, Set
 
+from . import corpus
 from .naming import is_test_path
 from .schema import Category, Evidence, Finding, Layer, Severity, Status
 
@@ -207,10 +208,7 @@ class _Index:
 
     @staticmethod
     def _parse(path: Path) -> ast.Module | None:
-        try:
-            return ast.parse(path.read_text(errors="replace"))
-        except (SyntaxError, ValueError, OSError):
-            return None
+        return corpus.parse(path)
 
     def _note_calls(self, tree: ast.Module) -> None:
         for node in ast.walk(tree):

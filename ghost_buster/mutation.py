@@ -46,6 +46,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
+from . import corpus
 from .schema import Category, Evidence, Finding, Layer, Severity, Status
 
 DETECTOR = "vacuous_check"
@@ -368,10 +369,10 @@ def _resolve_targets(root: Path, test_file: Path, module: ast.Module, func: ast.
 
 
 def _safe_parse(path: Path) -> Optional[ast.Module]:
-    try:
-        return ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    except (SyntaxError, UnicodeDecodeError, OSError):
-        return None
+    """An UNCACHED tree. This module mutates what it parses -- `drop_body`
+    replaces a function body with `pass` in place -- so it must never
+    receive the tree every other detector shares."""
+    return corpus.fresh(path)
 
 
 def find_candidates(root: Path, files: Iterable[Path]) -> List[Candidate]:

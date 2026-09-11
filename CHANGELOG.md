@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.18.0 (2026-09-11)
+
+### ghost_buster
+The hammer: every file read once, parsed once, under one policy, and the
+tree shared read-only by every detector. `ghost_buster/corpus.py`.
+
+Measured against ghost_tools itself before the change: a single `run_all`
+over 112 files called `ast.parse` 1,064 times -- 9.5 parses per file -- and
+spent 52% of its wall clock in the parser. After: 113 parses, one per file,
+90% of parse requests served from the cache, `run_all` 4.14s to 2.49s.
+
+The speed was the smaller reason. There were SIX implementations of "turn a
+file into a tree" and they disagreed. Three read with `errors="replace"`
+and three with `encoding="utf-8"`, so a file with one invalid byte was
+analysed by three detectors and invisible to fifteen, and nothing in the
+report said so. `mechanical._parse` did not catch OSError, so an unreadable
+file crashed the run there while the other five skipped it silently.
+Demonstrated with a real file before the change; now a test.
+
+One policy, stated: bytes are read, the encoding is whatever PEP 263 says
+(a coding cookie if present, UTF-8 otherwise, via `tokenize.detect_encoding`,
+the interpreter's own rule), the bytes are parsed so the cookie is honoured
+there too, and a file that cannot be read or parsed is a FACT about the
+scan -- held once, reported once by `unassessable_file`, skipped
+identically by everyone. `corpus.unparsed()` is the blind-spot list.
+
+The tree is shared, so the tree is read-only, and that is checked rather
+than promised: `test_no_detector_mutates_the_tree` runs every registered
+detector and compares every cached tree to a fresh parse of the same bytes,
+on a fixture and on the real package. The one component that legitimately
+mutates trees, the mutation engine, asks for `corpus.fresh()` and gets an
+uncached copy of its own.
+
+Detectors are still order-independent in what they conclude -- none reads
+another's findings. They are no longer independent in what they see, and
+that is the point.
+
+Ten mutants.
+
 ## 0.17.15 (2026-09-10)
 
 ### ghost_buster
