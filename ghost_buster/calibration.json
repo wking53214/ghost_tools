@@ -118,7 +118,7 @@
      "exclusions": [], "disclosed": ["thresholds (three returns, ten runs, five blind runs) set by design, not measured on a corpus; the trajectory filter is the constant-velocity Kalman filter from a pediatric deterioration engine"],
      "source": "README, what it remembers; CHANGELOG 0.13.0, 0.17.4"},
     {"name": "readiness", "kind": "gate", "date": "2026-09-11", "corpus": "three operations on ghost_tools, then 38 repositories in the pre-flight sweep",
-     "before": {"criteria_met_on_first_patient": "5 of 6"}, "after": {"first_candidate": "ghost_tools 1.0.3", "candidates_in_the_fast_sweep": 0},
-     "exclusions": [], "disclosed": ["unknown counts against the patient; any committed_secret finding fails the secrets criterion, candidates included"], "source": "README, the surgeon; CHANGELOG 1.0.0 through 1.0.4"}
+     "before": {"criteria_met_on_first_patient": "5 of 6"}, "after": {"first_candidate": "ghost_tools 1.0.3", "candidates_in_the_fast_sweep": 0, "repositories_failing_secrets_on_candidates_alone_before_1.2.2": 7},
+     "exclusions": [], "disclosed": ["unknown counts against the patient", "since 1.2.2 only an established credential (CRITICAL) fails the secrets criterion; a candidate is reported beside the verdict and retired by a false decision in the case file. Before that any committed_secret failed it: seven of 38 repositories in the pre-flight sweep, none a credential on the evidence"], "source": "README, the surgeon; CHANGELOG 1.0.0 through 1.0.4, 1.2.2"}
   ]
 }

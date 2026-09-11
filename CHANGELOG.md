@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.2.2 (2026-09-11)
+
+### The secrets criterion rates what the rule established
+Readiness failed "no committed secrets" on any secrets finding. The
+pre-flight sweep found seven repositories failing it on `generic-api-key`
+candidates alone: test fixtures, transcripts, evidence files, the class the
+10 September sweep read by hand and found to contain no credential. A
+candidate blocked the serum the same way a private key did.
+
+Now only an established credential (CRITICAL: a provider-issued prefix, a
+PEM header) fails the criterion. A shape-only candidate (MAJOR) is
+reported beside the verdict as "N candidate(s) to read", and a "false"
+decision recorded against it in the case file (`ghost-triage --casefile
+--set ID=suppress:"why"`) retires it: still reported, no longer counted
+as unread. Retirement follows the latest decision on a finding and never
+reaches an established credential. Six tests, four mutants, all killed.
+
 ## 1.2.1 (2026-09-11)
 
 ### The calibration record

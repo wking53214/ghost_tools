@@ -726,7 +726,8 @@ def main(argv: List[str] = None) -> int:
         _print_report(new, known, priors)
         # Candidacy is read off this run's own findings and the record of
         # which checks ran. Unknown counts against the patient.
-        print(readiness.assess(findings, checks).render())
+        retired = Casefile(casefile_path).retired() if casefile_path.is_file() else set()
+        print(readiness.assess(findings, checks, retired).render())
         print()
         if profile is not None:
             print(profile.render(profile_seconds))

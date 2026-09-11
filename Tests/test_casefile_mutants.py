@@ -16,6 +16,9 @@ TESTS = "Tests/test_casefile.py"
 _C = "ghost_buster/casefile.py"
 
 MUTANTS = [
+    ("retirement forgets that a later decision overrides an earlier one", "ghost_buster/casefile.py",
+     "        for case in sorted(self.cases, key=lambda c: c.when):\n            if case.finding_id and case.outcome in (\"real\", \"false\"):\n",
+     "        for case in sorted(self.cases, key=lambda c: c.when, reverse=True):\n            if case.finding_id and case.outcome in (\"real\", \"false\"):\n"),
     ("suppress teaches nothing", _C,
      '_DISPOSITION_OUTCOME = {"fix": "real", "suppress": "false", "document": "real"}',
      '_DISPOSITION_OUTCOME = {"fix": "real", "document": "real"}'),

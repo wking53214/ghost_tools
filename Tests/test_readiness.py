@@ -106,3 +106,63 @@ def test_the_tests_criterion_truncates_a_long_list():
     assert tests.evidence.startswith("6 failing or flaky test(s): Tests/test_x.py::test_0")
     assert tests.evidence.endswith("(+2 more)")
 
+
+
+# ---------------------------------------------------- secrets: established vs candidate
+
+def test_an_established_credential_fails_the_gate():
+    r = assess([_f("committed_secret", Severity.CRITICAL)], ALL_RAN)
+    assert [c.name for c in r.failing] == [SECRETS]
+    assert "1 credential(s) established" in r.render()
+
+
+def test_a_shape_only_candidate_is_reported_beside_the_verdict_and_does_not_fail():
+    """A generic-api-key hit establishes a candidate, not a credential. The
+    last sweep read 32 of them by hand and every one was a fixture, a word
+    or a transcript. Failing candidacy on a candidate is how the gate gets
+    skimmed."""
+    r = assess([_f("committed_secret", Severity.MAJOR)], ALL_RAN)
+    assert r.candidate
+    [sec] = [c for c in r.criteria if c.name == SECRETS]
+    assert sec.met is True
+    assert sec.evidence == "none established; 1 candidate(s) to read"
+
+
+def test_a_candidate_dismissed_in_the_case_file_is_retired_not_hidden():
+    import dataclasses
+    f1 = _f("committed_secret", Severity.MAJOR)
+    f2 = dataclasses.replace(f1, summary="a second candidate, a different id")
+    assert f1.id != f2.id
+    r = assess([f1, f2], ALL_RAN, retired={f1.id})
+    [sec] = [c for c in r.criteria if c.name == SECRETS]
+    assert sec.met is True
+    assert sec.evidence == "none established; 1 candidate(s) to read, 1 retired as false in the case file"
+
+
+def test_retirement_never_reaches_an_established_credential():
+    f = _f("committed_secret", Severity.CRITICAL)
+    r = assess([f], ALL_RAN, retired={f.id})
+    assert not r.candidate and "established" in r.render()
+
+
+def test_the_cli_reads_retirements_from_the_case_file(tmp_path, capsys, monkeypatch):
+    """End to end: a candidate the case file dismissed shows as retired in
+    the readiness the plain report prints."""
+    from ghost_buster.cli import main
+    from ghost_buster.casefile import Case, Casefile
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "m.py").write_text("x = 1\n")
+    fake = _f("committed_secret", Severity.MAJOR)
+    report = type("R", (), {"ran": True, "reason": ""})()
+    monkeypatch.setattr("ghost_buster.cli.scan_secrets", lambda root, **kw: ([fake], report))
+    monkeypatch.setattr("ghost_buster.cli.render_secrets_report", lambda rep: "ghost_buster: secrets: stubbed")
+    cf = Casefile(repo / ".ghost_casefile.json")
+    cf.cases = [Case("committed_secret", "committed_secret", "false", "fixture", "2026-09-10T00:00:00",
+                     fake.id, "m.py", "suppress")]
+    cf.save()
+    main([str(repo), "--no-tests", "--no-branches", "--no-project", "--no-correlate", "--no-ledger",
+          "--single-repo", "--baseline", str(tmp_path / "b.json")])
+    out = capsys.readouterr().out
+    assert "1 retired as false in the case file" in out
+    assert "met      no committed secrets" in out
