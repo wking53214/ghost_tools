@@ -173,7 +173,7 @@ def _requirements_files(root: Path) -> List[Path]:
     return sorted(p for p in root.glob("requirements*.txt") if p.is_file())
 
 
-def _read_requirements(paths: List[Path]) -> List[str]:  # ghost_buster: name-disagreement -- `paths` is `req_files` at every call site
+def _read_requirements(paths: List[Path]) -> List[str]:
     out = []
     for p in paths:
         try:
@@ -288,7 +288,7 @@ def analyse_module(path: Path, root: Path, package_roots: Set[str]) -> Optional[
     # check can tell the two apart -- see derive_findings.
     for node in ast.walk(tree):
         if isinstance(node, ast.Try) and any(
-                _catches_import(h) for h in node.handlers):  # ghost_buster: name-disagreement -- `h` is `handler` in the signature
+                _catches_import(h) for h in node.handlers):
             for inner in ast.walk(node):
                 if isinstance(inner, ast.Import):
                     facts.guarded.extend(a.name.split(".", 1)[0] for a in inner.names)
@@ -345,7 +345,7 @@ def analyse_module(path: Path, root: Path, package_roots: Set[str]) -> Optional[
     return facts
 
 
-def _catches_import(handler: ast.ExceptHandler) -> bool:  # ghost_buster: name-disagreement -- `handler` is `h` at every call site
+def _catches_import(handler: ast.ExceptHandler) -> bool:
     t = handler.type
     if t is None:
         return True
@@ -421,7 +421,7 @@ def build_model(root, files) -> StructuralModel:
     if deps:
         model.dependency_sources.append("pyproject.toml:project.dependencies")
     req_files = _requirements_files(root)
-    req_deps = _read_requirements(req_files)  # ghost_buster: name-disagreement -- `req_files` is `paths` in the signature
+    req_deps = _read_requirements(req_files)
     if req_deps:
         model.dependency_sources.extend(str(p.relative_to(root)) for p in req_files)
     model.declared_dependencies = sorted({requirement_name(d) for d in deps + req_deps} - {""})

@@ -248,7 +248,7 @@ def _recover_flattened(root: Path, corpora: List[Path], into: Path) -> int:
         if not result.is_recovered:
             continue
         try:
-            written.append((result, write_recovery(result, into, root)))
+            written.append((result, write_recovery(result, into, root)))  # ghost_buster: name-disagreement -- `result` is `recovery` in the signature
         except (FileExistsError, ValueError) as e:
             refused.append((result, str(e)))
 
