@@ -28,6 +28,19 @@ record of which checks ran. Nothing here re-derives anything.
     no swallowed-everything      no MAJOR swallowed_exception
     no hollow contracts          no dead_end_call
 
+WHAT THE RE-EXAMINATION CANNOT SEE, AND SAID SO
+
+A criterion can be read off evidence that predates an intervention. The
+re-examination after a cut runs the registered detectors; it does not run
+the test suite and does not run the secrets scan, because those execute
+the target's code and cost minutes, and a comment-only remedy verified by
+syntax-tree identity is not a reason to spend them again. Those criteria
+are therefore CARRIED: the verdict stands, and the report says the
+evidence is the workup's rather than a second look's. A reader deciding
+whether to act on an after-block should know which half of it was
+re-established. Before this, "suite ran clean" after a cut read exactly
+like "suite ran clean" before one.
+
 WHAT IS NOT MEASURED, AND SAID SO
 
 "Someone depends on it." Whether anything outside this repository imports
@@ -43,7 +56,7 @@ from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 from .ledger import RAN
-from .schema import Finding, Severity
+from .schema import Finding, Severity, authoritative
 
 # Criteria, in the order a surgeon would check them: can I see the patient,
 # is anything bleeding, then the structural conditions.
@@ -60,6 +73,7 @@ class Criterion:
     name: str
     met: Optional[bool]          # None: the scan could not assess this
     evidence: str
+    carried: bool = False        # established before an intervention, not after it
 
     @property
     def unknown(self) -> bool:
@@ -87,11 +101,20 @@ class Readiness:
         lines = ["serum candidacy: " + ("CANDIDATE" if self.candidate else "not a candidate")]
         for c in self.criteria:
             mark = {True: "met    ", False: "FAILING", None: "unknown"}[c.met]
-            lines.append(f"  {mark}  {c.name:34s} {c.evidence}")
+            note = "  [carried from the workup, not re-established]" if c.carried else ""
+            lines.append(f"  {mark}  {c.name:34s} {c.evidence}{note}")
         if self.unknown:
             lines.append("  unknown counts against the patient: a surgeon does not enhance "
                          "what they could not examine.")
+        if self.carried:
+            lines.append("  carried means the evidence predates the cut: the re-examination "
+                         "does not run these layers, so the verdict is the workup's, not a "
+                         "second look's.")
         return "\n".join(lines)
+
+    @property
+    def carried(self) -> List[Criterion]:
+        return [c for c in self.criteria if c.carried]
 
 
 def _name_tests(findings: List[Finding], limit: int = 4) -> str:
@@ -114,7 +137,8 @@ def _count(findings: Iterable[Finding], detector: str,
 
 
 def assess(findings: Iterable[Finding], checks: Dict[str, str],
-           retired: Optional[Set[str]] = None) -> Readiness:
+           retired: Optional[Set[str]] = None,
+           carried: Iterable[str] = ()) -> Readiness:
     """Read candidacy off what the scan already found and what it ran.
 
     `retired` is the set of finding ids the case file holds a "false"
@@ -122,8 +146,13 @@ def assess(findings: Iterable[Finding], checks: Dict[str, str],
     fixture, a word, a transcript. It changes what the evidence says, not
     the verdict; only an established credential (CRITICAL) fails the gate.
     """
-    findings = list(findings)
+    # A criterion is a deterministic verdict, so it reads deterministic
+    # findings. Today nothing else can reach here; the filter is what makes
+    # that a property of this gate rather than of the semantic layer's
+    # wiring. See schema.authoritative.
+    findings = authoritative(findings)
     retired = retired or set()
+    carried = set(carried)
     criteria: List[Criterion] = []
 
     n = _count(findings, "unassessable_file")
@@ -168,4 +197,6 @@ def assess(findings: Iterable[Finding], checks: Dict[str, str],
     criteria.append(Criterion(HOLLOW, n == 0,
                               "none" if n == 0 else f"{n} called body(ies) that do nothing"))
 
-    return Readiness(tuple(criteria))
+    return Readiness(tuple(
+        c if c.name not in carried else Criterion(c.name, c.met, c.evidence, carried=True)
+        for c in criteria))

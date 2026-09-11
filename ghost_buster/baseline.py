@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import List, Set, Tuple
 
 from .schema import Finding, FindingSet, Status
+from .schema import authoritative
 
 
 class Baseline:
@@ -44,11 +45,17 @@ class Baseline:
         return len(self._known_ids)
 
     def accept(self, findings: List[Finding]) -> None:
-        """Add these findings' IDs to the baseline and persist it."""
+        """Add these findings' IDs to the baseline and persist it.
+
+        Only findings a detector established. Accepting a REASONED one
+        would write a model's claim into the file that decides what a
+        future run stays quiet about, which is the one place silence is
+        purchased rather than earned. See schema.authoritative.
+        """
         existing = FindingSet.from_json(self.path.read_text(encoding="utf-8")) \
             if self.path.exists() else FindingSet()
         existing_ids = {f.id for f in existing}
-        for f in findings:
+        for f in authoritative(findings):
             if f.id not in existing_ids:
                 f.status = Status.SUPPRESSED
                 existing.add(f)

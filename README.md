@@ -1,4 +1,4 @@
-# ghost_tools -- v1.0
+# ghost_tools -- v1.3.0
 
 A scanner that says what it could not see, and a surgeon that heals on a
 branch, learns from every cut, and offers the serum only to a candidate.
@@ -146,6 +146,18 @@ repository:
   store is yours. `--no-tests` still declines on purpose, with its own
   receipt, and `GHOST_TOOLS_TRUST=-` trusts everything for a harness that
   scans its own fixtures, printed on the receipt line and never silent.
+
+  **What consent covers, exactly: a name, not a tree.** The grant is
+  recorded against the remote, so it holds for every checkout of that
+  remote, at any commit, with any contents, until you remove it. Pulling
+  a commit does not re-prompt, a second clone inherits the decision, and
+  somebody who can change what a trusted remote contains gets their code
+  run by your next `--tests`. That is the same question a CI
+  configuration answers when it runs a suite, and it is a different
+  question from "do I trust this exact code", which would mean consenting
+  per commit. If you need the stronger property today, `--no-tests`
+  executes nothing regardless of consent. `ghost_buster/trust.py` states
+  the model in full.
 - **A default run takes minutes, not seconds**, because of that suite.
   `--no-tests` gets the old fast structural pass back.
 
@@ -1521,7 +1533,7 @@ package uses for its model-client tests. `test_branches.py`,
 repositories and pytest projects in `tmp_path` instead, the only honest way
 to test a ref-graph, git-history or suite-execution check (the secrets
 suite against a real gitleaks binary, skipped if one is not on PATH).
-`test_mutation.py` and the 36 `Tests/*_mutants.py` files run pytest in
+`test_mutation.py` and the 43 `Tests/*_mutants.py` files run pytest in
 subprocesses against scratch copies of the project, each mutant file
 breaking one component a named number of ways and requiring every mutant
 to fail a test; they account for most of the suite's wall-clock time. A

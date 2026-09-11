@@ -166,3 +166,33 @@ def test_the_cli_reads_retirements_from_the_case_file(tmp_path, capsys, monkeypa
     out = capsys.readouterr().out
     assert "1 retired as false in the case file" in out
     assert "met      no committed secrets" in out
+
+# ------------------------------------------------- evidence that predates a cut
+
+def test_a_carried_criterion_says_its_evidence_is_the_workups():
+    """After a cut, the re-examination does not run the test suite or the
+    secrets scan, so their verdicts are the workup's. The gate keeps the
+    verdict and the report stops presenting it as a second look."""
+    verdict = assess([], {"tests": RAN, "secrets": RAN},
+                     carried=(TESTS, SECRETS))
+    tests = next(c for c in verdict.criteria if c.name == TESTS)
+    parses = next(c for c in verdict.criteria if c.name == PARSES)
+
+    assert tests.met is True and tests.carried
+    assert not parses.carried, "the re-examination does run the parser"
+    assert "carried from the workup" in verdict.render()
+    assert "the evidence predates the cut" in verdict.render()
+
+
+def test_nothing_is_carried_unless_it_is_named():
+    verdict = assess([], {"tests": RAN, "secrets": RAN})
+    assert not verdict.carried
+    assert "carried" not in verdict.render()
+
+
+def test_carrying_changes_the_account_not_the_verdict():
+    """A carried criterion is not a weaker one: the workup measured it."""
+    plain = assess([], {"tests": RAN, "secrets": RAN})
+    carried = assess([], {"tests": RAN, "secrets": RAN}, carried=(TESTS,))
+    assert plain.candidate == carried.candidate
+    assert [c.met for c in plain.criteria] == [c.met for c in carried.criteria]

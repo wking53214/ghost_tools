@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ghost-tools"
-version = "1.3.0"
+version = "1.4.0"
 description = "Codebase integrity toolkit: finds structural ghosts, proves vacuous tests by mutation, outlines missing code, and turns human-triaged findings into accurate docs"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -46,7 +46,7 @@ dev = ["pytest>=8", "pytest-xdist>=3"]
 
 [tool.pytest.ini_options]
 testpaths = ["Tests"]
-# 454 mutants, each copying the project to a scratch directory, applying one
+# 572 mutants, each copying the project to a scratch directory, applying one
 # exact text substitution and running a whole test file in a fresh
 # interpreter. Measured 2026-09-10: the copy costs 0.03s and the interpreter
 # 0.34s, so about 170 seconds is process overhead before an assertion runs,

@@ -233,3 +233,27 @@ def test_the_report_names_what_is_left_for_a_human(patient):
     assert "OPERATIVE REPORT" in text
     assert "before" in text and "after" in text
     assert "untouched" in text
+
+def test_the_after_block_marks_what_the_re_examination_could_not_see(patient):
+    """The cut re-runs the detectors; it does not re-run the suite or the
+    secrets scan. Before this, the after-block read `suite ran clean` in
+    exactly the words the workup used, for an examination that never
+    happened."""
+    files, findings, checks = _workup(patient)
+    op = operate(patient, files, findings, checks, branch="ghost/op")
+
+    assert op.cuts, "the fixture is meant to produce a cut"
+    carried = {c.name for c in op.readiness_after.carried}
+    assert carried == {"tests run and pass", "no committed secrets"}
+    assert "carried from the workup" in op.render()
+    assert not op.readiness_before.carried, "the workup established its own evidence"
+
+
+def test_nothing_is_carried_when_no_cut_was_made(patient):
+    """With no cut the tree is the one the workup examined, so the
+    after-block is the workup, not a stale copy of it."""
+    files, findings, checks = _workup(patient)
+    op = operate(patient, files, findings, checks, branch="ghost/op", dry_run=True)
+
+    assert not op.cuts
+    assert not op.readiness_after.carried

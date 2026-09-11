@@ -304,7 +304,11 @@ def _cut(op: "Operation", root: Path, files: Sequence[Path], findings: Sequence[
                 casefile.record_outcome(by_id[fid], EXPOSED, f"by {name}")
         current = after
 
-    op.readiness_after = readiness.assess(current, checks, _retired(casefile))
+    # Which criteria the re-examination could not re-establish. Only worth
+    # saying when something actually changed: with no cuts the tree is the
+    # one the workup examined, so nothing is carried.
+    carried = (readiness.TESTS, readiness.SECRETS) if op.cuts else ()
+    op.readiness_after = readiness.assess(current, checks, _retired(casefile), carried=carried)
     op.on_the_table = [f for f in current if f.detector not in ("name_disagreement",)]
 
     if op.readiness_after.candidate:
