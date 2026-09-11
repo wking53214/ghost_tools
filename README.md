@@ -747,6 +747,310 @@ python -m ghost_buster.cli /path/to/other --secrets --json > /tmp/other.json
 python -m ghost_buster.cli /path/to/repo --secrets --correlate-with other=/tmp/other.json
 ```
 
+### `drifted_copy`: the same file in several places, no longer agreeing
+
+`duplicate_file` groups by content hash, so it finds copies that are
+byte-identical and nothing else. **It goes quiet at exactly the moment the
+problem begins** -- somebody fixes a bug in one copy, the hashes diverge, and
+the group vanishes from the report.
+
+Measured across 24 live repositories: **111 file groups share a complete
+top-level name set, and 29 of those have drifted.** None of the 29 was
+visible to anything in the toolkit.
+
+Two files are "the same file" when their top-level definitions have the same
+names, all of them, at least three. Equality rather than overlap, because two
+modules sharing three helper names is a coincidence and two sharing all
+fourteen is a copy. Drift is measured per definition by structural hash
+(`ast.dump` without attributes), so reformatting and comments do not register
+and a changed condition does. The split is the finding:
+
+| evidence | category | severity |
+|---|---|---|
+| every definition structurally identical | `duplication` | MINOR, a tidiness problem |
+| some definition differs | `parallel_implementation` | MAJOR, a fix that did not propagate |
+
+That second row filled an empty slot. Until now `parallel_implementation`
+had exactly one producer, `semantic.py`, whose findings are REASONED by
+construction because an LLM made them. This is the mechanical half, and it
+is CONFIRMED because a structural hash either matches or it does not.
+
+What it found immediately:
+
+```
+GSA_Governance_Operating_Core_Enterprise.py   3 copies, 97 shared names, 1 differs
+ast_graph_extractor.py                        5 copies, 6 shared names, all 6 differ
+citadel_v1.1_copy1 / _copy2 / v1.2            3 copies in ONE repo, all 5 differ
+cassette_interface.py, cassette_schema.py     drifted between two sentinel_os copies
+```
+
+Byte-identical groups are deliberately not repeated here; that is
+`duplicate_file`'s finding, for the same reason `duplicate_file` was given a
+group of its own in v0.9. And it does not guess intent: a `_v1.1` beside a
+`_v1.2` may be a deliberate archive. It says which definitions stopped
+matching and leaves the judgement where it belongs.
+
+### `swallowed_exception`: a handler that catches something and does nothing
+
+The same argument `dead_end_call` makes, one level down. Something went
+wrong, something caught it, nothing happened, and the operation reports
+success:
+
+```python
+try:
+    publish(decision)
+except Exception:
+    pass
+```
+
+That is not error handling. It is the removal of error handling written in
+a shape that looks like error handling, which is why it survives review.
+
+**Breadth sets the severity, because swallowing is sometimes correct.**
+`except ImportError: pass` hides one class of failure and is usually the
+intended behaviour for an optional dependency. `except Exception: pass`
+hides the missing dependency *and* the typo, the None, the failed write, and
+the bug introduced next year. So bare `except` and `Exception` /
+`BaseException` are MAJOR; a named narrow exception is MINOR.
+
+Measured: **32 in live code, 13 catching bare `Exception`**, in ANVIL, CCC,
+Ecology and AUGUR. A further 22 are in test files and are not reported --
+best-effort cleanup in a teardown is ordinary, and `is_test_path` is shared
+with the naming and dead-end detectors so all three agree on what a test is.
+
+Disclosed scope: only `pass`. A handler whose body is `continue`,
+`return None` or a lone `logger.debug(...)` swallows just as thoroughly, and
+each needs its own measurement first -- a `continue` in a retry loop is often
+exactly right. `contextlib.suppress` is never flagged: it says in its own
+name what it does.
+
+### `dead_end_call`: a door somebody opens onto nothing
+
+`dead_code` next door answers the opposite question. It finds a definition
+**nobody references**. This one finds the definition everybody references
+whose body does nothing, and its whole job is telling that apart from the
+thing it most resembles:
+
+> A **seam** is inert on purpose. An abstract method, a Protocol, a plugin
+> interface: it has no body because the body arrives from somewhere else,
+> and being empty is the design.
+>
+> A **dead end** is inert because nothing ever arrived. Live code calls it,
+> the call returns, and nothing happened.
+
+Both are empty. The difference is not in the body, it is in whether anything
+in the world is arranged to fill it, and that is decidable, because a seam
+**declares itself**:
+
+| declared by | what that looks like |
+|---|---|
+| inheritance | an `ABC`, `ABCMeta` or `Protocol` base |
+| decorator | `@abstractmethod`, `@abstractproperty` |
+| use | a subclass anywhere in the scan that overrides it with a real body |
+
+Anything with none of those, called by non-test code, is reported. The five
+empty shapes are `pass`, `...`, docstring-only, `return None`, and
+`raise NotImplementedError`.
+
+**Silence is worse than a crash.** A raised `NotImplementedError` reached at
+runtime stops and names itself, so it is MINOR. A `pass` reached at runtime
+lets the caller believe the work happened, which is the difference between
+"the check passed" and "the thing works", so the silent shapes are MAJOR.
+
+**It cannot say "never", and does not.** Nothing static proves never. The
+finding says what the evidence supports: nothing in the scanned set provides
+a body and nothing declares an intent to. An implementation in a repository
+this scan was not pointed at would settle it, which is what
+`blackhole-extrapolator --sibling` exists for. It also cannot say which
+object a call landed on, the same disclosed limit `dead_code` carries: this
+is AST-only with no type resolution, so "something calls `execute`" means
+the name is called somewhere.
+
+**Measured before it was built.** Across 24 live repositories and 1,562
+files: 162 callables whose body does nothing, 31 with no override in their
+own repository, 11 called by live code. Ten of the eleven were deliberate,
+so every exclusion below was a false positive first:
+
+| excluded | measured case |
+|---|---|
+| Null Object and no-op conventions (`Null*`, `NoOp*`, `Fake*`, `Stub*`, `Dummy*`, `Mock*`, on a word boundary) | `NullTelemetrySink.record`, `_NoOpSpan.set_status` |
+| definitions in test files, and call sites in test files | `_FakeConn.close`, `NoneReturningDecider.safety_check` |
+| an empty `__init__`, `__enter__`, `__exit__`, `__del__` | `AuditReportValidator.__init__` |
+
+What survives, library-wide, is **one** finding: `UniversalAdapter.execute`
+raising `NotImplementedError` in a plain class documented as "Base contract
+for all domain adapters", with nothing anywhere subclassing it and live code
+calling `.execute()`. It appears three times because the file is vendored
+into two repositories.
+
+That ratio is the point. A detector that reported all 162 would be telling
+you about your Protocols.
+
+### `--annotate-names`: one value, two names, written down twice
+
+The complaint this answers is the one every SQL join produces. A column is
+`customer_id` on one side and `recipient_id` on the other, the same key
+wearing two names, and nothing in either schema saying so. Measured across
+a 37-repository library on 2026-09-10, the same thing happens between
+repositories: `log_odds_value` is only ever passed `raw_odds`,
+`current_state` is only ever passed `current_state_variable`,
+`obligation_ids` is only ever passed `needed_ids`. 63 pairs, 21 of them
+spanning more than one repository.
+
+**Only a bijection is reported, and that is the whole safety argument.** A
+parameter that receives several different variables is not a naming
+disagreement, it is a parameter doing its job. A variable passed to several
+different parameters is the same. Renaming either would collide with a name
+that is legitimately in use somewhere else. A one-to-one correspondence is
+the only case where the two names provably denote one thing.
+
+A call resolves to a definition in its own file first, then to a
+library-wide one only if that name is defined exactly once, and a method
+counts only when it is reached through `self` or `cls`. Ambiguity is not a
+tie to be broken. Both rules came from false positives this produced
+against ghost_tools itself: `subprocess.run(cmd)` in one module was taking
+its parameter names from `PytestRunner.run(self, nodeids)` in another.
+
+Three more exclusions, each an observed false positive in the unfiltered
+pass of 271 pairs:
+
+| excluded | why | example |
+| --- | --- | --- |
+| a CONSTANT | it has a role of its own | `dependencies <- INGRESS_GUARDS` |
+| a leading underscore on one side only | privacy is part of the name | `create_fn <- _create` |
+| camelCase in a snake_case library | somebody else's API | `parse_all <- parseAll` |
+
+`ghost_buster` reports these by default and changes nothing.
+`--annotate-names` is opt-in, and is the only thing in the toolkit that
+writes into the tree it was pointed at. It records each disagreement in the
+two places somebody actually looks:
+
+- **the README**, as a table regenerated between a pair of HTML-comment
+  markers (see the block further down this file, which this tool wrote
+  about itself). One sorted list, countable, readable by somebody who is not
+  in the code.
+- **the code**, as a trailing comment on the signature and on each call
+  site. The moment the question actually occurs to a reader is while they
+  are looking at one or the other, wondering whether `cust_pub` is the same
+  thing as `recipient_pub`.
+
+Four properties, and the last one is checked rather than promised:
+
+1. **Comments only.** Nothing it writes is code.
+2. **Trailing, never inserted.** A note appended to an existing line changes
+   no line's number, so a second disagreement's recorded line is still
+   right and a re-run can find what the last run wrote.
+3. **Idempotent.** Notes are stripped and rewritten whole on every run, so
+   they follow a rename instead of piling up behind one, and neither record
+   carries a timestamp -- a run that finds nothing new produces no diff.
+4. **It cannot change what a program means.** Every edit is parsed before
+   and after and the two syntax trees compared; if they differ by a single
+   node the edit is discarded and the file is left exactly as it was. A
+   backslash continuation, a line that turns out to be inside a triple-
+   quoted string, a marker that is really part of a string literal: all fail
+   closed, one line at a time, so a bad line costs that line and not the
+   file.
+
+```bash
+# report only -- the default, writes nothing
+python -m ghost_buster.cli /path/to/repo
+
+# write both records
+python -m ghost_buster.cli /path/to/repo --annotate-names
+python -m ghost_buster.cli /path/to/repo --annotate-names --annotate-readme docs/NAMES.md
+```
+
+It reports; it does not rename. Which of the two names should win is a
+judgement: the parameter is the contract, the variable is the caller's
+local, and neither is automatically right.
+
+<!-- ghost_buster:name-disagreements:begin -->
+## Name disagreements
+
+One value carried under two names. Every row is a bijection: the
+parameter receives that variable and no other, and the variable reaches
+that parameter and no other. That is the only case where the two names
+provably denote one thing, and the only case where substituting one for
+the other cannot capture a name that is legitimately in use elsewhere.
+
+Nothing here has been renamed. Which name should win is a judgement:
+the parameter is the contract, the variable is the caller's local, and
+neither is automatically right.
+
+| parameter | variable | call sites | files |
+| --- | --- | --- | --- |
+| `cap` | `max_mutants_per_candidate` | 1 | `ghost_buster/mutation.py` |
+| `dist` | `token` | 2 | `blackhole_extrapolator/detect.py` |
+| `dotted` | `mod` | 5 | `ghost_buster/mutation.py` |
+| `entry` | `e` | 1 | `ghost_buster/secrets.py` |
+| `explicit` | `base_branch` | 1 | `ghost_buster/branches.py` |
+| `handler` | `h` | 2 | `ghost_buster/boundary.py`, `ghost_buster/structure.py` |
+| `input_text` | `diff_out` | 1 | `ghost_buster/branches.py` |
+| `paths` | `req_files` | 1 | `ghost_buster/structure.py` |
+| `run` | `mutation_run` | 1 | `ghost_buster/cli.py`, `ghost_buster/mutation.py` |
+| `summary` | `phase` | 2 | `ghost_buster/testsuite.py` |
+| `test_paths` | `tests` | 1 | `blackhole_extrapolator/detect.py` |
+
+11 disagreement(s).
+
+Regenerated by `ghost_buster <path> --annotate-names`, which also writes
+the same note inline on each signature and each call. Edit the code, not
+this block: it is rewritten whole every run and contains no timestamp, so
+a run that changes nothing produces no diff.
+<!-- ghost_buster:name-disagreements:end -->
+### What a scan may do to your tree, checked rather than promised
+
+"The working tree is never modified" appeared **35 times** across this
+project's code and documentation, and nothing verified it. A promise made 35
+times and checked zero times is exactly the defect class this toolkit exists
+to find in other people's code, and it sat here unexamined through the
+version that added `--annotate-names` and the one that added
+`--recover-into`, which are the first two things in the toolkit that write
+anything at all.
+
+`Tests/test_tree_immutability.py` runs every real entry point against a real
+tree and compares a content snapshot taken before and after. Writing it
+immediately showed the blanket claim to be **too strong**, so the invariant
+is now stated as what is actually true and actually tested:
+
+> Nothing that already existed is modified or deleted, and the only files
+> that appear are ones the caller declared it expected.
+
+| entry point | what it may leave behind |
+|---|---|
+| `ghost-buster PATH` (default) | `.ghost_ledger.json` and nothing else |
+| `ghost-buster PATH --accept` | `.ghost_baseline.json` |
+| `ghost-buster PATH --annotate-names` | modifies `.py` files and the README, by comment only. The one deliberate exception |
+| `ghost-buster PATH --json` | nothing |
+| `blackhole-extrapolator PATH` | nothing |
+| `--reconstruct-into DIR` | writes to `DIR`; the scanned tree untouched |
+| `--recover-from CORPUS --recover-into DIR` | writes to `DIR`; **both** the scanned tree and the corpus untouched |
+
+That last row matters most: a corpus is somebody's exported chat history,
+and reading it has to leave it exactly as it was found. It is a second tree,
+guarded separately.
+
+The mechanism is a content hash of every path, not a patched `open`. The
+idea came from a capability tracer recovered out of a chat history, which
+patched `builtins.open` and would have caught none of this, because every
+write here goes through `Path.write_text`:
+
+```
+Path.write_text seen by a builtins.open patch: False
+```
+
+A snapshot cannot be sidestepped by which API a writer happens to use, and
+it catches a deletion, a `chmod`, a stray directory, and a file written and
+removed again within the same run, all of which a patched `open` or a
+survivors-only comparison would miss.
+
+Eleven mutants hold the suite to its job. Three of them break **real product
+code** in the exact way the guard exists to catch: annotating without the
+flag that asks for it, writing a reconstruction beside the original instead
+of into the output directory, and writing a recovery into the scanned
+repository. Without those three, this would be 35 docstrings and one more
+file agreeing with them.
+
 ### `--mutate`: the proof a check is vacuous
 
 The characteristic defect of an iteratively built codebase is a check that
@@ -1097,6 +1401,84 @@ every such void. When a parsing companion sits beside the flattened file
 (`x_source.py` beside `x_adapter.py`), the void says whether the companion
 kept any of the class names, so an ancestor of a renamed rewrite is not
 mistaken for a lost dependency.
+
+### `--recover-from`: the original itself, not a proposal for one
+
+`--reconstruct-into` rebuilds a flattened file by reasoning about where the
+line breaks probably went. Across a 37-repository library it recovered a
+running program in **0 of 34** cases. It gets you something editable, not
+something correct.
+
+This is a different job with a different guarantee. Flattening is a
+**whitespace-only** transform. Measured 2026-09-10, the 37 flattened files
+in that library fall into exactly two shapes:
+
+| shape | fingerprint | what did it |
+|---|---|---|
+| indentation survived | space runs of 4n+1 (5, 9, 13, 17...) | each newline became one space |
+| indentation gone | no multi-space run anywhere | every whitespace run became one space, which is also what an HTML render does |
+
+Neither adds, removes or reorders a single non-whitespace character. So
+define `collapse(x)` as every whitespace run replaced by one space, and
+`collapse` is **invariant under flattening**. If some other text collapses
+to exactly what the flattened file collapses to, that text is the original,
+up to whitespace. Not the most likely original. The original.
+
+The originals are usually still in a chat-history export. The raw ChatGPT
+export checked on 2026-09-10 held 20,919 fenced code blocks, 14,185 of them
+carrying real newlines; the only 39 single-line blocks over 200 characters
+were **Excel formulas**, which genuinely are one line. The vendor ships code
+with its newlines intact. The damage happens after the download, at a paste.
+
+**Four verdicts, and only two of them write anything.**
+
+| verdict | means | written |
+|---|---|---|
+| `identical` | a candidate collapses to exactly this file's collapse | yes, verbatim |
+| `contained` | this file's collapse is a substring of a candidate's, on token boundaries | yes, the located span's real bytes |
+| `related` | high identifier similarity, no collapse match | **no** |
+| `none` | nothing in the corpus is close | no |
+
+`related` is what keeps this honest. Four files scored 100% identifier
+overlap against a message that was a *different version* of the same code.
+High overlap is not the same claim as identical bytes, and treating it as
+one is how a plausible file gets committed as a real one.
+
+**Three defects this produced against the real library, each now a test:**
+
+- A plain substring search matched **mid-token** (`port os` inside
+  `import os`), and the span recovered from it started inside an identifier.
+  Containment is now checked on token boundaries, which after collapse means
+  a space or an end.
+- Similarity scored as one-directional coverage rewarded a candidate for
+  being **large**: the derived `raw.csv` holding every message in an export
+  scored 100% against eight different files. It is intersection over union
+  now.
+- Naming a recovery after the file's stem refused 6 of 27 as "already
+  exists", when nothing was in conflict: four repositories each hold an
+  `artifact_1.py`. The path is in the name.
+
+**One repair, and it has to prove it helped.** An HTML export writes an
+indent as `&nbsp;`, so the decoded text carries U+00A0 where the code had
+ordinary spaces, and Python rejects that outside a string literal.
+`nbsp-to-space` is applied only when it turns a file that does not parse
+into one that does; 9 of 11 non-parsing recoveries were fixed by it, and the
+rest (smart quotes, a truncated string) are reported as not parsing and left
+exactly as the corpus holds them. Damage in the corpus is a fact about the
+corpus. A recovery is written with **no header**, because a byte-faithful
+original stops being one the moment something is prepended to it; the
+provenance goes in a `RECOVERY.md` manifest beside the files.
+
+```bash
+# search one or more exports, write recovered originals and a manifest
+blackhole-extrapolator /path/to/library \
+    --recover-from ~/chatgpt_history --recover-from ~/gemini_history \
+    --recover-into /tmp/recovered
+```
+
+Nothing is written into the scanned tree, and nothing recovered is fed back
+into the analysis. A recovered file becomes real source the day a human
+reviews it and commits it.
 
 ### Sally is now Karen
 

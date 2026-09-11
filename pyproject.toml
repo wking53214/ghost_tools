@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ghost-tools"
-version = "0.17.9"
+version = "0.17.15"
 description = "Codebase integrity toolkit: finds structural ghosts, proves vacuous tests by mutation, outlines missing code, and turns human-triaged findings into accurate docs"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -42,10 +42,28 @@ packages = ["ghost_buster", "ghost_writer", "ghost_writer.polish", "blackhole_ex
 
 [project.optional-dependencies]
 semantic = ["anthropic"]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "pytest-xdist>=3"]
 
 [tool.pytest.ini_options]
 testpaths = ["Tests"]
+# 454 mutants, each copying the project to a scratch directory, applying one
+# exact text substitution and running a whole test file in a fresh
+# interpreter. Measured 2026-09-10: the copy costs 0.03s and the interpreter
+# 0.34s, so about 170 seconds is process overhead before an assertion runs,
+# and the suite takes 985 seconds on one core. That isolation is what makes a
+# surviving mutant believable, so the answer is to spend cores rather than
+# weaken it.
+#
+# This makes pytest-xdist required, which is why it is in the `dev` extra:
+# install with `pip install -e ".[dev]"`. Two conditional mechanisms were
+# tried first and neither works -- a rootdir conftest.py is itself loaded
+# during initial conftest loading, so both `pytest_load_initial_conftests`
+# and `pytest_configure` register after xdist has already read its options.
+# Verified by worker count, not assumed.
+#
+# `-n0` restores the serial run when interleaved output would be worse than
+# waiting.
+addopts = "-n auto"
 
 [tool.ruff]
 line-length = 100

@@ -17,8 +17,10 @@ import textwrap
 from pathlib import Path
 
 from ghost_buster.naming import (
+    DISAGREEMENT_DETECTOR,
     MINIMUM_CASSETTES,
     _ORDINARY_ENGLISH,
+    detect_name_disagreements,
     detect_placeholder_names,
     detect_vestigial_domain_names,
     domain_vocabularies,
@@ -195,3 +197,213 @@ def test_a_measurement_is_never_mistaken_for_a_placeholder(tmp_path):
 def test_tests_are_left_alone(tmp_path):
     files = _tree(tmp_path, {"test_thing.py": "tmp = 1\n"})
     assert detect_placeholder_names(files) == []
+
+
+# ------------------------------------------------- one thing under two names
+
+def _pair(tmp_path: Path) -> list:
+    """A parameter that only ever receives one variable, and a variable that
+    only ever reaches one parameter. The second argument is named the same on
+    both sides, so it contributes nothing and the fixture has exactly one
+    pair in it."""
+    return _tree(tmp_path, {
+        "queue.py":
+            "def enqueue(recipient_pub, payload):\n"
+            "    return (recipient_pub, payload)\n",
+        "caller.py":
+            "from queue import enqueue\n"
+            "def send(cust_pub, payload):\n"
+            "    return enqueue(cust_pub, payload)\n",
+    })
+
+
+def test_a_one_to_one_disagreement_is_reported(tmp_path):
+    findings = detect_name_disagreements(_pair(tmp_path))
+    assert len(findings) == 1
+    f = findings[0]
+    assert f.detector == DISAGREEMENT_DETECTOR
+    assert f.category is Category.NAMING
+    assert f.layer is Layer.MECHANICAL
+    assert f.severity is Severity.MINOR
+    assert f.status is Status.CONFIRMED
+    assert "recipient_pub" in f.summary and "cust_pub" in f.summary
+    # Both ends: the signature that declares the parameter and the call
+    # that passes the variable.
+    assert {Path(p).name for p in f.evidence.related_files} == {"queue.py", "caller.py"}
+
+
+def test_a_keyword_argument_counts(tmp_path):
+    files = _tree(tmp_path, {
+        "queue.py": "def enqueue(recipient_pub):\n    return recipient_pub\n",
+        "caller.py":
+            "from queue import enqueue\n"
+            "def send(cust_pub):\n"
+            "    return enqueue(recipient_pub=cust_pub)\n",
+    })
+    assert len(detect_name_disagreements(files)) == 1
+
+
+def test_the_same_name_on_both_sides_is_not_a_disagreement(tmp_path):
+    files = _tree(tmp_path, {
+        "queue.py": "def enqueue(payload):\n    return payload\n",
+        "caller.py":
+            "def send(payload):\n"
+            "    return enqueue(payload)\n",
+    })
+    assert detect_name_disagreements(files) == []
+
+
+def test_a_parameter_taking_several_variables_is_doing_its_job(tmp_path):
+    """Not a disagreement. Renaming `dest` after either caller's local would
+    be wrong for the other one."""
+    files = _tree(tmp_path, {
+        "sink.py": "def deliver(dest):\n    return dest\n",
+        "caller.py":
+            "def one(alpha):\n"
+            "    return deliver(alpha)\n"
+            "def two(beta):\n"
+            "    return deliver(beta)\n",
+    })
+    assert detect_name_disagreements(files) == []
+
+
+def test_a_variable_reaching_several_parameters_is_not_renamable(tmp_path):
+    """`token` is one name in the caller and two names in the callees.
+    Renaming it would have to pick one and collide with the other."""
+    files = _tree(tmp_path, {
+        "sink.py":
+            "def left(dest):\n    return dest\n"
+            "def right(origin):\n    return origin\n",
+        "caller.py":
+            "def send(token):\n"
+            "    return (left(token), right(token))\n",
+    })
+    assert detect_name_disagreements(files) == []
+
+
+def test_a_function_this_scan_never_saw_is_left_alone(tmp_path):
+    """pyparsing's `parseAll` is not ours to reconcile. The genuine pair in
+    the same tree is still reported, so this is not vacuous."""
+    files = _tree(tmp_path, {
+        "queue.py": "def enqueue(recipient_pub):\n    return recipient_pub\n",
+        "caller.py":
+            "def send(cust_pub, grammar, flag):\n"
+            "    grammar.parse_string(flag)\n"
+            "    third_party_entry(strict=flag)\n"
+            "    return enqueue(cust_pub)\n",
+    })
+    summaries = [f.summary for f in detect_name_disagreements(files)]
+    assert len(summaries) == 1
+    assert "cust_pub" in summaries[0]
+
+
+def test_two_functions_sharing_a_name_decide_nothing(tmp_path):
+    """The worst false positive this detector produced, on 2026-09-10:
+    `run(cmd)` in one module supplied the parameter names for `run(nodeids)`
+    in another, and the two were reported as one value under two names.
+    They are not the same function. Ambiguity is a reason to say nothing."""
+    files = _tree(tmp_path, {
+        "a.py": "def run(nodeids):\n    return nodeids\n",
+        "b.py": "def run(other):\n    return other\n",
+        "c.py": "def go(cmd):\n    return run(cmd)\n",
+    })
+    assert detect_name_disagreements(files) == []
+
+
+def test_two_classes_with_one_method_name_decide_nothing(tmp_path):
+    """`self.handle` in a module where two classes define `handle` names one
+    of them, and a walk over the syntax tree cannot say which. Picking the
+    first is how the parameter names of one class end up describing the
+    other's."""
+    files = _tree(tmp_path, {
+        "a.py":
+            "class Alpha:\n"
+            "    def handle(self, recipient_pub):\n"
+            "        return recipient_pub\n"
+            "class Beta:\n"
+            "    def handle(self, other_name):\n"
+            "        return other_name\n"
+            "    def send(self, cust_pub):\n"
+            "        return self.handle(cust_pub)\n",
+    })
+    assert detect_name_disagreements(files) == []
+
+
+def test_a_call_in_the_same_file_wins_over_a_stranger(tmp_path):
+    """Python looks in the module first, and so does this. `enqueue` here is
+    the local one, whose parameter is `local_pub` -- not the other file's."""
+    files = _tree(tmp_path, {
+        "far.py": "def enqueue(recipient_pub):\n    return recipient_pub\n",
+        "near.py":
+            "def enqueue(local_pub):\n    return local_pub\n"
+            "def send(cust_pub):\n    return enqueue(cust_pub)\n",
+    })
+    findings = detect_name_disagreements(files)
+    assert len(findings) == 1
+    assert "local_pub" in findings[0].summary
+    assert "recipient_pub" not in findings[0].summary
+
+
+def test_a_method_on_somebody_elses_object_is_not_ours(tmp_path):
+    """`subprocess.run(cmd)` is not our `run`. The receiver's type is exactly
+    what this layer does not know, so only `self`/`cls` methods count."""
+    files = _tree(tmp_path, {
+        "a.py": "def run(nodeids):\n    return nodeids\n",
+        "b.py":
+            "import subprocess\n"
+            "def go(cmd):\n    return subprocess.run(cmd)\n",
+    })
+    assert detect_name_disagreements(files) == []
+
+
+def test_a_method_reached_through_self_still_counts(tmp_path):
+    files = _tree(tmp_path, {
+        "a.py":
+            "class Sender:\n"
+            "    def enqueue(self, recipient_pub):\n"
+            "        return recipient_pub\n"
+            "    def send(self, cust_pub):\n"
+            "        return self.enqueue(cust_pub)\n",
+    })
+    assert len(detect_name_disagreements(files)) == 1
+
+
+def test_a_constant_keeps_its_role(tmp_path):
+    """INGRESS_GUARDS is not renamed to `dependencies` because it happens to
+    be passed as one. The case is a real one, observed 2026-09-10."""
+    files = _tree(tmp_path, {
+        "app.py":
+            "INGRESS_GUARDS = ('a',)\n"
+            "def build(dependencies):\n    return dependencies\n"
+            "def main():\n    return build(INGRESS_GUARDS)\n",
+    })
+    assert detect_name_disagreements(files) == []
+
+
+def test_a_leading_underscore_is_a_statement_that_survives(tmp_path):
+    files = _tree(tmp_path, {
+        "app.py":
+            "def _create():\n    return 1\n"
+            "def register(create_fn):\n    return create_fn\n"
+            "def main():\n    return register(_create)\n",
+    })
+    assert detect_name_disagreements(files) == []
+
+
+def test_camel_case_means_somebody_elses_api(tmp_path):
+    files = _tree(tmp_path, {
+        "app.py":
+            "def load(parse_all):\n    return parse_all\n"
+            "def main(parseAll):\n    return load(parseAll)\n",
+    })
+    assert detect_name_disagreements(files) == []
+
+
+def test_disagreements_in_tests_are_left_alone(tmp_path):
+    files = _tree(tmp_path, {
+        "test_queue.py":
+            "def enqueue(recipient_pub):\n    return recipient_pub\n"
+            "def test_send(cust_pub):\n"
+            "    return enqueue(cust_pub)\n",
+    })
+    assert detect_name_disagreements(files) == []

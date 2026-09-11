@@ -15,11 +15,16 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections import Counter
 from pathlib import Path
 from typing import List
 
 from .detect import _declared_dependencies, false_absence_hints, scan
 from .corpus import RootKind, classify_root
+from .reconstruct import reconstruct, write_proposal
+from .recover import (
+    Corpus, harvest, recover, write_manifest, write_recovery,
+)
 from .extrapolate import extrapolate, group_by_target
 from .schema import NON_SEEDING_KINDS, EvidenceKind, VoidKind
 
@@ -66,6 +71,23 @@ def main(argv: List[str] = None) -> int:
              "with every other as a sibling, and report only what nothing "
              "in the ecosystem provides.",
     )
+    parser.add_argument(
+        "--reconstruct-into", metavar="DIR", type=Path,
+        help="write a line-broken PROPOSAL for each flattened file into DIR. "
+             "Never writes into the scanned tree and never feeds the result "
+             "back into the analysis.")
+    parser.add_argument(
+        "--recover-from", metavar="PATH", type=Path, action="append", default=[],
+        help="a chat-history export or transcript directory that may hold the "
+             "ORIGINAL of a flattened file (repeatable). Flattening is a "
+             "whitespace-only transform, so a text that collapses to what a "
+             "flattened file collapses to IS its original -- this recovers the "
+             "real bytes rather than guessing where the line breaks went. "
+             "Requires --recover-into.")
+    parser.add_argument(
+        "--recover-into", metavar="DIR", type=Path,
+        help="write recovered originals and a RECOVERY.md manifest into DIR. "
+             "Never writes into the scanned tree and never overwrites.")
     parser.add_argument("--all", action="store_true",
                         help="render every void, including those whose evidence "
                              "constrains no shape")
@@ -75,6 +97,18 @@ def main(argv: List[str] = None) -> int:
     if not args.path.is_dir():
         print(f"not a directory: {args.path}", file=sys.stderr)
         return 2
+
+    if bool(args.recover_from) != bool(args.recover_into):
+        print("--recover-from and --recover-into are used together: one names "
+              "the corpus to search, the other where the recovered originals go",
+              file=sys.stderr)
+        return 2
+
+    if args.recover_from:
+        return _recover_flattened(args.path, args.recover_from, args.recover_into)
+
+    if args.reconstruct_into:
+        return _reconstruct_flattened(args.path, args.reconstruct_into)
 
     if args.ecosystem:
         repos = sorted(p for p in args.path.iterdir() if p.is_dir() and (p / ".git").exists())
@@ -132,6 +166,112 @@ def _analyse(root: Path, siblings: List[Path], args):
         if void.shape_confidence >= args.min_confidence:
             voids.append(void)
     return voids, wiring, evidence, classification
+
+
+def _reconstruct_flattened(root: Path, into: Path) -> int:
+    """Emit a proposal for every flattened file under `root`.
+
+    Reported separately from voids and never mixed into them: a void is a
+    claim that something is missing, and a flattened file is present. What
+    is missing from it is its structure, which is a different finding with a
+    different remedy.
+    """
+    written, skipped = [], []
+    for path in _flattened(root):
+        try:
+            written.append((path, write_proposal(path, into,
+                                                 path.read_text(errors="replace"))))
+        except FileExistsError:
+            skipped.append(path)
+        except OSError:
+            continue
+    if not written and not skipped:
+        print(f"No flattened files under {root}; nothing to reconstruct.")
+        return 0
+    print(f"{len(written)} proposal(s) written to {into}:")
+    for src, target in written:
+        result = reconstruct(src.read_text(errors="replace"), str(src))
+        verdict = "parses" if result.is_program else "readable, does not parse"
+        print(f"  {target.name}  ({result.lines} lines, {verdict})")
+    for src in skipped:
+        print(f"  SKIPPED {src.name}: a proposal already exists and was not overwritten")
+    print("\nNothing here was analysed. Review a proposal and commit it as real "
+          "source if it is right; the next scan will read it as source because "
+          "by then it is.")
+    return 0
+
+
+def _flattened(root: Path) -> List[Path]:
+    """Every flattened file under `root`. One definition, used by both the
+    reconstruct pass and the recover pass, so the two can never disagree
+    about what they are looking at."""
+    from .detect import _source_files
+    out = []
+    for path in _source_files(root):
+        try:
+            text = path.read_text(errors="replace")
+        except OSError:
+            continue
+        if text.count("\n") <= 2 and len(text) >= 200:
+            out.append(path)
+    return out
+
+
+def _recover_flattened(root: Path, corpora: List[Path], into: Path) -> int:
+    """Recover the ORIGINAL of each flattened file from a history corpus.
+
+    Reported separately from reconstruction and never mixed with it. A
+    reconstruction is a proposal and says so in its own header; a recovery is
+    the original's own bytes and carries no header at all, because a
+    byte-faithful file stops being one the moment something is prepended to
+    it. The provenance goes in the manifest instead.
+    """
+    flattened = _flattened(root)
+    if not flattened:
+        print(f"No flattened files under {root}; nothing to recover.")
+        return 0
+
+    sources = harvest(corpora)
+    if not sources:
+        print(f"No candidate originals under {', '.join(str(c) for c in corpora)}. "
+              "A corpus is any export or transcript tree holding the code with "
+              "its line breaks still in it.", file=sys.stderr)
+        return 2
+
+    corpus = Corpus(sources)
+    print(f"{len(corpus)} candidate original(s) harvested; "
+          f"matching {len(flattened)} flattened file(s)", file=sys.stderr)
+    results = recover(flattened, corpus)
+
+    written, refused = [], []
+    for result in results:
+        if not result.is_recovered:
+            continue
+        try:
+            written.append((result, write_recovery(result, into, root)))
+        except (FileExistsError, ValueError) as e:
+            refused.append((result, str(e)))
+
+    manifest = write_manifest(results, into, root)
+    counts = Counter(r.verdict for r in results)
+    print(f"{len(written)} original(s) recovered into {into}:")
+    for result, target in written:
+        state = "parses" if result.parses else "does NOT parse"
+        if result.repairs:
+            state += " after " + ", ".join(result.repairs)
+        print(f"  {target.name}  ({result.lines} lines, {state}, "
+              f"{result.verdict} in {result.origin})")
+    for result, why in refused:
+        print(f"  REFUSED {Path(result.path).name}: {why}")
+    if counts.get("related"):
+        print(f"  {counts['related']} file(s) matched a DIFFERENT DRAFT of the "
+              "same code and were deliberately not written; see the manifest")
+    if counts.get("none"):
+        print(f"  {counts['none']} file(s) had no candidate in this corpus")
+    print(f"\nProvenance for every row is in {manifest}. Nothing here was "
+          "analysed, and nothing was written into the scanned tree. A recovered "
+          "file becomes real source the day you review it and commit it.")
+    return 0
 
 
 def _report(root: Path, siblings: List[Path], args) -> int:

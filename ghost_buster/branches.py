@@ -95,7 +95,7 @@ DETECTOR = "unmerged_branch"
 _CANDIDATE_BASES = ("origin/main", "origin/master", "main", "master")
 
 
-def _run(root: Path, args: List[str], *, input_text: Optional[str] = None,
+def _run(root: Path, args: List[str], *, input_text: Optional[str] = None,  # ghost_buster: name-disagreement -- `input_text` is `diff_out` at every call site
          timeout: float = 30.0) -> Optional[str]:
     """Run a read-only git command; None on any failure (missing git, not
     a repository, a bad ref, a nonzero exit, a timeout) -- fail closed,
@@ -136,7 +136,7 @@ def _is_git_repo(root: Path) -> bool:
     return _run(root, ["rev-parse", "--git-dir"]) is not None
 
 
-def _resolve_base_branch(root: Path, explicit: Optional[str]) -> Optional[str]:
+def _resolve_base_branch(root: Path, explicit: Optional[str]) -> Optional[str]:  # ghost_buster: name-disagreement -- `explicit` is `base_branch` at every call site
     candidates = (explicit,) if explicit else _CANDIDATE_BASES
     for candidate in candidates:
         if candidate and _run(root, ["rev-parse", "--verify", "--quiet", candidate]) is not None:
@@ -205,7 +205,7 @@ def _patch_id(root: Path, diff_args: List[str]) -> Optional[str]:
     diff_out = _run(root, diff_args)
     if not diff_out:
         return None
-    piped = _run(root, ["patch-id", "--stable"], input_text=diff_out, timeout=15.0)
+    piped = _run(root, ["patch-id", "--stable"], input_text=diff_out, timeout=15.0)  # ghost_buster: name-disagreement -- `diff_out` is `input_text` in the signature
     if not piped or not piped.strip():
         return None
     return piped.split()[0]
@@ -296,7 +296,7 @@ def scan(root: Path, base_branch: Optional[str] = None) -> Tuple[List[Finding], 
             ran=False, reason=f"{root} is not a git repository (or git is not on PATH)",
         )
 
-    base = _resolve_base_branch(root, base_branch)
+    base = _resolve_base_branch(root, base_branch)  # ghost_buster: name-disagreement -- `base_branch` is `explicit` in the signature
     if base is None:
         tried = base_branch or ", ".join(_CANDIDATE_BASES)
         return [], BranchScanReport(

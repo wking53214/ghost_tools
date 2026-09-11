@@ -511,7 +511,7 @@ def _evidence(root: Path, outcome: TestOutcome) -> Evidence:
                     snippet=outcome.nodeid)
 
 
-def _finding(root: Path, outcome: TestOutcome, kind: str, severity: Severity,
+def _finding(root: Path, outcome: TestOutcome, kind: str, severity: Severity,  # ghost_buster: name-disagreement -- `summary` is `phase` at every call site
              summary: str, detail: str) -> Finding:
     return Finding(
         detector=DETECTOR,
@@ -654,7 +654,7 @@ def _classify_failure(root: Path, outcome: TestOutcome, runner: _PytestRunner,
             + _excerpt(outcome.text),
         )
     if outcome.when == "collect":
-        return _finding(
+        return _finding(  # ghost_buster: name-disagreement -- `phase` is `summary` in the signature
             root, outcome, "failing test", Severity.MAJOR, phase,
             "The test module raised during collection, so none of its tests ran. "
             "Not rerun: a collection error is not intermittent.\n\n" + _excerpt(outcome.text),
@@ -678,7 +678,7 @@ def _classify_failure(root: Path, outcome: TestOutcome, runner: _PytestRunner,
             )
     rerun_note = (f"Rerun alone {attempts} time(s) and failed every time." if attempts
                   else "Not rerun (reruns=0).")
-    return _finding(
+    return _finding(  # ghost_buster: name-disagreement -- `phase` is `summary` in the signature
         root, outcome, "failing test", Severity.MAJOR, phase,
         rerun_note + " The failure text names no external dependency, so this reads as a "
         "genuine failure.\n\n" + _excerpt(outcome.text),

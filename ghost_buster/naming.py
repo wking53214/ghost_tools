@@ -40,11 +40,13 @@ from __future__ import annotations
 import ast
 import re
 from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Sequence, Set, Tuple
 
 from .schema import Category, Evidence, Finding, Layer, Severity, Status
 
+DISAGREEMENT_DETECTOR = "name_disagreement"
 VESTIGIAL_DETECTOR = "vestigial_domain_name"
 PLACEHOLDER_DETECTOR = "placeholder_name"
 
@@ -119,7 +121,10 @@ def _words(name: str) -> Set[str]:
 _TEST_DIRS = frozenset({"test", "tests"})
 
 
-def _is_test(path: Path) -> bool:
+def is_test_path(path: Path) -> bool:
+    """Shared with deadend.py. Two detectors that each decide for themselves
+    what a test file is will eventually disagree, and the disagreement will
+    be invisible."""
     return path.name.startswith("test_") or path.parent.name.lower() in _TEST_DIRS
 
 
@@ -234,7 +239,7 @@ def detect_vestigial_domain_names(files: Sequence[Path]) -> List[Finding]:
     for path in files:
         if path.name in cassette_names or path.name == "cassette.py":
             continue
-        if _is_test(path):
+        if is_test_path(path):
             continue
         tree = _parse(path)
         if tree is None:
@@ -284,7 +289,7 @@ def detect_placeholder_names(files: Sequence[Path]) -> List[Finding]:
     """
     findings: List[Finding] = []
     for path in (Path(f) for f in files):
-        if _is_test(path):
+        if is_test_path(path):
             continue
         tree = _parse(path)
         if tree is None:
@@ -314,5 +319,238 @@ def detect_placeholder_names(files: Sequence[Path]) -> List[Finding]:
                 "does."
             ),
             evidence=Evidence(file=str(path)),
+        ))
+    return findings
+
+
+# ------------------------------------------------------- one thing, two names
+
+# A name that is a CONSTANT has a role of its own; renaming INGRESS_GUARDS to
+# `dependencies` because it is passed as that argument would be wrong. A
+# leading underscore is a statement about privacy that a public parameter
+# name does not carry. And camelCase in a library that is otherwise
+# snake_case means a third-party API, whose parameter names are not ours.
+# Each exclusion was observed on 2026-09-10 as a false positive: the
+# unfiltered pass reported 271 pairs, of which `dependencies <- INGRESS_GUARDS`,
+# `create_fn <- _create` and `parse_all <- parseAll` (pyparsing) were typical.
+_CAMEL = re.compile(r"[a-z][A-Z]")
+
+
+def _renamable(param: str, arg: str) -> bool:
+    if param == arg:
+        return False
+    if param.isupper() or arg.isupper():
+        return False
+    if param.startswith("_") != arg.startswith("_"):
+        return False
+    return not (_CAMEL.search(param) or _CAMEL.search(arg))
+
+
+def _call_name(node: ast.Call) -> str | None:
+    """The function a call names, when that is decidable from the call alone.
+
+    `subprocess.run(cmd)` is NOT our `run`. An earlier version returned the
+    attribute of any attribute call, and `subprocess.run(cmd, ...)` was
+    matched against `PytestRunner.run(self, nodeids)` in another module --
+    reported, on 2026-09-10, as `nodeids` and `cmd` being one value under
+    two names. They are not the same function, let alone the same value.
+
+    So: a bare name, or a method reached through `self`/`cls`, and nothing
+    else. A method called on some other object could be anybody's, and the
+    receiver's type is exactly what this layer does not know.
+    """
+    if isinstance(node.func, ast.Name):
+        return node.func.id
+    if (isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id in ("self", "cls")):
+        return node.func.attr
+    return None
+
+
+Site = Tuple[str, int]
+
+
+@dataclass(frozen=True)
+class Disagreement:
+    """One value under two names, and every line where either name is
+    written.
+
+    The line numbers are what separates a report from an annotation. A
+    finding says "these two names are one thing"; the annotator has to put
+    that sentence on the exact line a reader will be looking at when the
+    question occurs to them, which is the signature or the call.
+    """
+
+    param: str
+    arg: str
+    definitions: Tuple[Site, ...]
+    call_sites: Tuple[Site, ...]
+
+    @property
+    def files(self) -> List[str]:
+        return sorted({f for f, _ in self.definitions + self.call_sites})
+
+
+class _Definitions:
+    """Every function the scan saw, and which one a given call names.
+
+    Kept apart from the pass that uses it because resolution is the whole
+    correctness argument and deserves to be read on its own. Two rules,
+    both measured:
+
+    SAME FILE FIRST, because that is where Python looks.
+
+    THEN THE WHOLE SCAN, but only if the name is defined exactly once in
+    it. An earlier version kept the FIRST definition of each name and
+    matched every call to it, so `run` in one module supplied the parameter
+    names for `run` in another; running this against ghost_tools itself on
+    2026-09-10 reported `nodeids` and `cmd` as one value under two names,
+    on the strength of `subprocess.run(cmd)`. Ambiguity is not a tie to be
+    broken -- it is a reason to say nothing.
+    """
+
+    def __init__(self, trees: Sequence[tuple]) -> None:
+        self.everywhere: Dict[str, List[Tuple[str, List[str], int]]] = {}
+        self.per_file: Dict[str, Dict[str, List[Tuple[List[str], int]]]] = {}
+        for path, tree in trees:
+            for node in ast.walk(tree):
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                params = [a.arg for a in node.args.args
+                          if a.arg not in ("self", "cls")]
+                self.everywhere.setdefault(node.name, []).append(
+                    (str(path), params, node.lineno))
+                self.per_file.setdefault(str(path), {}).setdefault(
+                    node.name, []).append((params, node.lineno))
+
+    def resolve(self, path: Path, name: str) -> Tuple[List[str], Site] | None:
+        here = self.per_file.get(str(path), {}).get(name)
+        if here is not None:
+            if len(here) != 1:
+                return None
+            params, line = here[0]
+            return params, (str(path), line)
+        found = self.everywhere.get(name)
+        if found is None or len(found) != 1:
+            return None
+        file, params, line = found[0]
+        return params, (file, line)
+
+
+def find_name_disagreements(files: Sequence[Path]) -> List[Disagreement]:
+    """One value carried across a seam under two different names.
+
+    The complaint this answers is the one every SQL join produces: a column
+    called `customer_id` on one side and `recipient_id` on the other, the
+    same key wearing two names, and nothing in either schema saying so.
+    Measured on 2026-09-10 across a 37-repository library, the same thing
+    happens between repositories: `log_odds_value` is only ever passed
+    `raw_odds`, `obligation_ids` is only ever passed `needed_ids`. 63
+    pairs, 21 of them spanning more than one repository.
+
+    ONLY 1:1, WHICH IS THE WHOLE SAFETY ARGUMENT
+
+    A parameter that receives several different variables is not a naming
+    disagreement -- it is a parameter doing its job. A variable passed to
+    several different parameters is the same. Renaming either would collide
+    with a name that is legitimately in use elsewhere. A bijection is the
+    one case where the two names provably denote one thing, and where
+    substituting one for the other cannot capture anything.
+    """
+    files = [Path(f) for f in files]
+    trees = [(p, t) for p in files if not is_test_path(p)
+             for t in (_parse(p),) if t is not None]
+    known = _Definitions(trees)
+
+    to_arg: Dict[str, Counter] = {}
+    to_param: Dict[str, Counter] = {}
+    call_sites: Dict[tuple, Set[Site]] = {}
+    declared: Dict[tuple, Set[Site]] = {}
+
+    def note(param: str, arg: str, definition: Site, site: Site) -> None:
+        to_arg.setdefault(param, Counter())[arg] += 1
+        to_param.setdefault(arg, Counter())[param] += 1
+        call_sites.setdefault((param, arg), set()).add(site)
+        declared.setdefault((param, arg), set()).add(definition)
+
+    for path, tree in trees:
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            called = _call_name(node)
+            if not called:
+                continue
+            resolved = known.resolve(path, called)
+            # A name this scan cannot pin to exactly one definition belongs
+            # to somebody else, or to two of ours at once. Either way its
+            # parameter names are not ours to reconcile.
+            if resolved is None:
+                continue
+            params, definition = resolved
+            site = (str(path), node.lineno)
+            for kw in node.keywords:
+                if kw.arg and isinstance(kw.value, ast.Name):
+                    note(kw.arg, kw.value.id, definition, site)
+            for index, arg in enumerate(node.args):
+                if isinstance(arg, ast.Name) and index < len(params):
+                    note(params[index], arg.id, definition, site)
+
+    out: List[Disagreement] = []
+    for param, args in sorted(to_arg.items()):
+        if len(args) != 1:
+            continue
+        arg = next(iter(args))
+        if not _renamable(param, arg) or len(to_param[arg]) != 1:
+            continue
+        key = (param, arg)
+        out.append(Disagreement(
+            param=param,
+            arg=arg,
+            definitions=tuple(sorted(declared[key])),
+            call_sites=tuple(sorted(call_sites[key])),
+        ))
+    return out
+
+
+def detect_name_disagreements(files: Sequence[Path]) -> List[Finding]:
+    """The 1:1 disagreements above, as findings.
+
+    Reports; does not rename. A cross-repository rename touches call sites
+    and tests in trees this scan was never asked to write to.
+    `--annotate-names` is the one path that writes into a scanned tree, it is
+    opt-in, and it writes comments and a README table rather than code. That
+    it is the ONLY one is checked, not asserted: see
+    Tests/test_tree_immutability.py.
+    """
+    findings: List[Finding] = []
+    for d in find_name_disagreements(files):
+        where = sorted({f for f, _ in d.call_sites})
+        sites = len(d.call_sites)
+        findings.append(Finding(
+            detector=DISAGREEMENT_DETECTOR,
+            category=Category.NAMING,
+            layer=Layer.MECHANICAL,
+            severity=Severity.MINOR,
+            status=Status.CONFIRMED,
+            summary=(f"`{d.param}` and `{d.arg}` are one value under two names, "
+                     f"across {len(where)} file(s)"),
+            detail=(
+                f"The parameter `{d.param}` is only ever passed a variable named "
+                f"`{d.arg}`, and `{d.arg}` is only ever passed to `{d.param}` -- "
+                f"{sites} call site(s) in {', '.join(Path(w).name for w in where[:4])}"
+                + (f" (+{len(where) - 4} more)" if len(where) > 4 else "") + ".\n"
+                "A one-to-one correspondence is the only case where two names "
+                "provably denote the same thing: a parameter taking several "
+                "variables is doing its job, and renaming it would collide with "
+                "a name legitimately in use. Which of the two should win is "
+                "yours to pick -- the parameter is the contract, the variable "
+                "is the caller's local, and neither is automatically right."
+            ),
+            evidence=Evidence(
+                file=(d.definitions[0][0] if d.definitions else where[0]),
+                line_start=(d.definitions[0][1] if d.definitions else None),
+                related_files=d.files,
+            ),
         ))
     return findings

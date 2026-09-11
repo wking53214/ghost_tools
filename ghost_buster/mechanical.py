@@ -1533,13 +1533,27 @@ def detect_merge_conflict_markers(files: List[Path]) -> List[Finding]:
 # Both abstain rather than guess: the vestigial check needs at least two
 # cassettes to tell a domain's vocabulary from the engine's, and returns
 # nothing at all when a tree has no seam to check against.
+from .copies import DETECTOR as DRIFTED_COPY_DETECTOR          # noqa: E402
+from .copies import detect_drifted_copies                      # noqa: E402
+from .deadend import DETECTOR as DEAD_END_DETECTOR             # noqa: E402
+from .deadend import detect_dead_end_calls                     # noqa: E402
+from .swallowed import DETECTOR as SWALLOWED_DETECTOR          # noqa: E402
+from .swallowed import detect_swallowed_exceptions             # noqa: E402
 from .naming import (                                            # noqa: E402
-    PLACEHOLDER_DETECTOR, VESTIGIAL_DETECTOR,
-    detect_placeholder_names, detect_vestigial_domain_names,
+    DISAGREEMENT_DETECTOR, PLACEHOLDER_DETECTOR, VESTIGIAL_DETECTOR,
+    detect_name_disagreements, detect_placeholder_names,
+    detect_vestigial_domain_names,
 )
 
 register(VESTIGIAL_DETECTOR)(detect_vestigial_domain_names)
 register(PLACEHOLDER_DETECTOR)(detect_placeholder_names)
+# Sees more the wider the scan: within one repository it finds what crosses
+# its files, and under --join or an ecosystem scan it finds what crosses
+# repositories, which is where the two-names-for-one-thing problem lives.
+register(DISAGREEMENT_DETECTOR)(detect_name_disagreements)
+register(DEAD_END_DETECTOR)(detect_dead_end_calls)
+register(DRIFTED_COPY_DETECTOR)(detect_drifted_copies)
+register(SWALLOWED_DETECTOR)(detect_swallowed_exceptions)
 
 
 def run_all(files: Iterable[Path]) -> List[Finding]:

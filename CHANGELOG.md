@@ -1,5 +1,265 @@
 # Changelog
 
+## 0.17.15 (2026-09-10)
+
+### ghost_buster
+Two detectors, from a category-by-category review of where the 15-member
+Category enum was thin rather than empty.
+
+`drifted_copy`: the same file in several places, no longer agreeing.
+`duplicate_file` groups by content hash, so it goes quiet at exactly the
+moment the problem begins -- one copy gets fixed, the hashes diverge, the
+group disappears. Two files are the same file when their top-level
+definitions share the same names, all of them, at least three; drift is
+measured per definition by structural hash without attributes, so
+reformatting does not register and a changed condition does. Every
+definition identical is DUPLICATION and MINOR, a tidiness problem. Any
+definition differing is PARALLEL_IMPLEMENTATION and MAJOR, a fix that did
+not propagate -- which fills the only category whose sole producer was
+semantic.py, whose findings are REASONED by construction. Byte-identical
+groups stay duplicate_file's finding and are not repeated.
+
+Measured: 111 groups share a full name set library-wide, 29 have drifted.
+Among them GSA_Governance_Operating_Core_Enterprise.py in three copies with
+97 shared names and one differing, ast_graph_extractor.py in five copies
+with all six differing, three CITADEL versions inside one repository, and
+cassette_interface.py and cassette_schema.py drifted between the two
+sentinel_os copies.
+
+`swallowed_exception`: a handler that catches something and does nothing
+with it. The same failure dead_end_call reports one level up -- the
+operation reports success and nothing happened. Breadth sets the severity,
+because swallowing is sometimes correct: `except ImportError: pass` hides
+one class of failure and is usually the point, while `except Exception:
+pass` hides the typo, the None, the failed write and the bug introduced next
+year. Bare except and Exception/BaseException are MAJOR, a named narrow
+exception MINOR. Scope is disclosed as `pass` only; `continue` and a lone
+log call swallow too and each needs its own measurement first.
+contextlib.suppress is never flagged.
+
+Measured: 32 in live code, 13 catching bare Exception, in ANVIL, CCC,
+Ecology and AUGUR. A further 22 are in test files and are not reported.
+
+Together these add 61 findings to a library scan, 32 MAJOR and 29 MINOR.
+That is a lot at once, which is what the severity split and `--accept` are
+for: take them into the baseline in one pass and only new ones surface after.
+
+Also checked and NOT built, because measurement said not to: unreachable
+code after a return or raise (1 occurrence library-wide) and import cycles
+within a repository (1). Two obvious-sounding detectors that would have
+found nothing.
+
+Two fixture defects caught while writing the tests. A `textwrap.dedent`
+applied after concatenating an unindented string is a no-op, so three
+copies-fixtures never parsed -- two tests failed and a third passed against
+nothing at all. And a reformatting fixture silently stopped reformatting
+anything; it now asserts that it changed something before relying on it.
+
+## 0.17.14 (2026-09-10)
+
+### ghost_buster
+`dead_end_call`: a callable whose body does nothing, that live code calls,
+and that nothing in the scanned set is arranged to fill.
+
+`dead_code` answers the opposite question -- a definition nobody references.
+This is the definition everybody references that does nothing, and the whole
+design is telling it apart from a seam. A seam is inert on purpose and
+declares itself: an ABC/ABCMeta/Protocol base, an @abstractmethod decorator,
+or a subclass somewhere in the scan that overrides it with a real body. A
+dead end has none of those and gets called anyway.
+
+Severity splits on loudness. A raised NotImplementedError stops and names
+itself, so it is MINOR. A `pass` lets the caller believe the work happened,
+which is the difference between "the check passed" and "the thing works", so
+the silent shapes are MAJOR.
+
+It does not claim "never", and the finding says so: nothing HERE provides a
+body, an implementation in an unscanned repository would settle it, scan the
+siblings if it matters. It also cannot say which object a call landed on --
+the same disclosed AST-only limit `dead_code` carries.
+
+Measured before it was built, across 24 live repositories and 1,562 files:
+162 callables whose body does nothing, 31 with no override in their own
+repository, 11 called by live code. Ten of the eleven were deliberate, so
+every exclusion is a measured false positive: the Null Object and test-double
+naming conventions, definitions and call sites in test files, and an empty
+`__init__`/`__enter__`/`__exit__`/`__del__`. What survives library-wide is
+one real finding, `UniversalAdapter.execute`, reported three times because
+the file is vendored into two repositories.
+
+Two defects in the first draft, both caught by mutation:
+
+  * The no-op name check was a regex ending `(?=[A-Z_0-9]|$)` under
+    re.IGNORECASE, and IGNORECASE makes `[A-Z]` match lowercase, so the word
+    boundary it existed to enforce did not exist and `nullify_cache` was
+    treated as a Null object. It is written out as a function now.
+  * The test for the empty-`__init__` exclusion passed for the wrong reason:
+    `__init__` never reaches the called set through construction, only
+    through an explicit `super().__init__()`, so the fixture was exercising
+    the "not called" filter instead.
+
+`is_test_path` moves to naming.py and is shared. Two detectors that each
+decide for themselves what a test file is will eventually disagree, and the
+disagreement will be invisible.
+
+## 0.17.13 (2026-09-10)
+
+### Tests
+The tree-immutability guard: proof that a scan leaves the tree alone,
+instead of a docstring saying so.
+
+"The working tree is never modified" appeared 35 times across this project's
+code and documentation and nothing verified it. That is the defect class
+ghost_buster exists to find in other people's code, and it went unexamined
+here through the version that added `--annotate-names` and the one that
+added `--recover-into` -- the first two things in the toolkit that write
+anything at all.
+
+`Tests/tree_guard.py` snapshots every path under a root as `mode:sha256`,
+and `unchanged(root, may_create=...)` asserts that nothing which already
+existed was modified or deleted and that only declared files appeared.
+`Tests/test_tree_immutability.py` runs every real entry point against a real
+tree under that guard, including the recovery pass against a corpus, which
+is a second tree: an exported chat history has to be left exactly as it was
+found.
+
+Writing it showed the blanket claim to be too strong, and the docstrings
+that made it are corrected. A default scan writes `.ghost_ledger.json`;
+`--accept` writes `.ghost_baseline.json`; `--annotate-names` deliberately
+edits sources. The invariant that is true and now tested is that nothing
+which already existed is modified or deleted, and that every new file was
+declared.
+
+The mechanism is a content snapshot rather than a patched `open`. The idea
+came from a capability tracer recovered out of a chat history by
+`--recover-from`; its mechanism patched `builtins.open`, which would have
+caught none of this, because every write here goes through
+`Path.write_text`. A snapshot also catches a deletion, a chmod, a stray
+directory and a file written and removed again inside one run.
+
+Eleven mutants, three of which break real product code in the exact way the
+guard exists to catch: annotating without the flag, writing a reconstruction
+beside the original, writing a recovery into the scanned repository.
+
+## 0.17.12 (2026-09-10)
+
+### blackhole_extrapolator
+`--recover-from` gets the ORIGINAL of a flattened file back, instead of
+proposing one.
+
+`--reconstruct-into` reasons about where the line breaks probably went and
+recovered a running program in 0 of 34 cases. This does something
+categorically different, because flattening turns out to be a whitespace-only
+transform. The 37 flattened files in a 37-repository library fall into
+exactly two shapes: one where each newline became a single space and the
+indentation survived (space runs of 4n+1), and one where every whitespace
+run collapsed to a single space, which is also what an HTML render does.
+Neither adds, removes or reorders a non-whitespace character.
+
+So `collapse` -- every whitespace run as one space -- is invariant under
+flattening, and a text that collapses to what a flattened file collapses to
+IS its original, up to whitespace. Not the most likely original.
+
+Four verdicts. `identical` and `contained` are that test passing and are
+written verbatim, with no header, because a byte-faithful original stops
+being one the moment something is prepended to it; the provenance goes in a
+RECOVERY.md manifest instead. `related` is high identifier similarity
+WITHOUT a collapse match -- a different draft of the same system -- and is
+named and deliberately not written. Four files scored 100% identifier
+overlap against a message that was a different version of the same code,
+which is exactly how a plausible file gets committed as a real one.
+
+Three defects found by running it against the real library, each now a test:
+
+  * A plain substring search matched mid-token (`port os` inside `import
+    os`), and the span recovered from it started inside an identifier.
+    Containment is checked on token boundaries, which after collapse means a
+    space or an end.
+  * Similarity scored as one-directional coverage rewarded a candidate for
+    being large: the derived `raw.csv` holding every message in an export
+    scored 100% against eight different files. It is intersection over union
+    now.
+  * Naming a recovery after the file's stem refused 6 of 27 as already
+    existing when nothing was in conflict, because four repositories each
+    hold an `artifact_1.py`. The path is in the name.
+
+One repair, gated on proving it helped: an HTML export writes an indent as
+`&nbsp;`, so the decoded text carries U+00A0 where the code had ordinary
+spaces and Python rejects that outside a string. `nbsp-to-space` is applied
+only when it turns a file that does not parse into one that does. The
+remaining failures (smart quotes, an arrow, a truncated string) are reported
+as not parsing and left exactly as the corpus holds them. Corpus damage is a
+fact about the corpus. HTML entity decoding is handled the same way: it only
+ADDS a candidate, which still has to pass the same exact collapse test.
+
+Measured against the library with five history corpora (37 flattened files,
+15,498 candidates): **29 recovered** -- 8 identical, 21 contained -- of which
+25 parse as real Python, 12 after the nbsp repair. 7 related and not written,
+1 with no candidate at all.
+
+The definition of a flattened file now lives in one place in the CLI, shared
+by the reconstruct pass and the recover pass, so the two cannot disagree
+about what they are looking at.
+
+## 0.17.11 (2026-09-10)
+
+### ghost_buster
+`--annotate-names` writes each 1:1 name disagreement into the two places
+somebody looks: a regenerated table in the README, and a trailing comment
+on the signature and on each call site.
+
+This is the only thing in the toolkit that writes into the tree it was
+pointed at, and it is fenced for it. Notes are comments, never code. They
+are appended to existing lines rather than inserted as lines of their own,
+so no line number moves and a re-run can find what the last run wrote. They
+are stripped and rewritten whole each run, so they follow a rename instead
+of piling up behind one, and neither record carries a timestamp -- a run
+that finds nothing new produces no diff at all.
+
+The claim that a note cannot change what a program means is checked, not
+promised: every edit is parsed before and after and the syntax trees
+compared, one edit at a time. Two cases found this the hard way and are now
+tests -- a marker that was really part of a string literal (an earlier
+whole-file check cost that file every annotation it should have had), and a
+call on a backslash continuation, where a comment cannot follow.
+
+`find_name_disagreements` now returns the pairs with their line numbers,
+which is what makes an annotation possible; `detect_name_disagreements`
+builds the same findings from it.
+
+Two false-positive generators were found by running this against the
+toolkit itself and are now fixed. A call was matched to the FIRST function
+of that name anywhere in the scan, so `subprocess.run(cmd)` in one module
+took its parameter names from `PytestRunner.run(self, nodeids)` in another
+and the two were reported as one value under two names. And any attribute
+call counted, which is how a stranger's method got treated as ours. A call
+now resolves to a definition in its own file first, then to a library-wide
+one only if the name is defined exactly once; a method counts only when it
+is reached through `self` or `cls`. Ambiguity is not a tie to be broken.
+
+Measured across the 37-repository library: 63 disagreements (89 before the
+fix), 21 of them spanning more than one repository, 179 note lines across
+62 files.
+
+## 0.17.10 (2026-09-10)
+
+### blackhole_extrapolator
+`reconstruct` rebuilds a flattened Python file -- one whose newlines are
+gone and whose whole program sits on a single row -- into an editable
+draft, written as a proposal into a directory the caller names, never
+beside the original. 34 flattened files library-wide; none recovers as a
+running program, all 34 become drafts, median 1 line to 135.
+
+`parses` is not enough to call a reconstruction recovered: a flattened file
+whose single line begins with `#` is one comment that parses cleanly and
+defines nothing. The check is `bool(tree.body)`.
+
+### ghost_buster
+`name_disagreement`: one value carried across a seam under two names,
+reported only for a true bijection, because that is the only case where the
+two names provably denote one thing and a substitution cannot capture
+anything else.
+
 ## 0.10.1 (2026-09-10)
 
 ### ghost_buster

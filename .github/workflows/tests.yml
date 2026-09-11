@@ -20,7 +20,11 @@ jobs:
       - name: Install
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pytest ruff==0.15.22
+          # pytest-xdist is not optional: pyproject sets `addopts = "-n auto"`,
+          # so pytest exits with `unrecognized arguments: -n` without it. It also
+          # cuts this job from ~16 minutes to a few, because the suite is 454
+          # mutants each running a whole test file in a fresh interpreter.
+          python -m pip install pytest pytest-xdist ruff==0.15.22
       - name: Install gitleaks
         # Pinned exact version, same as ruff above. Tests/test_secrets*.py
         # skip themselves if this binary is absent; installed here so CI
