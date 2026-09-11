@@ -60,7 +60,7 @@ def test_the_set_names_exactly_the_two_rules_that_match_shape():
     credential. Adding a third is a judgement about a rule, so it should
     cost an edit here.
     """
-    assert set(_SHAPE_ONLY_RULES) == {"curl-auth-header", "generic-api-key"}
+    assert set(_SHAPE_ONLY_RULES) == {"curl-auth-header", "generic-api-key"}  # gitleaks:allow
 
 
 def test_a_curl_auth_header_match_is_major_not_critical():

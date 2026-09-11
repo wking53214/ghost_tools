@@ -279,6 +279,23 @@ def test_an_orphaned_test_encodes_the_expected_interface(tmp_path):
     assert "Engine" in evidence[0].detail and "run" in evidence[0].detail
 
 
+def test_a_module_that_breaks_on_import_is_not_called_missing(tmp_path, monkeypatch):
+    """`import x` can fail because x is absent or because x exists and
+    raises while loading. Only the first is an orphaned test. The second
+    was swallowed by a bare `except Exception: pass` until ghost_buster
+    found it on this file; now it is reported as what it is."""
+    monkeypatch.syspath_prepend(str(tmp_path))
+    _write(tmp_path, "explodes_on_import.py", "raise RuntimeError('boom at import time')\n")
+    (tmp_path / "t").mkdir()
+    test = _write(tmp_path / "t", "test_uses_it.py", "from explodes_on_import import thing\n")
+    evidence = list(detect_orphaned_tests([test], [tmp_path / "t"]))
+    assert len(evidence) == 1
+    assert evidence[0].kind == EvidenceKind.WIRING
+    assert "exists but fails to import" in evidence[0].detail
+    assert "RuntimeError" in evidence[0].detail and "boom at import time" in evidence[0].detail
+    assert evidence[0].kind != EvidenceKind.ORPHANED_TEST
+
+
 # ---------------------------------------------------------------------------
 # Grouping and classification
 # ---------------------------------------------------------------------------

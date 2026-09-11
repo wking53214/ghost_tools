@@ -204,7 +204,7 @@ def correlate_secret_in_duplicated_file(data: CorrelationInput) -> List[Finding]
                 # two copies of a maybe, and a test fixture copied twice is
                 # still a test fixture -- measured 2026-09-10, where exactly
                 # that produced four CRITICALs for the header
-                # {"x-api-key": "testkey-abc123"} sitting in a pair of
+                # {"x-api-key": "testkey-abc123"} sitting in a pair of  # gitleaks:allow
                 # byte-identical test files.
                 severity=secret.severity,
                 status=Status.CONFIRMED,

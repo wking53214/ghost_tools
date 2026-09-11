@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.0.1 (2026-09-11)
+
+### The first patient becomes a candidate
+1.0.0's first operation left ghost_tools off the serum list for two
+reasons, both fixed here.
+
+Eight "committed secrets" were gitleaks firing on prose: the header
+`{"x-api-key": "testkey-abc123"}` and the rule name `'curl-auth-header'`
+quoted in comments and one assertion, across the two commits that wrote
+them. The lines now carry `gitleaks:allow` and `.gitleaksignore` pins
+the introducing commits, the same treatment the earlier fixtures got.
+gitleaks reports zero on this tree.
+
+One swallowed-everything handler, in blackhole_extrapolator's orphaned-
+test probe: `__import__(module)` wrapped in `except Exception: pass`.
+A module that is absent and a module that exists but raises while
+loading both landed there, and both were then reported as "does not
+exist". The probe now tells them apart: absence stays an orphaned test;
+a module that breaks on import is reported as WIRING evidence naming
+the exception. Found by ghost_buster on its own source.
+
 ## 1.0.0 (2026-09-11)
 
 The thesis: a scanner that says what it could not see, and a surgeon that

@@ -888,9 +888,26 @@ def detect_orphaned_tests(test_paths: Iterable[Path],  # ghost_buster: name-disa
                 continue
             try:
                 __import__(module)
+            except ImportError:
+                # Not importable here: the evidence below is about that.
+                importable = False
+            except Exception as exc:  # noqa: BLE001
+                # It exists and it breaks on import. That is a broken
+                # module, not a missing one, and calling it "does not
+                # exist" would send the reader looking for a ghost. Found
+                # by ghost_buster's swallowed_exception on this very file:
+                # the old handler was `pass` and said nothing.
+                yield NegativeEvidence(
+                    kind=EvidenceKind.WIRING,
+                    detail=(f"module `{module}` exists but fails to import: "
+                            f"{type(exc).__name__}: {exc}"),
+                    file=str(path), line=node.lineno,
+                )
                 continue
-            except Exception:  # noqa: BLE001
-                pass
+            else:
+                importable = True
+            if importable:
+                continue
             provider = (providers or {}).get(module) or (providers or {}).get(_normalise_dist(module))
             if provider:
                 # Measured 2026-09-08: with every sibling checkout supplied,
