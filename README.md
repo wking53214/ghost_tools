@@ -79,7 +79,9 @@ carries a check that can fail.
 to; every cut records its outcome. A prior never hides a finding and never
 changes a severity -- it is shown beside the finding, and you decide with
 both in view. Point every repository at one file and the surgeon learns
-across the library.
+across the library. `--priors` is the view over that file: per kind of
+finding, what this team has decided, how often the decision was "false",
+and how often it held against what the ledger saw afterwards.
 
 **The serum.** A candidate gets the enhancement pass: `--profile` counts the
 work the scan did more than once (that is how the 9.5-parses-per-file
@@ -210,6 +212,28 @@ growing without bound. Writes are atomic; a corrupt or future-schema
 ledger fails the run rather than silently starting over, because an empty
 history reported as a clean one is the lie this whole feature exists to
 prevent.
+
+### `--priors`: what this team has decided, and whether it held
+
+    ghost-buster . --priors                    the view, per detector
+    ghost-buster . --priors --json             the same, as data
+    ghost-buster . --priors --casefile ../library.json   across the library
+
+A scanner answers "what is here". The case file and the ledger together
+answer the question a team actually has: what have we said about things
+like this before, and did the world agree? Every decision recorded with
+`ghost-triage --casefile` names the finding it was about and the word used
+(fix, suppress, document), and the view judges each against the ledger:
+
+| decision | held when | did not hold when |
+|---|---|---|
+| fix | the finding is gone and has not returned | still present (`open`), or it came back (`returned`) |
+| suppress, document | nobody re-decided it | a later decision on the same finding said otherwise (`revisited`) |
+
+A decision recorded before 1.2.0 names no finding and is `unknown`, never
+counted as held; so is a fix whose finding the ledger has never seen. The
+hold rate is over judged decisions only. Beside the verdicts, the three
+most recent reasons, because a reason is what the next person needs.
 
 ## Files that will not parse: `unassessable_file`
 
@@ -1457,7 +1481,7 @@ test suite runs.
 python -m pytest Tests/ -v
 ```
 
-1505 tests (measured 2026-09-11), 0 network calls, 0 API key required -- the semantic-layer
+1525 tests (measured 2026-09-11), 0 network calls, 0 API key required -- the semantic-layer
 tests verify the real parsing/fail-closed/injection-fencing logic via
 `StubModelClient`, the same technique `sentinel_os`'s own `interpretation/`
 package uses for its model-client tests. `test_branches.py`,

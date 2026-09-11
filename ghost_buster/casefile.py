@@ -79,6 +79,16 @@ class Case:
     outcome: str
     note: str = ""
     when: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    #: Which finding the decision was about, so the priors view can ask the
+    #: ledger whether the decision held. Empty on cases recorded before
+    #: 1.2.0; those still count toward the shape's history, and their
+    #: holding is unknown rather than assumed.
+    finding_id: str = ""
+    file: str = ""
+    #: The human's word for it: fix, suppress or document. `fix` and
+    #: `document` both teach outcome "real"; only this says which, and only
+    #: a fix can be judged against the ledger. Empty before 1.2.0.
+    decision: str = ""
 
 
 @dataclass(frozen=True)
@@ -129,14 +139,17 @@ class Casefile:
             outcome = _DISPOSITION_OUTCOME.get(f.disposition or "")
             if outcome is None:
                 continue
-            self.cases.append(Case(f.detector, shape_of(f), outcome, f.disposition_note))
+            self.cases.append(Case(f.detector, shape_of(f), outcome, f.disposition_note,
+                                   finding_id=f.id, file=f.evidence.file if f.evidence else "",
+                                   decision=str(f.disposition)))
             added += 1
         return added
 
     def record_outcome(self, finding: Finding, outcome: str, note: str = "") -> None:
         if outcome not in OUTCOMES:
             raise ValueError(f"unknown outcome {outcome!r}; expected one of {OUTCOMES}")
-        self.cases.append(Case(finding.detector, shape_of(finding), outcome, note))
+        self.cases.append(Case(finding.detector, shape_of(finding), outcome, note,
+                               finding_id=finding.id, file=finding.evidence.file if finding.evidence else ""))
 
     def save(self) -> None:
         self.path.write_text(json.dumps(
