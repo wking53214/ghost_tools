@@ -19,6 +19,22 @@ _T = "ghost_buster/testsuite.py"
 
 # (label, file, exact text to replace, replacement)
 MUTANTS = [
+    ("the tree is never snapshotted (a moved tree still reads as a flaky test)", _T,
+     "        report.changed_during_run = _changed(before, _snapshot(root))\n",
+     "        report.changed_during_run = []\n"),
+    ("a rerun-pass ignores the tree having moved", _T,
+     "            if report.changed_during_run:\n                report.unstable += 1\n",
+     "            if False:\n                report.unstable += 1\n"),
+    ("reruns are not recorded (the report cannot say what was rerun)", _T,
+     "        report.reruns.append(RerunRecord(outcome.nodeid, attempt,\n"
+     "                                         again.outcome if again is not None else \"no report\"))\n",
+     "        pass\n"),
+    ("a failed rerun reads as flaky in the record", _T,
+     '        if r.outcome in ("passed", "xpassed") and r.nodeid not in seen:\n',
+     '        if r.nodeid not in seen:\n'),
+    ("the status line counts flaky tests without naming them", _T,
+     '        classified.append(f"{report.flaky} flaky: " + ", ".join(flaky_tests(report)))\n',
+     '        classified.append(f"{report.flaky} flaky")\n'),
     ("rerun loop never runs (a flaky test reads as failing)", _T,
      "    for attempt in range(1, reruns + 1):\n",
      "    for attempt in range(0):\n"),

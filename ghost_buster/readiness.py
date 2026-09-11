@@ -91,6 +91,19 @@ class Readiness:
         return "\n".join(lines)
 
 
+def _name_tests(findings: List[Finding], limit: int = 4) -> str:
+    """The test ids behind a count. A number sends the reader back to the
+    report; a name sends them to the test. The first patient reported
+    "2 failing or flaky test(s)" and nothing on the page said which."""
+    names = []
+    for f in findings:
+        nodeid = (f.attributes or {}).get("nodeid") or f.summary
+        if nodeid not in names:
+            names.append(nodeid)
+    shown = ", ".join(names[:limit])
+    return shown + (f" (+{len(names) - limit} more)" if len(names) > limit else "")
+
+
 def _count(findings: Iterable[Finding], detector: str,
            severity: Optional[Severity] = None) -> int:
     return sum(1 for f in findings
@@ -107,9 +120,11 @@ def assess(findings: Iterable[Finding], checks: Dict[str, str]) -> Readiness:
                               "every file parsed" if n == 0 else f"{n} file(s) could not be assessed"))
 
     if checks.get("tests") == RAN:
-        n = _count(findings, "test_status", Severity.MAJOR)
+        bad = [f for f in findings if f.detector == "test_status" and f.severity is Severity.MAJOR]
+        n = len(bad)
         criteria.append(Criterion(TESTS, n == 0,
-                                  "suite ran clean" if n == 0 else f"{n} failing or flaky test(s)"))
+                                  "suite ran clean" if n == 0
+                                  else f"{n} failing or flaky test(s): {_name_tests(bad)}"))
     else:
         criteria.append(Criterion(TESTS, None, f"tests {checks.get('tests', 'not run')}; run with --tests"))
 

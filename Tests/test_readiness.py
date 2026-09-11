@@ -81,3 +81,28 @@ def test_the_render_names_the_evidence():
     assert "not a candidate" in text
     assert "2 handler(s)" in text
     assert "FAILING" in text
+
+
+def test_the_tests_criterion_names_the_tests():
+    """"2 failing or flaky test(s)" sends the reader back to the report.
+    The first patient reported exactly that and nothing on the page said
+    which two. The criterion names them now, from the finding's nodeid."""
+    a, b, minor = _f("test_status"), _f("test_status"), _f("test_status", Severity.MINOR)
+    a.attributes["nodeid"] = "Tests/test_a.py::test_one"
+    b.attributes["nodeid"] = "Tests/test_b.py::test_two"
+    minor.attributes["nodeid"] = "Tests/test_c.py::test_skip"
+    r = assess([a, b, minor], ALL_RAN)
+    tests = next(c for c in r.criteria if c.name == TESTS)
+    assert tests.met is False
+    assert "2 failing or flaky test(s): Tests/test_a.py::test_one, Tests/test_b.py::test_two" == tests.evidence
+    assert "test_skip" not in tests.evidence
+
+
+def test_the_tests_criterion_truncates_a_long_list():
+    fs = [_f("test_status") for _ in range(6)]
+    for i, f in enumerate(fs):
+        f.attributes["nodeid"] = f"Tests/test_x.py::test_{i}"
+    tests = next(c for c in assess(fs, ALL_RAN).criteria if c.name == TESTS)
+    assert tests.evidence.startswith("6 failing or flaky test(s): Tests/test_x.py::test_0")
+    assert tests.evidence.endswith("(+2 more)")
+

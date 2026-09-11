@@ -18,7 +18,8 @@ import pytest
 
 from ghost_buster.cli import main
 from ghost_buster.schema import Category, Severity, Status
-from ghost_buster.testsuite import _index_local_modules, classify_dependency, render_report, scan
+from ghost_buster.testsuite import (_index_local_modules, classify_dependency, flaky_tests,
+                                    render_report, rerun_summary, scan)
 
 STALE_ENV = "GHOST_STALE_ENV_PROBE"
 ABSENT_ENV = "GHOST_ABSENT_ENV_PROBE"
@@ -260,6 +261,65 @@ def test_flaky_test_is_the_one_that_passed_on_isolated_rerun(shapes):
     # The attempt number lives in the detail, never the summary, so the
     # finding id does not change with how many attempts it took.
     assert "of 3" not in f.summary
+
+
+def test_the_report_records_every_rerun_by_name(shapes):
+    """The scan used to keep rerun outcomes in a temporary directory it
+    deleted; a run that said "2 flaky" could not, two minutes later, say
+    which two. Now the report carries every attempt."""
+    _, _, report = shapes
+    assert report.reruns, "the shapes project has failures that are rerun"
+    assert len(report.reruns) == report.reruns_performed
+    flaky = [r for r in report.reruns if r.nodeid.endswith("test_flaky[a b]")]
+    assert flaky and flaky[0].attempt == 1 and flaky[0].outcome == "passed"
+    deterministic = [r for r in report.reruns if r.nodeid.endswith("test_token_math")]
+    assert [r.attempt for r in deterministic] == [1, 2, 3]
+    assert all(r.outcome == "failed" for r in deterministic)
+    assert flaky_tests(report) == [flaky[0].nodeid]
+    assert "test_token_math" not in flaky_tests(report)
+
+
+def test_the_status_line_names_the_flaky_tests(shapes):
+    _, _, report = shapes
+    line = render_report(report)
+    assert "1 flaky: " in line and "test_flaky[a b]" in line
+    assert "test_token_math" not in line.split("flaky:")[1].split(";")[0]
+
+
+def test_rerun_summary_says_what_each_rerun_did(shapes):
+    _, _, report = shapes
+    text = rerun_summary(report)
+    assert "test_flaky[a b]: passed on rerun" in text
+    assert "test_token_math: failed then failed then failed on rerun" in text
+
+
+def test_a_tree_that_holds_still_records_no_change(shapes):
+    _, _, report = shapes
+    assert report.changed_during_run == []
+
+
+def test_a_rerun_pass_on_a_tree_that_moved_is_an_unstable_run_not_a_flaky_test(tmp_path):
+    """The first patient: pyproject.toml was edited while the suite ran,
+    the test that reads it failed once and passed alone, and the scan said
+    "flaky". The tree moved; the test did not."""
+    proj = _project(tmp_path, {
+        # alphabetical order: this runs first and finds no flag
+        "test_a_needs_flag.py": "from pathlib import Path\n\ndef test_needs_flag():\n"
+                                "    assert (Path(__file__).parent / 'flag.txt').exists()\n",
+        # this runs second and changes the tree under the suite
+        "test_b_makes_flag.py": "from pathlib import Path\n\ndef test_makes_flag():\n"
+                                "    (Path(__file__).parent / 'flag.txt').write_text('set')\n",
+    })
+    findings, report = scan(proj)
+    assert report.changed_during_run == ["tests/flag.txt"]
+    assert report.unstable == 1 and report.flaky == 0
+    f = _named(findings, "test_needs_flag")
+    assert f.summary.startswith("unstable run:")
+    assert "the tree changed during the run" in f.summary
+    assert "flag.txt" in f.detail and "not evidence the test is flaky" in f.detail
+    assert f.severity == Severity.MAJOR                 # still blocks candidacy: redo the exam
+    assert flaky_tests(report) == []
+    assert "tree changed during the run (tests/flag.txt)" in render_report(report)
 
 
 def test_failure_whose_source_mentions_a_service_word_is_still_failing(shapes):
