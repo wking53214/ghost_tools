@@ -11,6 +11,16 @@ outcome), the status line names the flaky tests, `rerun_summary` says
 what each rerun did, and the readiness criterion names the tests
 behind its count instead of sending the reader back to the report.
 
+### A tree that moves during the exam
+With the record in hand the two "flaky" tests turned out not to be: the
+suite was running while pyproject.toml and CHANGELOG.md were being
+edited, and the two tests that read those files failed once and passed
+alone. The scan now snapshots the tree before the full run and compares
+after; a test that fails in the suite and passes alone while the tree
+changed is reported as an UNSTABLE RUN naming the changed files, not as
+a flaky test. It still blocks candidacy, because the remedy is to run
+the exam again on a still tree, not to fix the test.
+
 ## 1.0.1 (2026-09-11)
 
 ### The first patient becomes a candidate

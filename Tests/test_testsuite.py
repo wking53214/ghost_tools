@@ -293,6 +293,35 @@ def test_rerun_summary_says_what_each_rerun_did(shapes):
     assert "test_token_math: failed then failed then failed on rerun" in text
 
 
+def test_a_tree_that_holds_still_records_no_change(shapes):
+    _, _, report = shapes
+    assert report.changed_during_run == []
+
+
+def test_a_rerun_pass_on_a_tree_that_moved_is_an_unstable_run_not_a_flaky_test(tmp_path):
+    """The first patient: pyproject.toml was edited while the suite ran,
+    the test that reads it failed once and passed alone, and the scan said
+    "flaky". The tree moved; the test did not."""
+    proj = _project(tmp_path, {
+        # alphabetical order: this runs first and finds no flag
+        "test_a_needs_flag.py": "from pathlib import Path\n\ndef test_needs_flag():\n"
+                                "    assert (Path(__file__).parent / 'flag.txt').exists()\n",
+        # this runs second and changes the tree under the suite
+        "test_b_makes_flag.py": "from pathlib import Path\n\ndef test_makes_flag():\n"
+                                "    (Path(__file__).parent / 'flag.txt').write_text('set')\n",
+    })
+    findings, report = scan(proj)
+    assert report.changed_during_run == ["tests/flag.txt"]
+    assert report.unstable == 1 and report.flaky == 0
+    f = _named(findings, "test_needs_flag")
+    assert f.summary.startswith("unstable run:")
+    assert "the tree changed during the run" in f.summary
+    assert "flag.txt" in f.detail and "not evidence the test is flaky" in f.detail
+    assert f.severity == Severity.MAJOR                 # still blocks candidacy: redo the exam
+    assert flaky_tests(report) == []
+    assert "tree changed during the run (tests/flag.txt)" in render_report(report)
+
+
 def test_failure_whose_source_mentions_a_service_word_is_still_failing(shapes):
     _, findings, _ = shapes
     f = _named(findings, "test_token_math")

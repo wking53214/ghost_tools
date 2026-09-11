@@ -19,6 +19,12 @@ _T = "ghost_buster/testsuite.py"
 
 # (label, file, exact text to replace, replacement)
 MUTANTS = [
+    ("the tree is never snapshotted (a moved tree still reads as a flaky test)", _T,
+     "        report.changed_during_run = _changed(before, _snapshot(root))\n",
+     "        report.changed_during_run = []\n"),
+    ("a rerun-pass ignores the tree having moved", _T,
+     "            if report.changed_during_run:\n                report.unstable += 1\n",
+     "            if False:\n                report.unstable += 1\n"),
     ("reruns are not recorded (the report cannot say what was rerun)", _T,
      "        report.reruns.append(RerunRecord(outcome.nodeid, attempt,\n"
      "                                         again.outcome if again is not None else \"no report\"))\n",

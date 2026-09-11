@@ -273,6 +273,7 @@ class TestStatusReport:
     xpassed: int = 0
     reruns_performed: int = 0
     flaky: int = 0
+    unstable: int = 0     # rerun passed, but the tree changed during the run
     # Every isolated rerun, in order: which test, which attempt, what it
     # did. The scan used to keep this only in a temporary directory that
     # was deleted with the runner, so a flaky test's name survived nowhere
@@ -280,12 +281,45 @@ class TestStatusReport:
     # 2026-09-11: a scan reported "2 flaky" and two reruns later nothing
     # could say which two. The record is part of the report now.
     reruns: List["RerunRecord"] = field(default_factory=list)
+    # Files under the root whose mtime or size differed between the start
+    # and the end of the full run. A test that fails in the suite and
+    # passes alone while this is non-empty is not flaky; the tree moved
+    # under it. Found 2026-09-11 when pyproject.toml and CHANGELOG.md were
+    # edited during a scan and two tests that read them were reported
+    # "flaky", then could not be reproduced in four clean runs.
+    changed_during_run: List[str] = field(default_factory=list)
     blocked: int = 0
     stale_skips: int = 0
     unjustified_skips: int = 0
     dependency_skips: int = 0
     pytest_exit: Optional[int] = None
     findings: List[Finding] = field(default_factory=list)
+
+
+_SNAPSHOT_SUFFIXES = {".py", ".toml", ".cfg", ".ini", ".txt", ".md", ".json", ".yaml", ".yml"}
+_SNAPSHOT_SKIP = {".git", "venv", ".venv", "node_modules", "__pycache__", ".pytest_cache",
+                  ".ruff_cache", ".mypy_cache", ".tox", "build", "dist", ".eggs"}
+
+
+def _snapshot(root: Path) -> Dict[str, Tuple[int, int]]:
+    """(mtime_ns, size) of every source-shaped file under root, so the scan
+    can tell afterwards whether the tree it examined held still."""
+    out: Dict[str, Tuple[int, int]] = {}
+    for path in root.rglob("*"):
+        if any(part in _SNAPSHOT_SKIP for part in path.relative_to(root).parts):
+            continue
+        if path.suffix not in _SNAPSHOT_SUFFIXES or path.name.startswith(".ghost"):
+            continue
+        try:
+            st = path.stat()
+        except OSError:
+            continue
+        out[str(path.relative_to(root))] = (st.st_mtime_ns, st.st_size)
+    return out
+
+
+def _changed(before: Dict[str, Tuple[int, int]], after: Dict[str, Tuple[int, int]]) -> List[str]:
+    return sorted(p for p in set(before) | set(after) if before.get(p) != after.get(p))
 
 
 @dataclass(frozen=True)
@@ -298,7 +332,11 @@ class RerunRecord:
 
 
 def flaky_tests(report: TestStatusReport) -> List[str]:
-    """The tests whose isolated rerun passed, in the order they were rerun."""
+    """The tests whose isolated rerun passed on a tree that held still, in
+    the order they were rerun. A rerun-pass on a tree that changed during
+    the run is an unstable run, not a flaky test, and is not listed."""
+    if report.changed_during_run:
+        return []
     seen: List[str] = []
     for r in report.reruns:
         if r.outcome in ("passed", "xpassed") and r.nodeid not in seen:
@@ -601,7 +639,9 @@ def scan(root: Path, *, python: Optional[str] = None, reruns: int = 3,
             report.reason = f"pytest is not importable by {python}"
             return [], report
 
+        before = _snapshot(root)
         exit_code, records, tail = runner.run()
+        report.changed_during_run = _changed(before, _snapshot(root))
         report.pytest_exit = exit_code
         if exit_code is None:
             report.reason = f"pytest did not finish: {tail}"
@@ -704,6 +744,20 @@ def _classify_failure(root: Path, outcome: TestOutcome, runner: _PytestRunner,
         report.reruns.append(RerunRecord(outcome.nodeid, attempt,
                                          again.outcome if again is not None else "no report"))
         if exit_code == 0 and again is not None and again.outcome in ("passed", "xpassed"):
+            if report.changed_during_run:
+                report.unstable += 1
+                shown = ", ".join(report.changed_during_run[:6])
+                more = len(report.changed_during_run) - 6
+                return _finding(
+                    root, outcome, "unstable run", Severity.MAJOR,
+                    f"{phase} in the suite, passes when rerun alone; the tree changed during the run",
+                    f"Failed in the full run, then passed on isolated rerun {attempt} of {reruns}. "
+                    f"{len(report.changed_during_run)} file(s) under the project changed while the "
+                    f"suite was running: {shown}" + (f" (+{more} more)" if more > 0 else "") + ". "
+                    "A test that reads the tree cannot be judged on a run where the tree moved; "
+                    "this is not evidence the test is flaky. Run the scan again on a still tree.\n\n"
+                    + _excerpt(outcome.text),
+                )
             report.flaky += 1
             return _finding(
                 root, outcome, "flaky test", Severity.MAJOR,
@@ -790,6 +844,10 @@ def render_report(report: TestStatusReport) -> str:
     classified = []
     if report.flaky:
         classified.append(f"{report.flaky} flaky: " + ", ".join(flaky_tests(report)))
+    if report.unstable:
+        classified.append(f"{report.unstable} passed on rerun after the tree changed during the run "
+                          f"({', '.join(report.changed_during_run[:3])}"
+                          + (" ..." if len(report.changed_during_run) > 3 else "") + ")")
     if report.blocked:
         classified.append(f"{report.blocked} blocked by a dependency")
     if report.stale_skips:
