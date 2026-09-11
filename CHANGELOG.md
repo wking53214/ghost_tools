@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.0.5 (2026-09-11)
+
+### The README describes the tool as it is
+A review of the README against the code found it describing several
+versions at once. A `--semantic` flag sat in the defaults table for four
+versions and never existed. Test status was "opt-in, because it executes
+the project's code" in one section and on by default in the table above it.
+The detector inventory said seven; twenty are registered. The non-goals
+said nothing ever edits a tree, a version after the surgeon shipped. The
+`--json` row of the tree table said "nothing" while a `--json` run writes
+the ledger like any other. The changelog was split across two files with
+fourteen versions (0.13.0 through 0.17.9) recorded in neither.
+
+The README now opens with the seven principles and an inventory of every
+registered detector, the version tags are gone from its headings, and its
+own changelog moved into `CHANGELOG.md` beside entries for the fourteen
+missing versions. Three tests hold it there: the inventory table must name
+every registered detector and nothing else, every `--flag` the ghost_buster
+half mentions must exist in the parser, and every "on" row of the defaults
+table must name a real `--no-` flag. The contradiction class this fixes is
+the one `doc_test_count_drift` was built for, applied to prose about
+flags instead of numbers about tests.
+
 ## 1.0.4 (2026-09-11)
 
 ### Serum, dose one, and what the serum learned
@@ -450,6 +473,155 @@ defines nothing. The check is `bool(tree.body)`.
 reported only for a true bijection, because that is the only case where the
 two names provably denote one thing and a substitution cannot capture
 anything else.
+
+## 0.17.9 (2026-09-10)
+
+### ghost_buster
+`vestigial_domain_name` and `placeholder_name`: name things after what they
+do, where that is decidable. A "prose-shaped identifier" check was
+prototyped and measured first: 1,108 hits library-wide, 1,099 of them
+deliberate test names. Abandoned; a check that fires on nothing is another
+silence to learn to trust.
+
+## 0.17.8 (2026-09-10)
+
+### blackhole_extrapolator
+A void that infers nothing is named, not outlined (`--all` renders them);
+24 of 109 were like that. A manifest changes what an unresolved import
+means, and every report says why the scan may be wrong.
+
+## 0.17.7 (2026-09-10)
+
+### blackhole_extrapolator
+"Is this a real module" was answered by "is it installed here". Resolution
+now checks the standard library, builtins and the typing vocabulary before
+what happens to be installed. 248 voids became 109 on the same library.
+
+## 0.17.6 (2026-09-10)
+
+### ghost_buster
+`curl-auth-header` rated by what it established, like `generic-api-key` in
+0.17.3. The first fix was scoped to the rules the measurement had seen
+fire, and gitleaks had timed out on the only repository where this one
+does. `_SHAPE_ONLY_RULES` names both by literal, with a test that fails if
+either leaves it.
+
+## 0.17.5 (2026-09-10)
+
+### ghost_buster
+`--join` sees a package's re-exports and its src layout. Two CRITICAL
+findings against imports that ran fine: names re-exported by an
+`__init__.py` were invisible, and a src layout made a repository provide
+nothing at all.
+
+## 0.17.4 (2026-09-10)
+
+### ghost_buster
+The ledger gets a direction and a surprise: a constant-velocity Kalman
+filter over the finding count gives a smoothed rate (velocity) and a
+measurement-minus-prediction residual (innovation), so a project sitting
+at 340 findings and one that was at 180 a fortnight ago stop reading the
+same.
+
+## 0.17.3 (2026-09-10)
+
+### ghost_buster
+A secret is rated by what its rule established. A provider-issued prefix
+(`AKIA`, `sk-`, `ghp_`, a PEM header) is a credential and CRITICAL. A
+high-entropy string near the word "key" is a candidate and MAJOR. Measured
+across a 37-repository library: all 32 `generic-api-key` hits were false
+positives, six of them the English word "anthropomorphic".
+
+## 0.17.2 (2026-09-10)
+
+### ghost_buster
+A baseline entry keeps the id it was written with. Reading a finding back
+re-derived its id from the portable path, which silently re-identified
+findings already accepted. 17 committed baselines, 2,464 entries, measured.
+
+## 0.17.1 (2026-09-10)
+
+### ghost_buster
+A guarded stdlib import is not a cross-repository boundary. Found by the
+self-scan minutes after `--join` landed: ghost_tools reported itself as
+reaching for `importlib`.
+
+## 0.17.0 (2026-09-10)
+
+### ghost_buster
+Three checks from 2026 research into AI-written code: `sql_injection`
+(SQL built by interpolation and then executed; the safe and unsafe forms
+are different AST shapes), `destructive_sql` (`DELETE`/`UPDATE` with no
+`WHERE`, `TRUNCATE`), and `unresolvable dependency` (a package imported
+unguarded that refers to nothing findable: the slopsquat surface). Five
+real repositories: zero findings; the canonical `express_mongoose`
+conflation still fires. Documented in README under **What AI-written code
+gets wrong**.
+
+## 0.16.0 (2026-09-10)
+
+### ghost_buster
+`--join PATH`: the seam between two repositories, the one place both sides
+are blind. Four findings: `cross repo import unresolved` (CRITICAL),
+`boundary symbol untested` (MAJOR), `boundary provider absent` (MINOR),
+`dormant boundary test` (INFORMATIONAL). With neither `--join` nor
+`--single-repo` it asks, but only on a terminal; a prompt in CI hangs the
+build. Documented in README under **The seam between two repositories**.
+
+## 0.15.0 (2026-09-10)
+
+### ghost_buster
+`--structure`: the repository as evidence, never as interpretation. The
+packaging boundary, every importable module, every entry point, the import
+topology, external boundaries crossed by call, and an explicit list of what
+could not be resolved. Two findings fall out: `entry point target missing`
+and `undeclared dependency`. Import names are mapped through installed
+distribution metadata after a direct comparison reported six declared
+packages as undeclared. Documented in README under **The structural
+model**.
+
+## 0.14.0 (2026-09-10)
+
+### ghost_buster
+The three founder checks: `no_ci_configuration` (tests exist and nothing
+runs them, or a deploy artifact with no gate), `insecure_default`
+(`DEBUG = True`, CORS with every origin and credentials, `verify=False`),
+`unauthenticated_route` (a route with no auth while most of its siblings
+have it). Each deliberately narrower than its category name; three real
+repositories, zero findings. Documented in README under **The founder
+checks**.
+
+## 0.13.1 (2026-09-10)
+
+### ghost_buster
+An `xfail` that failed as expected produced no finding at all, so the
+ledger never saw it and `persistent_finding` could never age it. It is now
+INFORMATIONAL, visible, and counted. Measured on a pediatric deterioration
+engine: five missed detections moved from bare skips to named xfails and
+had vanished from the report entirely.
+
+## 0.13.0 (2026-09-09)
+
+Three changes shipped together, each about never being silently absent.
+
+### ghost_buster
+**Defaults on (0.11.0 in the README's old numbering).** `--branches`,
+`--tests` and `--secrets` were opt-in, and a run that skipped one said
+nothing. Measured: a scan with `--branches --secrets` printed 34 findings,
+looked finished, and never mentioned that five clinical missed detections
+sat behind skips `--tests` rates MAJOR. All three are on by default, with
+`--no-*` to decline, and every check reports its state on every run:
+performed, impossible, or declined.
+
+**The ledger (0.12.0 in the old numbering).** `.ghost_ledger.json` records
+what was found over time, before the baseline diff so `--accept` cannot
+erase history. Four findings only history can produce: `regressed_finding`,
+`flapping_finding`, `persistent_finding`, `blind_spot`. It only ever adds.
+
+**Abstention.** `unassessable_file`: a file the corpus cannot parse is a
+MAJOR finding naming the file and the reason, borrowed knowingly from a
+pediatric sepsis engine's `abstained=True`. Every detector already skipped
+such a file; nobody was told.
 
 ## 0.10.1 (2026-09-10)
 
@@ -1015,4 +1187,36 @@ The release that makes the toolkit shippable and closes the pipeline.
 
 ## 0.4 and earlier
 
-See the changelog section at the end of README.md.
+Moved here from README.md on 2026-09-11; the wording is the original.
+
+- **v0.3.1** -- CLI file collection now skips virtualenvs / vendored
+  `site-packages` / `node_modules` / VCS dirs / tool caches, and takes a
+  repeatable `--exclude DIRNAME` for repo-specific vendored trees. Found by
+  running the mechanical layer across 18 real repos in one pass: one repo
+  with a `.venv` in its working tree reported 3,789 findings, of which 3,702
+  were inside `site-packages` (pytest's own source). `site-packages` is the
+  match that matters -- it catches an installed-package tree regardless of
+  the enclosing venv's directory name.
+- **v0.3** -- new mechanical detector `doc_test_count_drift`, the first
+  taxonomy-driven scrub of a real target repo (HERALD) done by hand
+  against the researched ghost list, then turned into a detector. CLI
+  file collection now includes `*.md` alongside `*.py` (every other
+  detector is unaffected -- markdown fails `_parse()` and is silently
+  skipped, same fail-closed behavior as any other unparseable file).
+- **v0.2** -- new mechanical detector `intra_function_duplicate_block`,
+  closing the "duplication inside one function" gap surfaced during the
+  HERALD dogfood run (see above). Includes a regression test for a real
+  bug caught during its own development: an `ast.walk`-based scope
+  boundary cannot be pruned at a nested `def`, so an early version leaked
+  a nested function's blocks into its enclosing function's comparison
+  set. Fixed by recursing through statement lists directly instead of
+  `ast.walk`.
+- **v0.1.2** -- fixed `near_duplicate_function` silently collapsing two
+  distinct same-named occurrences into one label (found via a real run
+  against HERALD).
+- **v0.1.1** -- fixed two `dead_code` false-positive classes (found via a
+  real run against ANVIL): `Protocol`/`ABC` interface classes, and
+  string-subscript-key dynamic dispatch.
+- **v0.1** -- initial release: `ghost_buster` (mechanical + semantic
+  layers) and `ghost_writer`.
+
