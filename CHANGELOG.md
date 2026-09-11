@@ -1,5 +1,68 @@
 # Changelog
 
+## 1.4.0 (2026-09-11)
+
+Six items from the forensic pass that #57 did not close. Two were
+decisions rather than defects; four were claims the repository made about
+itself that nothing checked.
+
+### An after-block says which half of it was re-established
+The re-examination after a cut runs the registered detectors. It does not
+run the test suite and does not run the secrets scan, so those criteria
+were read off evidence that predated the intervention and printed in the
+same words the workup used: `met  tests run and pass  suite ran clean`,
+for an examination that never happened. The verdict was right and the
+account was not.
+
+A criterion now carries a `carried` flag, and an operation sets it on
+tests and secrets whenever a cut was made. The verdict is unchanged, the
+line says `[carried from the workup, not re-established]`, and the block
+closes with why. Nothing is carried when no cut was made, because then
+the tree is the one the workup examined.
+
+### The trust model is written down
+Consent is recorded against the origin remote, so it covers every
+checkout of that remote, at any commit, with any contents. That is
+deliberate and useful, and its consequences were nowhere in the
+documentation: a pull does not re-prompt, a second clone inherits the
+grant, and anyone who can change what a trusted remote contains gets
+their code run by the next `--tests`. `trust.py` and the README now state
+the model, what it assumes, and the honest way to get the stronger
+property today (`--no-tests` executes nothing regardless of consent).
+
+### The version on a piece of evidence is the version that produced it
+`__version__` read installed distribution metadata first, which describes
+whatever was installed once rather than the code the interpreter
+imported. With a `ghost-tools 9.9.9` distribution on the path and the
+1.2.4 source running, the package reported 9.9.9 -- and that string is
+stamped into every ledger run as `tool_version`. The source checkout
+answers first now; an installed wheel has no pyproject beside the package
+and still answers from metadata, which is correct there. Two tests,
+including one end to end through the CLI reading the ledger back.
+
+### A model's claim cannot become a deterministic decision
+The semantic layer has no caller and no flag, so nothing REASONED reaches
+a gate today. That was an absence, not a boundary: readiness filtered by
+detector name, the baseline by nothing at all, and `FindingHistory` has
+no status field, so a claim folded into the ledger would have read as a
+measurement ever after. `schema.authoritative` names the rule once and
+readiness, the baseline and the ledger apply it. The ledger's run count
+still reports what the scan found; only what it REMEMBERS is filtered.
+
+### The mutant count is checked, not maintained
+Four places stated a mutant count in prose. They said 454; the suites
+held 548, a gap of 94 in a repository whose argument is that unmeasured
+claims drift. `Tests/test_mutant_census.py` counts the MUTANTS lists and
+holds `pyproject.toml`, the harness, the CI workflow and the README to
+the answer. It failed twice while this release was being written, both
+times correctly.
+
+### 1.0.2 exists again, and the README knows its own version
+The changelog had no 1.0.2 heading although the release shipped (commit
+82266c7, #43); its entry is restored from its own commit message and
+marked as recorded late. The README title said v1.0 while the tool was
+1.2.4.
+
 ## 1.3.0 (2026-09-11)
 
 ### The tree goes back, whatever happened on the table
@@ -306,6 +369,28 @@ after; a test that fails in the suite and passes alone while the tree
 changed is reported as an UNSTABLE RUN naming the changed files, not as
 a flaky test. It still blocks candidacy, because the remedy is to run
 the exam again on a still tree, not to fix the test.
+
+## 1.0.2 (2026-09-11)
+
+*Recorded in 1.4.0: this release shipped (commit 82266c7, pull request #43)
+and its heading was never written here. A changelog with a hole in it is
+the drift this tool exists to find.*
+
+### The rerun record: a flaky test's name survives the scan
+The test scan kept isolated-rerun outcomes in a temporary directory it
+deleted with the runner, so a run that said "2 flaky" could not, two runs
+later, say which two. `TestStatusReport.reruns` records every attempt
+(test, attempt, outcome); the status line names the flaky tests;
+`rerun_summary` says what each rerun did; and the readiness criterion
+names the tests behind its count. Five mutants, all killed.
+
+### A tree that moves during the exam is an unstable run, not a flaky test
+With the rerun record in hand, the first patient's two "flaky" tests
+turned out not to be: `pyproject.toml` and `CHANGELOG.md` were edited
+while the suite ran, and the two tests that read them failed once and
+passed alone. The scan snapshots the tree before the full run and
+compares after; a rerun-pass on a tree that changed is classified as an
+unstable run rather than a flaky test.
 
 ## 1.0.1 (2026-09-11)
 

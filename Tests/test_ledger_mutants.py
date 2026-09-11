@@ -58,8 +58,11 @@ MUTANTS = [
      "            os.replace(tmp, self.path)\n", "            pass\n"),
 
     # --- subtracting: the thing it must never do ---
+    # Re-pointed in 1.4.0: the self-exclusion and the status filter became
+    # one expression, so the mutant drops the self-exclusion half of it.
     ("the ledger records its own output and compounds history on history", _L,
-     "        findings = [f for f in findings if f.detector != DETECTOR]\n", ""),
+     "        findings = authoritative(f for f in findings if f.detector != DETECTOR)\n",
+     "        findings = authoritative(findings)\n"),
     ("history findings replace the run's findings instead of adding to them", _C,
      "        findings.extend(history)\n", "        findings = list(history)\n"),
     ("the ledger runs after the baseline diff, so --accept erases memory", _C,

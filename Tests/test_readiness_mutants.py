@@ -49,9 +49,11 @@ MUTANTS = [
     ("an unparseable file stops disqualifying", _R,
      '    n = _count(findings, "unassessable_file")\n    criteria.append(Criterion(PARSES, n == 0,',
      '    n = 0\n    criteria.append(Criterion(PARSES, n == 0,'),
+    # Re-pointed in 1.4.0: the line gained the carried note, so the mutant
+    # drops the evidence from the new expression rather than the old one.
     ("the render stops saying why", _R,
-     '            lines.append(f"  {mark}  {c.name:34s} {c.evidence}")',
-     '            lines.append(f"  {mark}  {c.name:34s}")'),
+     '            lines.append(f"  {mark}  {c.name:34s} {c.evidence}{note}")',
+     '            lines.append(f"  {mark}  {c.name:34s}{note}")'),
 ]
 
 

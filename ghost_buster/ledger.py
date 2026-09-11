@@ -48,6 +48,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
 from .schema import Category, Evidence, Finding, Layer, Severity, Status
+from .schema import authoritative
 
 DETECTOR = "ledger"
 SCHEMA_VERSION = 1
@@ -306,8 +307,17 @@ class Ledger:
         # `regressed_finding` becomes a finding that can itself regress,
         # and history compounds on history -- the same trap correlate.py
         # closes by refusing to correlate correlations.
-        findings = [f for f in findings if f.detector != DETECTOR]
-        run.counts["found"] = len(findings)
+        # And never remembers a claim as though it were a measurement. A
+        # FindingHistory has no status field, so a REASONED finding folded
+        # in here would be indistinguishable from a detector's output on
+        # every future read. See schema.authoritative.
+        #
+        # Both filters change what is REMEMBERED, never what the run is
+        # reported to have found: `counts["found"]` above is the scan's own
+        # number, and a ledger that quietly counted fewer findings than the
+        # report printed would be its own drift.
+        findings = authoritative(f for f in findings if f.detector != DETECTOR)
+        run.counts["found_remembered"] = len(findings)
         if scanned is not None:
             run.counts["scanned"] = int(scanned)
 

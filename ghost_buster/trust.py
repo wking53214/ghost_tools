@@ -22,6 +22,37 @@ An untrusted repository is not scanned less quietly: the test and
 mutation scans are DECLINED with a receipt naming the store and the flag,
 readiness reads the tests criterion as unknown, and the ledger ages the
 gap like any other declined check.
+
+WHAT IS TRUSTED, EXACTLY
+
+A NAME, not a tree. Consent is recorded against the normalised origin
+remote, so it covers every checkout of that remote, at any commit, with
+any contents, forever. That is deliberate and it is the useful half: a
+fresh clone of your own repository does not ask again, and a pull does
+not invalidate a decision you already made.
+
+The consequences follow from the same fact and are stated here rather
+than discovered later:
+
+  * A trusted repository whose contents change is still trusted. Pulling
+    a commit, checking out a pull request, or editing the tree does not
+    re-prompt.
+  * A DIFFERENT checkout of the same remote inherits the grant, including
+    one prepared by somebody else and handed to you.
+  * An attacker who can change what a trusted remote's checkout contains
+    -- push access, a merged pull request, a tarball you unpack over it
+    -- gets their code executed by the next `--tests` or `--mutate` run.
+    They need neither the trust store nor local privilege.
+  * A tree with no remote is identified by its resolved path, so moving
+    it revokes consent. That direction fails closed, which is why it is
+    left as it is.
+
+The model this assumes is "do I trust this project", the same question a
+CI configuration answers when it runs a suite. It is NOT "do I trust this
+exact code", which would require re-consent per commit and would make the
+prompt worthless through repetition. If you need the stronger property,
+the honest way to get it today is a scan with `--no-tests`, which
+executes nothing regardless of consent.
 """
 from __future__ import annotations
 

@@ -60,7 +60,7 @@ import json
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Iterable, Any, Dict, List, Optional
 
 
 class Severity(str, Enum):
@@ -344,6 +344,32 @@ class FindingSet:
 
     def __iter__(self):
         return iter(self.findings)
+
+
+#: The statuses a deterministic decision may rest on. A REASONED finding is
+#: a model's claim that no detector verified, and CONFIRMED_BY_REVIEW is one
+#: a human did; the first is interpretation, the second is evidence.
+AUTHORITATIVE = frozenset({Status.CONFIRMED, Status.CONFIRMED_BY_REVIEW, Status.SUPPRESSED})
+
+
+def authoritative(findings: Iterable[Finding]) -> List[Finding]:
+    """The findings a gate, a baseline or the ledger may read.
+
+    WHY THIS EXISTS BEFORE IT IS NEEDED
+
+    The semantic layer is a library with no caller and no flag, so nothing
+    REASONED reaches a decision today. That is an absence, not a boundary:
+    every consumer downstream filters by detector name or by nothing at
+    all, and `FindingHistory` has no status field, so a model's claim
+    folded into the ledger would be indistinguishable from a measurement
+    afterwards. The day the layer is wired, the boundary has to already be
+    code rather than a sentence in a docstring, because by then the wiring
+    is the interesting part and this is the part nobody re-reads.
+
+    correlate.py has enforced the same rule for its own inputs since it
+    shipped; this is that rule, named once, for the rest of the pipeline.
+    """
+    return [f for f in findings if f.status in AUTHORITATIVE]
 
 
 def disambiguate_ids(findings: List[Finding]) -> int:
