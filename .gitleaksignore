@@ -16,11 +16,11 @@ b5e74d89f3db1d55b820326a1038de1af3b951e9:Tests/test_secrets.py:aws-access-token:
 0edf061ab3aa0dff4352589627201cffcc093fea:Tests/test_secrets.py:aws-access-token:28
 0edf061ab3aa0dff4352589627201cffcc093fea:Tests/test_secrets.py:aws-access-token:252
 #
-# 2026-09-11, the first patient: four more prose fixtures (the header
-# {"x-api-key": "testkey-abc123"} and the rule name 'curl-auth-header'
-# quoted in comments and one assertion) fired the same two shape-only
-# rules across the two commits that wrote them. Same treatment: the lines
-# now carry `gitleaks:allow`; these pin the commits from before they did.
+# 2026-09-11, the first patient: four more prose fixtures (the fake
+# x-api-key test header and the rule name 'curl-auth-header' quoted in
+# comments and one assertion) fired the same two shape-only rules across
+# the two commits that wrote them. Same treatment: the lines now carry
+# `gitleaks:allow`; these pin the commits from before they did.
 771f4a0cd50ac9bf1bf4b0b9f10a9b1eb179fc3e:ghost_buster/secrets.py:generic-api-key:128
 771f4a0cd50ac9bf1bf4b0b9f10a9b1eb179fc3e:ghost_buster/correlate.py:generic-api-key:207
 306db47d6796313734940cfec77962ef83abe7fc:ghost_buster/secrets.py:generic-api-key:128
@@ -29,3 +29,12 @@ b5e74d89f3db1d55b820326a1038de1af3b951e9:Tests/test_secrets.py:aws-access-token:
 0e4911fdfdba09f6a96dc6d96f42760a9100272d:Tests/test_secret_severity.py:curl-auth-header:63
 1e056d2981ed5edfd4cb2659dbc991e60e202468:ghost_buster/secrets.py:curl-auth-header:142
 1e056d2981ed5edfd4cb2659dbc991e60e202468:Tests/test_secret_severity.py:curl-auth-header:63
+#
+# 2026-09-11, the second patient: the comment above and the 1.0.1
+# changelog entry QUOTED the fake header while explaining it was fake,
+# and gitleaks read the quotation. Neither spells it any more; these pin
+# the two commits that did. Do not quote a fixture in prose.
+81135bb656582b0777d069bd7daa0c6d217ec51f:CHANGELOG.md:generic-api-key:10
+81135bb656582b0777d069bd7daa0c6d217ec51f:.gitleaksignore:generic-api-key:20
+34323adfd29461425f0ecd61f2a1cefbcffda587:CHANGELOG.md:generic-api-key:10
+34323adfd29461425f0ecd61f2a1cefbcffda587:.gitleaksignore:generic-api-key:20

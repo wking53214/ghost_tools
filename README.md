@@ -1307,7 +1307,7 @@ test suite runs.
 python -m pytest Tests/ -v
 ```
 
-540 tests, 0 network calls, 0 API key required -- the semantic-layer
+1444 tests (measured 2026-09-11), 0 network calls, 0 API key required -- the semantic-layer
 tests verify the real parsing/fail-closed/injection-fencing logic via
 `StubModelClient`, the same technique `sentinel_os`'s own `interpretation/`
 package uses for its model-client tests. `test_branches.py`,

@@ -1,6 +1,16 @@
 # Changelog
 
-## 1.0.2 (2026-09-11)
+## 1.0.3 (2026-09-11)
+
+### The bait reproduced itself
+The second operation found four new "committed secrets": the 1.0.1
+changelog entry and the `.gitleaksignore` comment both quoted the fake
+x-api-key test header while explaining that it was fake, across two
+commits each. gitleaks reads prose. Both mentions now describe the bait
+without spelling it, and the two commits that did are pinned. Lesson
+recorded here so the next person writing about a fixture does not quote
+it. README's test count updated to the measured 1444.
+
 
 ### The rerun record
 The test scan kept its isolated-rerun outcomes in a temporary directory
@@ -27,10 +37,9 @@ the exam again on a still tree, not to fix the test.
 1.0.0's first operation left ghost_tools off the serum list for two
 reasons, both fixed here.
 
-Eight "committed secrets" were gitleaks firing on prose: the header
-`{"x-api-key": "testkey-abc123"}` and the rule name `'curl-auth-header'`
-quoted in comments and one assertion, across the two commits that wrote
-them. The lines now carry `gitleaks:allow` and `.gitleaksignore` pins
+Eight "committed secrets" were gitleaks firing on prose: a fake
+x-api-key test header and the rule name `'curl-auth-header'` quoted in
+comments and one assertion, across the two commits that wrote them. The lines now carry `gitleaks:allow` and `.gitleaksignore` pins
 the introducing commits, the same treatment the earlier fixtures got.
 gitleaks reports zero on this tree.
 
