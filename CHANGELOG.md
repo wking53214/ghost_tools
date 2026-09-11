@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.2.4 (2026-09-11)
+
+### A rebuild for the flattened files that have no original anywhere
+
+`--recover-from` finds an original by collapse identity and is exact when it
+finds one. Four files in the library gave it nothing to find: no copy with
+its line breaks intact exists in any repository or in the ChatGPT, Claude,
+Gemini or CoPilot exports. `--reconstruct-into` is the other existing answer,
+and its measured recovery rate as a running program is 0 of 34, by design:
+it is built to run over a tree without ever claiming more than it can prove.
+
+`tools/unflatten.py` takes the opposite trade. One file, minutes of search,
+and an answer that parses. Comments are ended where code visibly resumes;
+statement boundaries come from the places two tokens cannot be adjacent
+inside one expression; indentation is a search that Python's own parser
+validates prefix by prefix, ordered by what the code says about itself and
+memoised so it finishes. Every statement, name and literal comes from the
+input unchanged, the nesting is inferred, and the count of block boundaries
+with more than one valid reading is printed and written into the file.
+
+The central claim is a test, not a promise. One flattened file's original
+was later found in a Gemini export; both are fixtures in
+`Tests/test_unflatten.py`, and the rebuild matches the original exactly,
+syntax tree for syntax tree. On the four files with no original, all four
+parse and no name defined in the flattened source is missing.
+
 ## 1.2.3 (2026-09-11)
 
 ### An archive is not a patient

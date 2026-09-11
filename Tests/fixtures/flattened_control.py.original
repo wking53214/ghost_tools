@@ -1,0 +1,57 @@
+import pandas as pd
+import cv2
+import os
+import numpy as np
+from tqdm import tqdm
+from skimage.feature import local_binary_pattern, graycomatrix, graycoprops
+import lightgbm as lgb
+from sklearn.model_selection import train_test_split
+
+# 1. Configuration
+train_dir = '/root/.cache/kagglehub/competitions/the-freuid-challenge-2026-ijcai-ecai/train/train/'
+label_path = '/root/.cache/kagglehub/competitions/the-freuid-challenge-2026-ijcai-ecai/train_labels.csv'
+files = [f for f in os.listdir(train_dir) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+
+# 2. Extraction Loop
+sobel_vars, lbp_means, glcm_contrasts, glcm_corrs, glcm_homs, ids = [], [], [], [], [], []
+
+print("Starting feature extraction...")
+for img_file in tqdm(files):
+    img_path = os.path.join(train_dir, img_file)
+    img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+    
+    if img is not None:
+        img = cv2.resize(img, (128, 128))
+        
+        # Sobel & LBP
+        sobel = cv2.Sobel(img, cv2.CV_64F, 1, 1, ksize=3)
+        lbp_map = local_binary_pattern(img, P=8, R=1, method='uniform')
+        
+        # GLCM
+        img_8bit = (img / 32).astype(np.uint8)
+        glcm = graycomatrix(img_8bit, distances=[1], angles=[0], levels=8, symmetric=True, normed=True)
+        
+        ids.append(img_file.split('.')[0])
+        sobel_vars.append(np.var(sobel))
+        lbp_means.append(lbp_map.mean())
+        glcm_contrasts.append(graycoprops(glcm, 'contrast')[0, 0])
+        glcm_corrs.append(graycoprops(glcm, 'correlation')[0, 0])
+        glcm_homs.append(graycoprops(glcm, 'homogeneity')[0, 0])
+
+# 3. Data Alignment
+features = pd.DataFrame({
+    'sobel_var': sobel_vars, 'lbp_mean': lbp_means,
+    'contrast': glcm_contrasts, 'correlation': glcm_corrs, 'homogeneity': glcm_homs
+}, index=ids)
+
+train_labels_df = pd.read_csv(label_path).set_index('id')
+target = train_labels_df.loc[features.index]['label']
+
+# 4. Model Training
+model = lgb.LGBMClassifier(
+    n_estimators=1500, learning_rate=0.03, num_leaves=63,
+    feature_fraction=0.8, bagging_fraction=0.8, bagging_freq=5, objective='binary'
+)
+
+model.fit(features, target)
+print("Training complete. Model ready for inference.")

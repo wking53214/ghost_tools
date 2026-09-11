@@ -1650,6 +1650,44 @@ every such void. When a parsing companion sits beside the flattened file
 kept any of the class names, so an ancestor of a renamed rewrite is not
 mistaken for a lost dependency.
 
+### `tools/unflatten.py`: when there is no original to recover
+
+Recovery needs a copy to find. Four files in the library had none: not in
+another repository, not in any of the four chat-history exports. For those
+the choice is a rebuild or nothing, and `tools/unflatten.py` is the rebuild.
+
+It is the opposite trade from `--reconstruct-into`. That runs over a whole
+tree in milliseconds per file and never claims more than it can prove. This
+takes one file and minutes of search, and returns something that parses.
+
+Three recoveries, each a different kind of claim. Comments are ended where
+code visibly resumes, because a `#` in a flattened file swallows the rest of
+it. Statement boundaries are found where two tokens cannot be adjacent
+inside one expression, which is close to certain. Indentation is a search
+that Python's own parser validates prefix by prefix, ordered by what the
+code says about itself: a method taking `self` goes inside a class, a
+decorator with what it decorates, an entry-point guard at column 0.
+
+**Every statement, name and literal in the output comes from the input,
+unchanged.** The nesting is inferred. The tool counts every block boundary
+that had more than one reading the parser accepts, prints that count and
+writes it into the file's header, so the reader knows which half to trust.
+
+Measured: one flattened file's original was later found in a Gemini export,
+and the rebuild matches it exactly, syntax tree for syntax tree.
+`Tests/test_unflatten.py` holds both as fixtures, so that is a test rather
+than a claim. On the four files with no original anywhere, all four parse
+and no name defined in the flattened source is missing from the rebuild.
+
+```
+python tools/unflatten.py FLATTENED.py OUT.py
+```
+
+Two absences are marked rather than invented: a block whose body the source
+never held gets an Ellipsis saying so, and a line that is not Python in any
+scope (a shell cell pasted into the same file) is kept as a marked comment.
+Both are counted in the report.
+
 ### `--recover-from`: the original itself, not a proposal for one
 
 `--reconstruct-into` rebuilds a flattened file by reasoning about where the
