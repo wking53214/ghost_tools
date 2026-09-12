@@ -1584,48 +1584,6 @@ def _next_matching(lines: List[str], pattern: "re.Pattern[str]", start: int) -> 
     return next((j for j in range(start, len(lines)) if pattern.match(lines[j])), None)
 
 
-def _conflict_triplet_positions(lines: List[str], start: int) -> tuple[int, int, int] | None:
-    """Find a complete conflict marker triplet starting at or after start.
-    Returns (ours_line, sep_line, theirs_line) or None if not found."""
-    i = start
-    while i < len(lines):
-        if not _CONFLICT_OURS.match(lines[i]):
-            i += 1
-            continue
-        ours_line = i
-        sep_line = _next_matching(lines, _CONFLICT_SEP, ours_line + 1)
-        theirs_line = (
-            _next_matching(lines, _CONFLICT_THEIRS, sep_line + 1)
-            if sep_line is not None else None
-        )
-        if sep_line is not None and theirs_line is not None:
-            return (ours_line, sep_line, theirs_line)
-        i = ours_line + 1
-    return None
-
-
-def _build_conflict_finding(path: Path, lines: List[str], ours_line: int, theirs_line: int) -> Finding:
-    """Build a Finding for a conflict marker triplet."""
-    return Finding(
-        detector="merge_conflict_marker",
-        category=Category.MERGE_CONFLICT_MARKER,
-        layer=Layer.MECHANICAL,
-        severity=Severity.CRITICAL,
-        status=Status.CONFIRMED,
-        summary=f"unresolved merge conflict marker in {path.name}",
-        detail=(
-            f"lines {ours_line + 1}-{theirs_line + 1}: a <<<<<<< / ======= / "
-            ">>>>>>> triplet is still in this file. Whatever is between the "
-            "markers is almost certainly not the intended content, and in a "
-            ".py file this line shape alone is very likely a syntax error."
-        ),
-        evidence=Evidence(
-            file=str(path), line_start=ours_line + 1, line_end=theirs_line + 1,
-            snippet=lines[ours_line][:200],
-        ),
-    )
-
-
 @register("merge_conflict_marker")
 def detect_merge_conflict_markers(files: List[Path]) -> List[Finding]:
     """Flags an unresolved conflict-marker triplet: a `<<<<<<<` line,
@@ -1679,12 +1637,37 @@ def detect_merge_conflict_markers(files: List[Path]) -> List[Finding]:
             continue
         lines = text.splitlines()
         i = 0
-        while True:
-            triplet = _conflict_triplet_positions(lines, i)
-            if triplet is None:
-                break
-            ours_line, sep_line, theirs_line = triplet
-            findings.append(_build_conflict_finding(path, lines, ours_line, theirs_line))
+        while i < len(lines):
+            if not _CONFLICT_OURS.match(lines[i]):
+                i += 1
+                continue
+            ours_line = i
+            sep_line = _next_matching(lines, _CONFLICT_SEP, ours_line + 1)
+            theirs_line = (
+                _next_matching(lines, _CONFLICT_THEIRS, sep_line + 1)
+                if sep_line is not None else None
+            )
+            if sep_line is None or theirs_line is None:
+                i = ours_line + 1
+                continue
+            findings.append(Finding(
+                detector="merge_conflict_marker",
+                category=Category.MERGE_CONFLICT_MARKER,
+                layer=Layer.MECHANICAL,
+                severity=Severity.CRITICAL,
+                status=Status.CONFIRMED,
+                summary=f"unresolved merge conflict marker in {path.name}",
+                detail=(
+                    f"lines {ours_line + 1}-{theirs_line + 1}: a <<<<<<< / ======= / "
+                    ">>>>>>> triplet is still in this file. Whatever is between the "
+                    "markers is almost certainly not the intended content, and in a "
+                    ".py file this line shape alone is very likely a syntax error."
+                ),
+                evidence=Evidence(
+                    file=str(path), line_start=ours_line + 1, line_end=theirs_line + 1,
+                    snippet=lines[ours_line][:200],
+                ),
+            ))
             i = theirs_line + 1
     return findings
 
