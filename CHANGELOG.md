@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.7.2 (2026-09-12)
+
+1.7.1 fixed containment in two of the three writers and reported the job
+done. It was not.
+
+The harness that found the original hole was pointed back at the fix and
+asked a different question: not "does this case still reproduce" but "does
+a case one dimension away". The answer was yes. The same world with a
+maintained count block in it walked straight back out of the repository,
+because the block remedy takes its paths from the corpus and writes to
+them, and nothing on that path was checked.
+
+The lesson is in how it was missed. The case that found the first hole had
+no block in it, so the fix was verified against a world that could not
+exercise the writer it left open -- the case passed and the class stayed
+open. `Tests/test_write_containment.py` now runs EVERY writer over ONE
+world for exactly that reason: a guard added to one path and not another
+fails there rather than in six weeks.
+
+There is one containment rule now, in one function, imported rather than
+restated, so "every write into the patient is contained" is a single fact
+instead of three hopeful ones.
+
+635 mutants. 1797 passed, 38 skipped.
+
 ## 1.7.1 (2026-09-12)
 
 An adversarial harness was pointed at the operating mode, and the surgeon

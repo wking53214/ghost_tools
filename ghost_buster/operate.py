@@ -72,6 +72,11 @@ from typing import Callable, Dict, List, Optional, Sequence, Set
 
 from . import corpus, readiness
 from .annotate import annotate as annotate_names
+# One containment rule, shared, deliberately. It lives in annotate.py because
+# that is where the first hole was found and where its tests and mutants are;
+# importing it rather than restating it is what makes "every write into the
+# patient is contained" a single fact rather than three hopeful ones.
+from .annotate import refuses as outside_the_patient
 from .casefile import EXPOSED, HEALED, Casefile
 from .mechanical import (_DATED_DOCUMENT, _TEST_COUNT_CLAIM_RE,
                         _WRITABILITY_LOOKBACK, claim_context, claim_shape,
@@ -489,6 +494,22 @@ def _remedy_count_block(root: Path, files: Sequence[Path],
             continue
         match = _COUNT_BLOCK.search(text)
         if match is None:
+            continue
+        escapes = outside_the_patient(path, root)
+        if escapes is not None:
+            # THE HOLE THE FIRST FIX MISSED (v1.7.2)
+            #
+            # 1.7.1 put a containment guard on the annotation writer and on
+            # the path a finding resolves to, and left this one: the block
+            # remedy takes its paths straight from the corpus and writes to
+            # them. A README that is a symlink out of the repository, with a
+            # maintained block in it, still carried the write outside.
+            #
+            # The first fix was tested with the case that found it. The case
+            # had no block in it, so the case passed and the CLASS was still
+            # open -- which is why the test below runs every writer over one
+            # world rather than each writer over its own.
+            declined.append(escapes)
             continue
         if _DATED_DOCUMENT.search(path.name):
             # The prose remedy refuses a dated or versioned document by name,

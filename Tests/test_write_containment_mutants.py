@@ -13,6 +13,7 @@ import pytest
 from mutant_harness import assert_killed, run_tests_with_mutation
 
 _ANNOTATE = "ghost_buster/annotate.py"
+_OPERATE = "ghost_buster/operate.py"
 _PIPELINE = "ghost_buster/pipeline.py"
 
 TESTS = "Tests/test_write_containment.py"
@@ -38,6 +39,13 @@ MUTANTS = [
     ("a section recording nothing is appended anyway", _ANNOTATE,
      "    elif not disagreements:\n        return False\n",
      ""),
+
+    # The hole 1.7.1 left: the block remedy took its paths straight from the
+    # corpus and wrote to them. Guarded in 1.7.2.
+    ("the block remedy follows a link out of the repository", _OPERATE,
+     "        escapes = outside_the_patient(path, root)\n"
+     "        if escapes is not None:\n",
+     "        escapes = None\n        if False:\n"),
 
     # A finding has to name the path whose history will show the change.
     ("the link is reported instead of the file it points at", _PIPELINE,

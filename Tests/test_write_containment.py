@@ -243,3 +243,55 @@ def test_an_ordinary_tree_is_unchanged(tmp_path):
     (root / "pkg").mkdir()
     (root / "pkg" / "c.py").write_text("y = 2\n")
     assert [p.name for p in _collect_files(root)] == ["a.py", "b.md", "c.py"]
+
+
+# ---------------------------------------------------------------------------
+# The surface, not the case. (v1.7.2)
+#
+# 1.7.1 fixed containment in two writers and missed the third, and the case
+# that found the hole did not exercise it -- so the case passed and the class
+# stayed open. An adversarial variant one dimension away (the same world with
+# a maintained block in it) walked straight back out of the repository.
+#
+# This test therefore runs EVERY writer over ONE world. A guard added to one
+# path and not another fails here rather than in six weeks.
+# ---------------------------------------------------------------------------
+
+def _linked_out_world(tmp_path):
+    """A repository whose README is a symlink to a file outside it, carrying
+    everything each of the three writers looks for."""
+    from ghost_buster.operate import COUNT_BLOCK_CLOSE, COUNT_BLOCK_OPEN
+    root = _repo(tmp_path / "repo")
+    victim = tmp_path / "outside" / "NOTES.md"
+    victim.parent.mkdir()
+    victim.write_text(
+        "# theirs\n\n"
+        "The test suite has 390 tests, all passing.\n\n"
+        f"{COUNT_BLOCK_OPEN}\n390 tests, all passing.\n{COUNT_BLOCK_CLOSE}\n")
+    (root / "README.md").symlink_to(victim)
+    (root / "a.py").write_text("def f(count):\n    return count\n")
+    return root, victim
+
+
+def test_no_writer_follows_a_link_out_of_the_repository(tmp_path):
+    """All three, over one world."""
+    from ghost_buster.operate import (_remedy_annotate, _remedy_count_block,
+                                      _remedy_doc_counts)
+    root, victim = _linked_out_world(tmp_path)
+    before = victim.read_text()
+    files = [root / "README.md", root / "a.py"]
+
+    for remedy in (_remedy_annotate, _remedy_count_block, _remedy_doc_counts):
+        remedy(root, files, [_claim(file="README.md", line=3)])
+        assert victim.read_text() == before, (
+            "%s wrote outside the repository" % remedy.__name__)
+
+
+def test_the_block_remedy_declines_a_link_out_of_the_repository(tmp_path):
+    """The specific hole 1.7.1 left, named so a regression is readable."""
+    from ghost_buster.operate import _remedy_count_block
+    root, victim = _linked_out_world(tmp_path)
+    changed, _ = _remedy_count_block(root, [root / "README.md"],
+                                     [_claim(file="README.md", line=3)])
+    assert changed == 0
+    assert "390 tests" in victim.read_text()
