@@ -1122,7 +1122,6 @@ def _stmt_candidates(
                 yield block_index, [stmt]
 
 
-@register("intra_function_duplicate_block")
 def _build_intra_dup_finding(path: Path, func: ast.AST, fp: str, units: List[List[ast.stmt]], blocks_of: Dict[str, Set[int]]) -> Finding:
     """Build a Finding for duplicate blocks within a function."""
     spans = [f"{u[0].lineno}-{u[-1].lineno}" for u in units]
@@ -1159,6 +1158,7 @@ def _build_intra_dup_finding(path: Path, func: ast.AST, fp: str, units: List[Lis
     )
 
 
+@register("intra_function_duplicate_block")
 def detect_intra_function_duplicate_blocks(
     files: List[Path], min_statements: int = 3, min_complexity: int = 20
 ) -> List[Finding]:
