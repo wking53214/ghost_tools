@@ -754,7 +754,7 @@ def _finding_for(root: Path, mutant: Mutant) -> Finding:
     )
 
 
-def render_run(run: MutationRun, verbose: bool = False) -> str:  # ghost_buster: name-disagreement -- `run` is `mutation_run` at every call site
+def render_run(run: MutationRun, verbose: bool = False) -> str:
     lines = [f"\nghost_buster --mutate: {run.summary()}\n"]
     for m in run.survived:
         c = m.candidate
