@@ -1312,8 +1312,8 @@ neither is automatically right.
 | `entry` | `e` | 1 | `ghost_buster/secrets.py` |
 | `explicit` | `base_branch` | 1 | `ghost_buster/branches.py` |
 | `input_text` | `diff_out` | 1 | `ghost_buster/branches.py` |
+| `later_cases` | `later` | 1 | `ghost_buster/priors.py` |
 | `recovery` | `result` | 1 | `blackhole_extrapolator/cli.py`, `blackhole_extrapolator/recover.py` |
-| `run` | `mutation_run` | 1 | `ghost_buster/cli.py`, `ghost_buster/mutation.py` |
 | `summary` | `phase` | 2 | `ghost_buster/testsuite.py` |
 | `test_paths` | `tests` | 1 | `blackhole_extrapolator/detect.py` |
 

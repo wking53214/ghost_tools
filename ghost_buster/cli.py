@@ -373,7 +373,7 @@ def _present(args, evidence, new, known, priors, archive, casefile_path) -> None
         print(evidence.profile.render(evidence.profile_seconds))
         print()
     if evidence.mutation_run is not None:
-        print(render_run(evidence.mutation_run, verbose=args.mutate_verbose))  # ghost_buster: name-disagreement -- `mutation_run` is `run` in the signature
+        print(render_run(evidence.mutation_run, verbose=args.mutate_verbose))
 
 
 def main(argv: List[str] = None) -> int:
