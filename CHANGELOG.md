@@ -1,5 +1,54 @@
 # Changelog
 
+## 1.6.1 (2026-09-12)
+
+Found by putting a real repository on the table rather than by the suite,
+which is the argument for doing that.
+
+### An operation refused the tree it had just dirtied itself
+A scan writes `.ghost_ledger.json` into the repository it scanned.
+`--operate` scans first and operates second, in one process. So the door
+check saw the ledger the same run had written a moment earlier and
+refused the tree as dirty.
+
+Measured on this repository at 8ac6744, from a verifiably clean checkout,
+in a single command: the run created the file and then rejected its own
+output.
+
+The consequence was larger than one repository. `--operate` could not
+succeed with default flags on any repository that does not already track
+or ignore the ledger. The library's first real operation, on CNS, only
+appeared to work because it happened to be run with `--no-ledger`, and
+nothing said that was required. The sweep never surfaced it because a dry
+run skips the operation entirely.
+
+There is a second half to the same confusion. The cut committed with
+`git add -A`, which would have swept the ledger into the patient's
+clinical history. The surgeon's chart does not belong in the patient's
+record.
+
+`SURGEONS_NOTES` now names the three files the tool writes into a
+repository it examines, and both places treat them as the surgeon's own
+notes rather than the patient's uncommitted work: the door check ignores
+them when untracked, and the cut commit excludes them. A note the
+repository TRACKS stays dirt, because a committed file is the project's
+and a change to it is somebody's decision, not the tool's scratch.
+
+### A dry run no longer claims it wrote nothing
+The operative report said "dry run: nothing written" on a run that had
+just written a ledger. What a dry run does not write is a cut, and the
+line says that now.
+
+Ten tests and seven mutants. Two things went wrong while writing them and
+both are recorded because they are the interesting part. The first parse
+of `git status --porcelain` read by fixed column, which is wrong here
+because the git helper strips the output and a modified tracked file then
+loses the first character of its path. And one mutant survived: the test
+for the artefact set iterated the very constant it was testing, so
+narrowing that constant to a single entry left the test passing while
+checking one file and calling it three. The test was fixed, not the
+mutant.
+
 ## 1.6.0 (2026-09-11)
 
 The last three items from the external review of 1.3.0: a calibration
