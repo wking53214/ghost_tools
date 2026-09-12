@@ -406,6 +406,46 @@ def correlate_conflict_marker_breaks_tests(data: CorrelationInput) -> List[Findi
 # ---------------------------------------------------------------------------
 
 @connector("doc_count_contradicted_by_run")
+def _build_doc_count_finding(drift: Finding, documented: str, static: str, collected: int, passed: int, not_passing: int) -> Finding:
+    """Build a Finding when documented test count contradicts actual run."""
+    return Finding(
+        detector="doc_count_contradicted_by_run",
+        category=Category.DOC_DRIFT,
+        layer=Layer.MECHANICAL,
+        severity=Severity.MINOR if not_passing == 0 else Severity.MAJOR,
+        status=Status.CONFIRMED,
+        summary=(
+            f"'{drift.evidence.file}' claims {documented} test(s); the suite "
+            f"actually collects {collected} and {passed} pass"
+            + ("" if not_passing == 0 else f" ({not_passing} do not)")
+        ),
+        detail=(
+            "The static count is a lower bound and says so; this is the measured "
+            f"number from the run that just happened. Write {collected} into the "
+            "doc, not the static bound of "
+            f"{static or 'the AST scan'}."
+            + ("" if not_passing == 0 else
+               f" Note also that {not_passing} collected test(s) did not pass, so a "
+               "sentence claiming this suite is green is wrong independently of the "
+               "number.")
+            + f"\nBuilt from findings: {_ids([drift])} plus the --tests run."
+        ),
+        attributes={
+            "drift_finding": drift.id,
+            "documented_count": documented,
+            "collected": str(collected),
+            "passed": str(passed),
+            "writable": drift.attributes.get("writable", "no"),
+            "not_writable_because": drift.attributes.get("not_writable_because", ""),
+        },
+        evidence=Evidence(
+            file=drift.evidence.absolute_file or drift.evidence.file,
+            line_start=drift.evidence.line_start,
+            line_end=drift.evidence.line_end,
+        ),
+    )
+
+
 def correlate_doc_count_against_run(data: CorrelationInput) -> List[Finding]:
     """A documented test count, checked against the suite actually running.
 
@@ -446,60 +486,10 @@ def correlate_doc_count_against_run(data: CorrelationInput) -> List[Finding]:
         static = drift.attributes.get("static_lower_bound", "")
         if not documented:
             continue
-        # Re-check the claim's shape rather than trusting that the detector
-        # filtered it. This connector does not merely repeat its input, it
-        # tells the reader to write a specific number into a specific file,
-        # and that instruction is wrong unless the number really is a claim
-        # about the current suite. "gained 13 tests" is a delta, "went from
-        # 255 to 272 tests" a recorded transition, and a quoted count
-        # belongs to whoever was quoted -- writing today's total over any of
-        # them replaces something true with something false.
-        #
-        # Measured on ghost_tools itself: before the detector learned these
-        # shapes, all three of its drift findings were one of them, and this
-        # connector confidently recommended overwriting all three.
         shape = claim_shape(drift.attributes.get("claim_context", ""))
         if shape is not None:
             continue
-        out.append(Finding(
-            detector="doc_count_contradicted_by_run",
-            category=Category.DOC_DRIFT,
-            layer=Layer.MECHANICAL,
-            severity=Severity.MINOR if not_passing == 0 else Severity.MAJOR,
-            status=Status.CONFIRMED,
-            summary=(
-                f"'{drift.evidence.file}' claims {documented} test(s); the suite "
-                f"actually collects {collected} and {passed} pass"
-                + ("" if not_passing == 0 else f" ({not_passing} do not)")
-            ),
-            detail=(
-                "The static count is a lower bound and says so; this is the measured "
-                f"number from the run that just happened. Write {collected} into the "
-                "doc, not the static bound of "
-                f"{static or 'the AST scan'}."
-                + ("" if not_passing == 0 else
-                   f" Note also that {not_passing} collected test(s) did not pass, so a "
-                   "sentence claiming this suite is green is wrong independently of the "
-                   "number.")
-                + f"\nBuilt from findings: {_ids([drift])} plus the --tests run."
-            ),
-            attributes={
-                "drift_finding": drift.id,
-                "documented_count": documented,
-                "collected": str(collected),
-                "passed": str(passed),
-                # Carried, not recomputed: the verdict needs the document's
-                # name and the text around the claim, and this connector has
-                # neither. The detector read both and said so.
-                "writable": drift.attributes.get("writable", "no"),
-                "not_writable_because": drift.attributes.get("not_writable_because", ""),
-            },
-            evidence=Evidence(
-                file=drift.evidence.absolute_file or drift.evidence.file,
-                line_start=drift.evidence.line_start,
-                line_end=drift.evidence.line_end,
-            ),
-        ))
+        out.append(_build_doc_count_finding(drift, documented, static, collected, passed, not_passing))
     return out
 
 
