@@ -262,7 +262,8 @@ def _short_message(message: str, limit: int = 90) -> str:
     return first_line if len(first_line) <= limit else first_line[: limit - 1] + "…"
 
 
-def _finding(root: Path, entry: dict) -> Optional[Finding]:  # ghost_buster: name-disagreement -- `entry` is `e` at every call site
+def _extract_entry_fields(entry: dict) -> tuple:
+    """Extract and validate entry fields; returns (file, rule, line, end_line, column, commit, commit_short, fingerprint) or None if invalid."""
     file = entry.get("File")
     if not file:
         return None
@@ -275,14 +276,11 @@ def _finding(root: Path, entry: dict) -> Optional[Finding]:  # ghost_buster: nam
     commit = (entry.get("Commit") or "").strip()
     commit_short = commit[:12] if commit else "unknown commit"
     fingerprint = entry.get("Fingerprint") or f"{commit}:{file}:{rule}:{line}"
+    return (file, rule, line, end_line, column, commit, commit_short, fingerprint)
 
-    file_path = Path(file)
-    rel = file_path.as_posix()
-    location = f"{rel}:{line}" if line is not None else rel
-    if column is not None:
-        location += f":{column}"
-    summary = f"a '{rule}' secret is committed in {location} (commit {commit_short})"
 
+def _build_secret_intro(commit_short: str, entry: dict) -> str:
+    """Build the introduction/context line for the detail."""
     intro = f"Introduced in commit {commit_short}"
     who = entry.get("Author")
     if who:
@@ -293,9 +291,11 @@ def _finding(root: Path, entry: dict) -> Optional[Finding]:  # ghost_buster: nam
     message = _short_message(entry.get("Message", ""))
     if message:
         intro += f": {message!r}"
-    intro += "."
+    return intro + "."
 
-    description = (entry.get("Description") or "").strip()
+
+def _build_secret_detail_lines(rule: str, intro: str, fingerprint: str, description: str) -> list:
+    """Build all detail lines for the secret finding."""
     detail_lines = [
         f"gitleaks rule '{rule}'" + (f": {description}" if description else "."),
         intro,
@@ -326,6 +326,25 @@ def _finding(root: Path, entry: dict) -> Optional[Finding]:  # ghost_buster: nam
         "fingerprint, which gitleaks will honor on the next scan.",
         f"gitleaks fingerprint: {fingerprint}",
     ]
+    return detail_lines
+
+
+def _finding(root: Path, entry: dict) -> Optional[Finding]:  # ghost_buster: name-disagreement -- `entry` is `e` at every call site
+    fields = _extract_entry_fields(entry)
+    if not fields:
+        return None
+    file, rule, line, end_line, column, commit, commit_short, fingerprint = fields
+
+    file_path = Path(file)
+    rel = file_path.as_posix()
+    location = f"{rel}:{line}" if line is not None else rel
+    if column is not None:
+        location += f":{column}"
+    summary = f"a '{rule}' secret is committed in {location} (commit {commit_short})"
+
+    intro = _build_secret_intro(commit_short, entry)
+    description = (entry.get("Description") or "").strip()
+    detail_lines = _build_secret_detail_lines(rule, intro, fingerprint, description)
 
     absolute = root / file_path if not file_path.is_absolute() else file_path
     return Finding(
@@ -336,10 +355,6 @@ def _finding(root: Path, entry: dict) -> Optional[Finding]:  # ghost_buster: nam
         status=Status.CONFIRMED,
         summary=summary,
         detail="\n".join(detail_lines),
-        # Join keys for correlate.py. The fingerprint is gitleaks' own
-        # identifier for one leak (commit:file:rule:line) and is what makes
-        # "the same leak, in two repositories" a exact match rather than a
-        # guess from prose. None of these is the secret itself.
         attributes={
             "fingerprint": fingerprint,
             "rule": rule,
