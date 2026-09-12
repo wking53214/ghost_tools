@@ -204,6 +204,112 @@ def test_an_unparseable_file_is_skipped_not_guessed_at(tmp_path):
     assert detect_unreachable_declared_state([bad]) == []
 
 
+# ------------------------------- a lookup table is a comparison in disguise
+#
+# `AUTHORITATIVE = frozenset({Status.CONFIRMED, Status.CONFIRMED_BY_REVIEW,
+# Status.SUPPRESSED})` names three members and produces none of them. The set
+# exists to be tested against, exactly like the `in` it is written for.
+#
+# Counting that as production made this detector miss a state of precisely
+# the shape it was built to find: on its own repository it reported
+# `Status.REJECTED` and stayed quiet about `Status.CONFIRMED_BY_REVIEW`,
+# which is never assigned either. A detector with a blind spot the shape of
+# its own subject is worth a test of its own.
+
+TABLE = '''
+    from enum import Enum
+
+    class Status(Enum):
+        CONFIRMED = "confirmed"
+        BY_REVIEW = "by_review"
+        SUPPRESSED = "suppressed"
+        REJECTED = "rejected"
+
+    AUTHORITATIVE = frozenset({Status.CONFIRMED, Status.BY_REVIEW,
+                               Status.SUPPRESSED})
+
+    def scan():
+        return Status.CONFIRMED
+
+    def suppress(f):
+        f.status = Status.SUPPRESSED
+
+    def authoritative(items):
+        return [i for i in items if i.status in AUTHORITATIVE]
+'''
+
+# One member produced the ordinary way, one only through a scalar constant.
+# Both shapes must read as produced, and the enum must have a live member so
+# the asymmetry rule does not skip it and hide the answer.
+SCALAR = '''
+    from enum import Enum
+
+    class Phase(Enum):
+        BUILD = "build"
+        OTHER = "other"
+
+    FALLBACK = Phase.OTHER
+
+    def go(x):
+        return Phase.BUILD if x else FALLBACK
+'''
+
+# A lower-case module-level collection is ordinary code, not a constant
+# table. The convention is the only signal available to an AST-only tool,
+# and it is the signal the pattern actually uses.
+LOWERCASE = '''
+    from enum import Enum
+
+    class Phase(Enum):
+        BUILD = "build"
+        OTHER = "other"
+
+    defaults = [Phase.OTHER]
+
+    def go(x):
+        return Phase.BUILD if x else defaults[0]
+'''
+
+# Upper-case, a collection, and INSIDE a function. Only module-level
+# constants are tables; a collection built in a function body is ordinary
+# code and its members are being used.
+LOCAL = '''
+    from enum import Enum
+
+    class Phase(Enum):
+        BUILD = "build"
+        OTHER = "other"
+
+    def go(x):
+        TABLE = [Phase.OTHER]
+        return Phase.BUILD if x else TABLE[0]
+'''
+
+
+def test_membership_of_a_constant_table_is_not_production(tmp_path):
+    found = {f.attributes['member'] for f in _scan(tmp_path, m=TABLE)}
+    assert found == {'BY_REVIEW', 'REJECTED'}, (
+        'a member named only in a lookup table was counted as produced')
+
+
+def test_a_constant_holding_one_member_is_still_a_production(tmp_path):
+    """THE BOUNDARY. `DEFAULT = Phase.BUILD` is not a table: something reads
+    that name and uses the value. Only COLLECTIONS are tables."""
+    assert _scan(tmp_path, m=SCALAR) == []
+
+
+def test_a_lower_case_module_collection_is_not_a_table(tmp_path):
+    """Convention is the only signal an AST-only tool has, and it is the
+    one the pattern actually uses: tables are named in capitals."""
+    assert _scan(tmp_path, m=LOWERCASE) == []
+
+
+def test_a_local_collection_is_not_a_constant_table(tmp_path):
+    """Only module-level upper-case names. A collection built inside a
+    function is ordinary code and its members are being used."""
+    assert _scan(tmp_path, m=LOCAL) == []
+
+
 # ----------------------------------------------------- what it claims
 
 def test_the_severity_leaves_the_judgement_to_a_human(tmp_path):

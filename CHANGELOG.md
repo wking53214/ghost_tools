@@ -1,5 +1,62 @@
 # Changelog
 
+## 1.7.6 (2026-09-12)
+
+**A lookup table is a comparison in disguise.**
+
+1.7.5's `unreachable_declared_state` had a blind spot the shape of its own
+subject. It counted a member named inside a constant set as produced:
+
+    AUTHORITATIVE = frozenset({Status.CONFIRMED, Status.CONFIRMED_BY_REVIEW,
+                               Status.SUPPRESSED})
+
+That set names three members and produces none of them. It exists to be
+tested against, exactly like the `in` it is written for, which is the same
+category error as counting a comparison.
+
+So on its own repository the detector reported `Status.REJECTED` and stayed
+quiet about `Status.CONFIRMED_BY_REVIEW`, which is never assigned either. A
+detector that misses a state of precisely the shape it was built to find is
+worth saying out loud.
+
+Members named only inside a module-level upper-case constant holding a
+COLLECTION are no longer counted as produced. A constant holding a single
+member -- `DEFAULT_PHASE = Phase.BUILD` -- still is, because something reads
+that name and uses the value.
+
+Findings on this repository went 1 to 5, all five confirmed by hand:
+
+- `Status.REJECTED` and `Status.CONFIRMED_BY_REVIEW`, superseded by
+  `disposition`;
+- three `EvidenceKind` members in `blackhole_extrapolator` that appear only
+  as keys in a confidence-weight table, so the table assigns confidence to
+  evidence nothing can produce.
+
+**And the Status declaration is now true.** Three of its five members are
+produced here; two only ever arrive from data. They are not dead and must
+not be deleted: `Finding.from_dict` reconstructs any member from a stored
+record, so a baseline, a casefile, a hand-edited FindingSet or another
+tool's output can carry them, and removing them would turn reading such a
+file into a crash.
+
+They are also not how a human triages. That is `disposition` -- "fix",
+"suppress", "document" -- in `ghost_writer/triage.py`, which closed the loop
+the README had drawn for a long time and nothing had walked. `REJECTED` is
+an older vocabulary for the same decision, kept readable rather than kept
+alive. `AUTHORITATIVE` handles both correctly when they do arrive, which is
+the point: a state this tool does not produce still has to be read, and read
+correctly, when somebody else produces it.
+
+The detector still reports both, and should. The finding is true. What
+changed is that the declaration no longer implies a state the code can reach
+on its own.
+
+The three `EvidenceKind` findings are reported and not repaired. Producing
+them, handling their arrival, or removing them and their weights are all
+defensible, and that is a decision about what that component is for.
+
+671 mutants. 1923 passed, 38 skipped.
+
 ## 1.7.5 (2026-09-12)
 
 The alignment reversed: the harness that had been attacking this tool became

@@ -770,6 +770,23 @@ def _members_produced(parsed) -> Set[str]:
     counting comparisons would make every member look produced by the code
     that checks for it.
 
+    A LOOKUP TABLE IS A COMPARISON IN DISGUISE (v1.7.6)
+
+    `AUTHORITATIVE = frozenset({Status.CONFIRMED, Status.CONFIRMED_BY_REVIEW,
+    Status.SUPPRESSED})` names three members and produces none of them. The
+    set exists to be tested against, exactly like the `in` it is written for,
+    and counting membership as production made this detector miss a state of
+    precisely the shape it was built to find.
+
+    Measured on this repository: it reported `Status.REJECTED` and stayed
+    quiet about `Status.CONFIRMED_BY_REVIEW`, which is never assigned either.
+    A detector with a blind spot the shape of its own subject is worth saying
+    out loud.
+
+    A module-level CONSTANT holding a COLLECTION is treated as a table. A
+    constant holding a single member -- `DEFAULT_PHASE = Phase.BUILD` -- is
+    still a production, because something reads that name and uses the value.
+
     Attribute access is matched by member name alone rather than by resolving
     the enum. This is an AST-only tool, and the cost is the safe direction: a
     name shared by two enums is treated as produced for both, which loses a
@@ -784,6 +801,17 @@ def _members_produced(parsed) -> Set[str]:
                     for sub in ast.walk(side):
                         if isinstance(sub, ast.Attribute):
                             compared.add(id(sub))
+        for node in tree.body:
+            if not isinstance(node, ast.Assign):
+                continue
+            if not any(isinstance(target, ast.Name) and target.id.isupper()
+                       for target in node.targets):
+                continue
+            if not _is_collection(node.value):
+                continue
+            for sub in ast.walk(node.value):
+                if isinstance(sub, ast.Attribute):
+                    compared.add(id(sub))
         for node in ast.walk(tree):
             if isinstance(node, ast.Attribute) and id(node) not in compared:
                 out.add(node.attr)
@@ -794,6 +822,24 @@ def _members_produced(parsed) -> Set[str]:
 # Detector: dead_code -- module-level functions/classes defined but never
 # referenced anywhere else in the scanned file set.
 # ---------------------------------------------------------------------------
+
+def _is_collection(value) -> bool:
+    """A literal collection, including one wrapped in frozenset()/set()/tuple().
+
+    Deliberately syntactic. Deciding whether a name is "really" a lookup table
+    needs dataflow this tool does not have, and the shape it can see -- an
+    upper-case module constant holding a collection of enum members -- is the
+    shape the pattern actually takes.
+    """
+    if isinstance(value, (ast.Set, ast.List, ast.Tuple, ast.Dict)):
+        return True
+    if isinstance(value, ast.Call) and value.args:
+        name = getattr(value.func, "id", getattr(value.func, "attr", ""))
+        if name in ("frozenset", "set", "tuple", "list"):
+            return _is_collection(value.args[0]) or isinstance(
+                value.args[0], (ast.Set, ast.List, ast.Tuple))
+    return False
+
 
 @register("dead_code")
 def detect_dead_code(files: List[Path]) -> List[Finding]:

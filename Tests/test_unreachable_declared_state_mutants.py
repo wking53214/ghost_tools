@@ -30,6 +30,34 @@ MUTANTS = [
     # lower-case attribute in `produced` can never match one. The filter was
     # a micro-optimisation wearing a guard's clothes and is gone. The
     # DECLARED side's filter is load-bearing and is tested directly.
+    # --- the lookup-table blind spot (1.7.6) ---
+    ("a lookup table counts as producing every member it names", _M,
+     "        for node in tree.body:\n"
+     "            if not isinstance(node, ast.Assign):\n"
+     "                continue\n",
+     "        for node in []:\n"
+     "            if not isinstance(node, ast.Assign):\n"
+     "                continue\n"),
+    ("every constant is treated as a table, so a default is not a production", _M,
+     "            if not _is_collection(node.value):\n                continue\n",
+     ""),
+    ("a local collection counts as a table", _M,
+     "        for node in tree.body:\n"
+     "            if not isinstance(node, ast.Assign):\n"
+     "                continue\n"
+     "            if not any(isinstance(target, ast.Name) and target.id.isupper()",
+     "        for node in ast.walk(tree):\n"
+     "            if not isinstance(node, ast.Assign):\n"
+     "                continue\n"
+     "            if not any(isinstance(target, ast.Name) and target.id.isupper()"),
+    ("lower-case module names count as constant tables", _M,
+     "            if not any(isinstance(target, ast.Name) and target.id.isupper()\n"
+     "                       for target in node.targets):\n"
+     "                continue\n",
+     ""),
+    ("a frozenset() wrapper hides the table", _M,
+     '        if name in ("frozenset", "set", "tuple", "list"):',
+     '        if name in ("nothing_at_all",):'),
     # --- flagging what is fine ---
     ("an enum nobody names is reported member by member", _M,
      "        if not live:\n            continue",

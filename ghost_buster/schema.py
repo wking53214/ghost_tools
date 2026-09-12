@@ -74,10 +74,41 @@ class Status(str, Enum):
     """How sure ghost_buster is that this finding is real. See module
     docstring -- this is intentionally the same discipline as the HULK
     campaign's status vocabulary, narrowed to what ghost_buster actually
-    needs."""
+    needs.
+
+    WHICH OF THESE THIS TOOL PRODUCES (v1.7.6)
+
+    Three, and the distinction is worth stating because for a long time
+    nothing did. Its own `unreachable_declared_state` detector, pointed at
+    this repository, reported two members that no code here ever assigns:
+
+        produced here      CONFIRMED, REASONED, SUPPRESSED
+        arrives from data  CONFIRMED_BY_REVIEW, REJECTED
+
+    The second pair is not dead and must not be deleted. `Finding.from_dict`
+    reconstructs any member from a stored record, so a baseline, a casefile,
+    a hand-edited FindingSet or another tool's output can carry them, and
+    removing the members would turn reading such a file into a crash.
+
+    They are also not the mechanism a human triages with. That is
+    `disposition` -- "fix", "suppress", "document" -- implemented in
+    `ghost_writer/triage.py`, which is what closed the loop the README had
+    drawn for a long time and nothing had walked. `REJECTED` is an older
+    vocabulary for the same decision, kept readable rather than kept alive.
+
+    `AUTHORITATIVE` excludes REJECTED and includes CONFIRMED_BY_REVIEW, so
+    both are handled correctly when they do arrive. That is the point: a
+    state this tool does not produce still has to be read, and read
+    correctly, when somebody else produces it.
+
+    The detector still reports both, and should. The finding is true. What
+    changed is that this declaration no longer implies a state the code can
+    reach on its own.
+    """
 
     CONFIRMED = "confirmed"                  # deterministic detector; not in doubt
     REASONED = "reasoned"                    # semantic/LLM claim; not yet verified
+    # Read, never written here. See the note above.
     CONFIRMED_BY_REVIEW = "confirmed_by_review"  # a REASONED finding a human verified
     REJECTED = "rejected"                    # a human looked and said no
     SUPPRESSED = "suppressed"                # known, accepted, tracked -- not re-surfaced
@@ -219,7 +250,11 @@ class Finding:
     attributes: Dict[str, str] = field(default_factory=dict)
     confidence: Optional[float] = None  # 0.0-1.0, semantic layer only; None for mechanical
     first_seen: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    disposition: Optional[str] = None  # set by the human triage step, see triage.py
+    # Set by the human triage step: ghost_writer/triage.py, which records
+    # "fix", "suppress" or "document" against a finding id. This is the
+    # mechanism a person judges a finding with; `Status` is what the SCANNER
+    # concluded, and the two are deliberately separate.
+    disposition: Optional[str] = None
     disposition_note: str = ""
     #: What identifies this finding, when the summary does not (v1.7.3).
     #:
