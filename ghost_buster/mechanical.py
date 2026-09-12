@@ -646,6 +646,101 @@ def detect_unassessable_file(files: List[Path]) -> List[Finding]:
 # referenced anywhere else in the scanned file set.
 # ---------------------------------------------------------------------------
 
+def _is_protocol_or_abc_class(class_node: ast.ClassDef) -> bool:
+    """Check if a class declaration inherits from Protocol or ABC."""
+    for base in class_node.bases:
+        base_name = base.id if isinstance(base, ast.Name) else (
+            base.attr if isinstance(base, ast.Attribute) else None
+        )
+        if base_name in ("Protocol", "ABC"):
+            return True
+    return False
+
+
+def _extract_definitions_and_exports(
+    files: List[Path],
+) -> tuple[Dict[str, List[Path]], Set[str], Dict[Path, ast.Module]]:
+    """Parse files and extract module-level definitions plus __all__ exports."""
+    definitions: Dict[str, List[Path]] = {}
+    exported_names: Set[str] = set()
+    parsed: Dict[Path, ast.Module] = {}
+
+    for path in files:
+        tree = _parse(path)
+        if tree is None:
+            continue
+        parsed[path] = tree
+
+    for path, tree in parsed.items():
+        for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                if node.name.startswith("__") and node.name.endswith("__"):
+                    continue
+                if node.name.startswith("test_") or node.name.startswith("Test"):
+                    continue
+                if isinstance(node, ast.ClassDef) and _is_protocol_or_abc_class(node):
+                    continue
+                definitions.setdefault(node.name, []).append(path)
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name) and target.id == "__all__":
+                        if isinstance(node.value, (ast.List, ast.Tuple)):
+                            for elt in node.value.elts:
+                                if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
+                                    exported_names.add(elt.value)
+
+    return definitions, exported_names, parsed
+
+
+def _collect_references(parsed: Dict[Path, ast.Module]) -> Set[str]:
+    """Walk all parsed trees and collect all referenced names."""
+    referenced_names: Set[str] = set()
+    for tree in parsed.values():
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name):
+                referenced_names.add(node.id)
+            elif isinstance(node, ast.Attribute):
+                referenced_names.add(node.attr)
+            elif isinstance(node, ast.Subscript):
+                key = node.slice
+                if isinstance(key, ast.Constant) and isinstance(key.value, str):
+                    referenced_names.add(key.value)
+    return referenced_names
+
+
+def _build_dead_code_findings(
+    definitions: Dict[str, List[Path]],
+    exported_names: Set[str],
+    referenced_names: Set[str],
+) -> List[Finding]:
+    """Build findings for definitions that are neither exported nor referenced."""
+    findings: List[Finding] = []
+    for name, def_paths in definitions.items():
+        if name in exported_names:
+            continue
+        if name in referenced_names:
+            continue
+        for path in def_paths:
+            findings.append(Finding(
+                detector="dead_code",
+                category=Category.DEAD_CODE,
+                layer=Layer.MECHANICAL,
+                severity=Severity.MINOR,
+                status=Status.CONFIRMED,
+                summary=f"'{name}' is defined but never referenced anywhere in the scanned set",
+                detail=(
+                    "No ast.Name, ast.Attribute, or string-subscript-key node "
+                    "anywhere in the scanned files resolves to this identifier. "
+                    "Scope limit: getattr-by-string and decorator-based "
+                    "registration are still not traced, so this can false-"
+                    "positive on names only reached that way -- confirm before "
+                    "deleting."
+                ),
+                evidence=Evidence(file=str(path)),
+            ))
+    return findings
+
+
 @register("dead_code")
 def detect_dead_code(files: List[Path]) -> List[Finding]:
     """Flags a module-level def/class whose name never appears as an
@@ -691,80 +786,9 @@ def detect_dead_code(files: List[Path]) -> List[Finding]:
       @register pattern is the concrete example -- it self-flags on
       ghost_buster's own codebase, see README) are still untraced.
     """
-    definitions: Dict[str, List[Path]] = {}
-    referenced_names: Set[str] = set()
-    exported_names: Set[str] = set()
-
-    def _is_protocol_or_abc(class_node: ast.ClassDef) -> bool:
-        for base in class_node.bases:
-            base_name = base.id if isinstance(base, ast.Name) else (
-                base.attr if isinstance(base, ast.Attribute) else None
-            )
-            if base_name in ("Protocol", "ABC"):
-                return True
-        return False
-
-    parsed = {}
-    for path in files:
-        tree = _parse(path)
-        if tree is None:
-            continue
-        parsed[path] = tree
-
-    for path, tree in parsed.items():
-        for node in tree.body:
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                if node.name.startswith("__") and node.name.endswith("__"):
-                    continue
-                if node.name.startswith("test_") or node.name.startswith("Test"):
-                    continue
-                if isinstance(node, ast.ClassDef) and _is_protocol_or_abc(node):
-                    continue
-                definitions.setdefault(node.name, []).append(path)
-            if isinstance(node, ast.Assign):
-                for target in node.targets:
-                    if isinstance(target, ast.Name) and target.id == "__all__":
-                        if isinstance(node.value, (ast.List, ast.Tuple)):
-                            for elt in node.value.elts:
-                                if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
-                                    exported_names.add(elt.value)
-
-    for path, tree in parsed.items():
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Name):
-                referenced_names.add(node.id)
-            elif isinstance(node, ast.Attribute):
-                referenced_names.add(node.attr)
-            elif isinstance(node, ast.Subscript):
-                key = node.slice
-                if isinstance(key, ast.Constant) and isinstance(key.value, str):
-                    referenced_names.add(key.value)
-
-    findings: List[Finding] = []
-    for name, def_paths in definitions.items():
-        if name in exported_names:
-            continue
-        if name in referenced_names:
-            continue
-        for path in def_paths:
-            findings.append(Finding(
-                detector="dead_code",
-                category=Category.DEAD_CODE,
-                layer=Layer.MECHANICAL,
-                severity=Severity.MINOR,
-                status=Status.CONFIRMED,
-                summary=f"'{name}' is defined but never referenced anywhere in the scanned set",
-                detail=(
-                    "No ast.Name, ast.Attribute, or string-subscript-key node "
-                    "anywhere in the scanned files resolves to this identifier. "
-                    "Scope limit: getattr-by-string and decorator-based "
-                    "registration are still not traced, so this can false-"
-                    "positive on names only reached that way -- confirm before "
-                    "deleting."
-                ),
-                evidence=Evidence(file=str(path)),
-            ))
-    return findings
+    definitions, exported_names, parsed = _extract_definitions_and_exports(files)
+    referenced_names = _collect_references(parsed)
+    return _build_dead_code_findings(definitions, exported_names, referenced_names)
 
 
 # ---------------------------------------------------------------------------
