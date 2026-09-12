@@ -36,7 +36,7 @@ def run_tests_with_mutation(
         return subprocess.run(
             # `-n0` because pyproject sets `addopts = "-n auto"` for the outer
             # suite, and a copied tree carries that pyproject with it. Without
-            # this every one of the 592 mutants spins up its own worker pool to
+            # this every one of the 599 mutants spins up its own worker pool to
             # run a single test file -- measured 2026-09-10, 0.45s per mutant
             # became 0.98s, and the parallelism that was supposed to make the
             # suite faster made each mutant slower. Parallelism belongs at the

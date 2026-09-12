@@ -16,9 +16,11 @@ TESTS = "Tests/test_operate.py"
 _O = "ghost_buster/operate.py"
 
 MUTANTS = [
+    # Re-pointed in 1.6.1: the door check stopped being one expression when
+    # it learned to tell the patient's dirt from the surgeon's own notes.
     ("a dirty tree is operated on", _O,
-     '    if not dry_run and _git(root, "status", "--porcelain"):',
-     "    if False:"),
+     "        dirt = _dirty_paths(root)",
+     "        dirt = []"),
     # Re-pointed in 1.3.0: the return to the patient's own branch moved
     # into the `finally` of _on_the_table, so that is where the mutant
     # goes. Same claim, same kill, a structurally different site.
@@ -34,9 +36,11 @@ MUTANTS = [
     ("a dry run opens a branch anyway", _O,
      "    if dry_run:\n        # Nothing is written and no branch is opened",
      "    if False:\n        # Nothing is written and no branch is opened"),
+    # Re-pointed in 1.6.1: the cut stages the patient's files and excludes
+    # the tool's own notes, so `add -A` is no longer the whole staging step.
     ("a cut is not staged, so nothing is committed", _O,
-     '        _git(root, "add", "-A")\n        _git(root, "commit", "-q", "-m",',
-     '        pass\n        _git(root, "commit", "-q", "-m",'),
+     '        _git(root, "add", "-A", "--", ".", *(f":(exclude){name}" for name in SURGEONS_NOTES))',
+     "        pass"),
     ("what a cut healed is not learned", _O,
      "            for fid in closed:\n                casefile.record_outcome(by_id[fid], HEALED, f\"by {name}\")",
      "            for fid in []:\n                casefile.record_outcome(by_id[fid], HEALED, f\"by {name}\")"),

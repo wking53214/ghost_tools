@@ -22,7 +22,7 @@ jobs:
           python -m pip install --upgrade pip
           # pytest-xdist is not optional: pyproject sets `addopts = "-n auto"`,
           # so pytest exits with `unrecognized arguments: -n` without it. It also
-          # cuts this job from ~16 minutes to a few, because the suite is 592
+          # cuts this job from ~16 minutes to a few, because the suite is 599
           # mutants each running a whole test file in a fresh interpreter.
           python -m pip install pytest pytest-xdist ruff==0.15.22
       - name: Install gitleaks

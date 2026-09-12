@@ -182,7 +182,7 @@ class Operation:
 
     def render(self) -> str:
         lines = [f"OPERATIVE REPORT  {self.root}",
-                 f"  table      : {self.branch}" + ("  (dry run: nothing written)" if self.dry_run else ""),
+                 f"  table      : {self.branch}" + ("  (dry run: no cut written)" if self.dry_run else ""),
                  f"  came in on : {self.came_in_on} @ {self.head_before[:10]}"
                  + ("  untouched" if self.came_in_untouched else "  *** MODIFIED ***"),
                  "", "before", *("  " + ln for ln in self.readiness_before.render().splitlines()), ""]
@@ -225,6 +225,55 @@ REMEDIES: Dict[str, Callable[[Path, Sequence[Path]], tuple[int, str]]] = {
 }
 
 
+#: Files ghost_buster writes into a repository it is examining. They are the
+#: surgeon's own notes, not the patient's uncommitted work, and the
+#: distinction matters twice below.
+SURGEONS_NOTES = (".ghost_ledger.json", ".ghost_baseline.json", ".ghost_casefile.json")
+
+
+def _dirty_paths(root: Path) -> List[str]:
+    """Uncommitted paths that belong to the PATIENT.
+
+    WHY THIS IS NOT JUST `git status --porcelain` (v1.6.1)
+
+    An operation refuses a dirty tree, and it was refusing trees it had
+    dirtied itself. A scan writes `.ghost_ledger.json` into the repository
+    it scanned; `--operate` scans first and operates second, in one
+    process; so the door check saw the ledger the same run had just
+    written and refused. Measured on ghost_tools at 8ac6744, from a
+    verifiably clean checkout, in a single command: the run created the
+    ledger and then refused its own output.
+
+    That made `--operate` impossible with default flags on any repository
+    that does not already track or ignore the ledger. The first real
+    operation in the library only succeeded because it was run with
+    `--no-ledger`, which nothing said was required.
+
+    Untracked notes are ignored here. A TRACKED note that has been
+    modified is not: the repository committed that file, so a change to
+    it is a real edit somebody needs to decide about, and the tree is
+    dirty exactly as before.
+    """
+    dirt = []
+    for line in _git(root, "status", "--porcelain").splitlines():
+        # Split on the status token rather than by column. Porcelain pads
+        # the status to two characters, and _git strips the output, so the
+        # leading space of a " M path" line is gone by the time it arrives
+        # and fixed columns read one character into the path. That cost a
+        # test run to find, which is the argument for not parsing by
+        # column in the first place.
+        parts = line.split(None, 1)
+        if len(parts) != 2:
+            continue
+        code, path = parts
+        # Porcelain quotes a path containing unusual characters, and a
+        # quoted path is never one of ours, so it counts as the patient's.
+        if code == "??" and path in SURGEONS_NOTES:
+            continue
+        dirt.append(path)
+    return dirt
+
+
 def operate(root: Path, files: Sequence[Path], findings: Sequence[Finding],
             checks: Dict[str, str], *, casefile: Optional[Casefile] = None,
             branch: Optional[str] = None, dry_run: bool = False,
@@ -235,10 +284,13 @@ def operate(root: Path, files: Sequence[Path], findings: Sequence[Finding],
         _git(root, "rev-parse", "--git-dir")
     except Refused:
         raise Refused("not a git repository; the surgeon needs a table")
-    if not dry_run and _git(root, "status", "--porcelain"):
-        # A dry run diagnoses and writes nothing, so a dirty tree is fine to
+    if not dry_run:
+        # A dry run diagnoses and cuts nothing, so a dirty tree is fine to
         # examine. An operation needs a clean table.
-        raise Refused("working tree is dirty; commit or stash before operating")
+        dirt = _dirty_paths(root)
+        if dirt:
+            raise Refused("working tree is dirty; commit or stash before operating "
+                          f"({len(dirt)} path(s), first: {dirt[0]})")
 
     head_before = _git(root, "rev-parse", "HEAD")
     came_in_on = _git(root, "branch", "--show-current")
@@ -289,7 +341,10 @@ def _cut(op: "Operation", root: Path, files: Sequence[Path], findings: Sequence[
         after = carried + list(rescan(files))
         closed = sorted(_ids(current) - _ids(after))
         exposed = sorted(_ids(after) - _ids(current))
-        _git(root, "add", "-A")
+        # Only the patient. `add -A` would sweep the surgeon's own notes
+        # into the patient's history, because a scan writes its ledger into
+        # the tree it scanned and the operation runs in the same process.
+        _git(root, "add", "-A", "--", ".", *(f":(exclude){name}" for name in SURGEONS_NOTES))
         _git(root, "commit", "-q", "-m",
              f"operate: {name}\n\n{note}\n\n{len(closed)} finding(s) healed, "
              f"{len(exposed)} exposed by this cut.")
