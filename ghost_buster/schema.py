@@ -221,6 +221,35 @@ class Finding:
     first_seen: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     disposition: Optional[str] = None  # set by the human triage step, see triage.py
     disposition_note: str = ""
+    #: What identifies this finding, when the summary does not (v1.7.3).
+    #:
+    #: A MEASUREMENT IS NOT AN IDENTITY.
+    #:
+    #: The id is a content hash of detector + path + summary, and several
+    #: summaries carry a number the run just measured. The defect does not
+    #: change when the number does, but the id does, so a baseline cannot
+    #: match the finding twice and "accept this" silently means "accept it
+    #: until the next commit".
+    #:
+    #: Measured against 1.7.2 by an adversarial harness: adding three tests
+    #: to a suite, with the documented claim untouched, gave three findings
+    #: three new identities --
+    #:
+    #:     no_ci_configuration            "1 test file(s)" -> "2 test file(s)"
+    #:     doc_count_contradicted_by_run  "collects 30"    -> "collects 33"
+    #:     doc_test_count_drift           "at least 30"    -> "at least 33"
+    #:
+    #: Stripping digits from every summary is not the fix. Two dead-code
+    #: findings for `core_0` and `core_1` in one file differ only in a
+    #: digit, and collapsing those to one identity means accepting one
+    #: suppresses the other -- the same failure pointing the other way, and
+    #: the worse direction.
+    #:
+    #: So the DETECTOR says what identifies its finding, because only the
+    #: detector knows which part of its own sentence is the defect and
+    #: which part is this morning's arithmetic. Left None, the summary is
+    #: used exactly as before.
+    identity_key: Optional[str] = None
     id: str = field(init=False)
 
     def __post_init__(self):
@@ -241,7 +270,9 @@ class Finding:
         self.evidence.related_files = [
             _portable_path(p) for p in self.evidence.related_files
         ]
-        self.id = _stable_id(self.detector, portable, self.summary)
+        self.id = _stable_id(self.detector, portable,
+                             self.summary if self.identity_key is None
+                             else self.identity_key)
         if self.confidence is not None and not (0.0 <= self.confidence <= 1.0):
             raise ValueError(f"confidence must be 0.0-1.0, got {self.confidence}")
         if self.layer == Layer.MECHANICAL and self.status == Status.REASONED:

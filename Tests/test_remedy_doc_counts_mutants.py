@@ -49,6 +49,17 @@ MUTANTS = [
      "ghost_buster/mechanical.py",
      '    if filename.lower() not in WRITABLE_DOCUMENTS:',
      "    if True:"),
+    # v1.7.3. `passed == collected` is satisfied by a suite with a whole
+    # file missing from it, so this is the guard that stops "N tests, all
+    # passing" being written over a suite that did not run.
+    ("a suite that did not finish running is certified as green anyway", _OP,
+     '        unexamined = finding.attributes.get("unexamined", "")\n'
+     '        if unexamined.isdigit() and int(unexamined) > 0:\n',
+     '        unexamined = finding.attributes.get("unexamined", "")\n'
+     '        if False:\n'),
+    ("every claim is declined as unexamined, closing the remedy", _OP,
+     '        if unexamined.isdigit() and int(unexamined) > 0:',
+     "        if True:"),
     ("a suite that is not green is rewritten anyway", _OP,
      '        if passed != collected:\n'
      '            declined.append("a suite that is not green")\n'

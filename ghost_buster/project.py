@@ -135,6 +135,12 @@ def _finding(root: Path, kind: str, severity: Severity, summary: str, detail: st
         evidence=Evidence(file=str(root)),
         detail=detail,
         attributes=dict(attributes, kind=kind),
+        # A project finding is about a property of the repository: it has no
+        # CI, or it has no packaging. The summary then counts what is
+        # affected ("3 test file(s) exist and nothing runs them"), and that
+        # number moves whenever anybody adds a file. The KIND is the defect.
+        # See `Finding.identity_key`.
+        identity_key=kind,
     )
 
 

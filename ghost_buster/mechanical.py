@@ -1533,6 +1533,10 @@ def detect_doc_test_count_drift(
                     f"{actual} test_* function(s) exist in the scanned .py files "
                     "-- this claim is stale"
                 ),
+                # The claim is the defect; `actual` is this morning's
+                # arithmetic and moves every time anybody adds a test. See
+                # `Finding.identity_key`.
+                identity_key=f"claims {documented} test(s), stale",
                 detail=(
                     "actual is a static AST lower bound (functions named test_*, "
                     "counted directly, no pytest run) -- the true collected count "

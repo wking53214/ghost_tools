@@ -28,7 +28,7 @@ from .ledger import (
 )
 from . import readiness
 from .casefile import Casefile, Prior
-from .operate import Refused, operate
+from .operate import Refused, notes_on_arrival, operate
 from .mutation import render_run
 from .schema import Finding, FindingSet, Severity
 from .pipeline import Stop, gather
@@ -333,7 +333,7 @@ def _verify_chain(args) -> int:
     return 1 if any("no link recorded" not in b.what for b in breaks) else 0
 
 
-def _operate(args, evidence, casefile_path, archive) -> int:
+def _operate(args, evidence, casefile_path, archive, arrival=None) -> int:
     """--operate: the only mode that writes to the target. Everything it
     needs was already established by the scan; this decides whether to
     let it run and what to say about the result."""
@@ -344,7 +344,7 @@ def _operate(args, evidence, casefile_path, archive) -> int:
     try:
         op = operate(args.path, evidence.files, evidence.findings, evidence.checks,
                      casefile=Casefile(casefile_path), branch=args.operate_branch,
-                     dry_run=args.operate_dry_run)
+                     dry_run=args.operate_dry_run, arrival=arrival)
     except Refused as e:
         print(f"refused: {e}", file=sys.stderr)
         return 2
@@ -399,6 +399,8 @@ def main(argv: List[str] = None) -> int:
         print(f"error: {args.path} is not a directory", file=sys.stderr)
         return 2
 
+    arrival = notes_on_arrival(args.path) if args.path.is_dir() else {}
+
     # The evidence, gathered by pipeline.py. Everything from here down is
     # interface: the baseline diff, what to print, and what to exit with.
     try:
@@ -446,7 +448,7 @@ def main(argv: List[str] = None) -> int:
         return _verify_chain(args)
 
     if args.operate:
-        return _operate(args, evidence, casefile_path, archive)
+        return _operate(args, evidence, casefile_path, archive, arrival)
 
     if args.json:
         print(FindingSet(new).to_json())

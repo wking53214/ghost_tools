@@ -410,6 +410,9 @@ def _record_in_ledger(args, files, findings, checks, baseline_path, say) -> None
         records={"baseline": attest.digest_file(baseline_path),
                  "casefile": attest.digest_file(
                      args.casefile or (args.path / ".ghost_casefile.json"))},
+        # So the ledger can ask git what moved since the run it remembers.
+        # A file that moved is not a defect that was fixed.
+        root=args.path,
     )
     history = ledger.derive(findings)
     say(render_ledger_report(ledger, history))

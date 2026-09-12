@@ -1,5 +1,117 @@
 # Changelog
 
+## 1.7.3 (2026-09-12)
+
+Three defects, on two surfaces nothing had ever tested: what the tool
+CERTIFIES, and how it decides that two findings are the same finding.
+
+**A suite that never finished running was certified as passing.** The
+green gate is `passed == collected`, and a module that cannot be imported
+contributes to neither side, so the subtraction says green. It is not
+green. A whole file of the suite did not execute and nobody knows what is
+in it.
+
+The tool knew. The same run reported the blocked module as a finding of
+its own, naming the missing import, and then its count remedy wrote "The
+test suite has 30 tests, all passing." into the README. That is the one
+failure a reader cannot catch by looking at the diff: every byte is in a
+permitted place and the document is now false. The mechanism is ordinary
+-- an optional dependency that is not installed in somebody's
+environment.
+
+The measurement now carries what it could not examine, the finding is
+MAJOR rather than MINOR when anything went unexamined, and the remedy
+declines and says which file did not run.
+
+**A repository that commits the ledger could never be operated on.** The
+workup writes `.ghost_ledger.json` into the repository it is scanning,
+that dirties the tracked file, and the door check refuses. Every time,
+forever. This module's own documentation recommends committing the record,
+on the grounds that a governance record nobody keeps is worth nothing.
+
+1.6.1 fixed this for an UNTRACKED ledger and wrote down the reasoning that
+reinstated it one level down: "a tracked note that changed is somebody's
+real edit". That was the wrong test. The distinction was never tracked
+versus untracked, it is whose edit it is. The notes are now digested on
+arrival, before the workup touches anything, so a note that was clean when
+we arrived and differs now differs because of us. A note that was ALREADY
+modified still refuses, which is the behaviour worth keeping: the workup
+would otherwise overwrite somebody's uncommitted edit to a committed
+record.
+
+**A measurement is not an identity.** A finding's id is a content hash of
+detector + path + summary, and several summaries carry a number the run
+just measured. Adding three tests to a suite, with the documented claim
+untouched at 12, gave three findings three new identities:
+
+    no_ci_configuration            "1 test file(s)" -> "2 test file(s)"
+    doc_count_contradicted_by_run  "collects 30"    -> "collects 33"
+    doc_test_count_drift           "at least 30"    -> "at least 33"
+
+A baseline suppresses by id, so accepting any of these silently meant
+accepting it until the next commit that changed a count. For these
+detectors the baseline was permanently inert.
+
+Stripping digits from every summary is not the fix: `'core_0' is defined
+but never referenced` and `'core_1' ...` differ only in a digit, and
+collapsing those means accepting one suppresses the other, which is the
+same failure in the worse direction. So a detector may now state what
+identifies its finding, because only the detector knows which part of its
+own sentence is the defect and which part is this morning's arithmetic.
+Detectors that say nothing are unchanged.
+
+One-time effect: existing baseline entries for those three detectors will
+not match and will be reported once as new.
+
+**A file that moved is not a defect that was fixed.** The same identity
+problem, through the path rather than the summary: a module renamed byte
+for byte produced one finding that vanished and one that was brand new. To
+the ledger that read as a defect resolved and a different defect opened,
+so the streak broke and the next sighting at the new path would have been
+counted as a RETURN.
+
+There is no content-derived identity that is both stable under a rename
+and distinct across files -- an id that ignored the path would give two
+identical defects in two files one identity, which is the worse direction
+and is now held by a test. So identity keeps the path and the MEMORY
+follows it, which is what the version control system is for: the ledger
+asks git what moved between the run it remembers and this one, and carries
+the history onto the new id, recording where it came from.
+
+Best effort throughout. No git, no previous run, an unreadable history: the
+answer is "no renames known" and the ledger behaves exactly as before. It
+refuses rather than guessing when a history already exists at the new id,
+or when several candidates sit at the destination and nothing tells them
+apart -- two unused functions in one module is the ordinary case, and they
+are told apart by their summaries, which name the symbol rather than the
+file and so survive a rename.
+
+STILL OPEN. A baseline is a set of identities and nothing else, so it
+cannot follow a move however good the ledger's history is. An accepted
+finding starts being reported again after a rename. Closing that means the
+baseline storing more than ids.
+
+All three were found by an adversarial harness aimed at the two empty rows
+of its own coverage matrix. The second was found while chasing what looked
+like a harness artefact, and reproduces in one command from a clean
+checkout with no harness at all.
+
+**The test suite no longer depends on whoever runs it.** Most of this suite
+builds real git repositories, and those `git init` calls inherited the
+global configuration of whatever machine the suite ran on. Measured: sixty
+tests failed at once, across branch scanning and operation recovery, with
+`git commit` exiting 128, because an external commit signer had run out of
+file descriptors. Nothing in the tool had changed.
+
+A test suite whose result depends on a developer's `~/.gitconfig` cannot be
+trusted either way. `Tests/conftest.py` now points `GIT_CONFIG_GLOBAL` at an
+empty file and turns off the system config, so a test repository sees only
+what the test sets on it -- signing, but also hooks, aliases, `diff.renames`,
+`autocrlf` and everything else that could change a result here without
+anybody noticing which.
+
+651 mutants. 1858 passed, 38 skipped.
+
 ## 1.7.2 (2026-09-12)
 
 1.7.1 fixed containment in two of the three writers and reported the job

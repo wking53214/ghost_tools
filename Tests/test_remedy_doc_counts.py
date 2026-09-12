@@ -54,7 +54,8 @@ def _git(root, *args):
                           text=True, check=True).stdout.strip()
 
 
-def _claim(root, path, documented, collected, passed=None, line=1, writable="yes"):
+def _claim(root, path, documented, collected, passed=None, line=1,
+           writable="yes", unexamined=0):
     """The correlation finding the remedy acts on, built as correlate.py
     builds it. Constructed here rather than produced by a scan so each test
     can vary one field; a test that runs the whole pipeline to reach this
@@ -76,6 +77,10 @@ def _claim(root, path, documented, collected, passed=None, line=1, writable="yes
             # the only thing under examination.
             "writable": writable,
             "not_writable_because": "" if writable == "yes" else "a dated or versioned document",
+            # Test files that produced no result either way. Zero by
+            # default, so every test written before this existed still
+            # describes the run it always described.
+            "unexamined": str(unexamined),
         },
         evidence=Evidence(file=str(root / path), line_start=line, line_end=line),
     )
@@ -441,3 +446,89 @@ def test_a_live_claim_is_still_written(repo):
         repo, [], [_claim(repo, "README.md", 390, 1727, line=3)])
     assert changed == 1
     assert "1727 tests" in (repo / "README.md").read_text()
+
+
+# ---------------------------------------------------------------------------
+# A suite that did not finish running (v1.7.3)
+#
+# `passed == collected` is satisfied by a suite with a whole file missing
+# from it: a module that cannot be imported contributes to neither side, so
+# the subtraction says green.
+#
+# Measured by an adversarial harness against 1.7.2: a README was rewritten
+# to "The test suite has 30 tests, all passing." over a repository where one
+# test file could not be collected -- and the SAME run reported the blocked
+# module as a finding of its own, naming the missing import. The tool knew
+# and certified anyway.
+#
+# That is the one failure a reader cannot catch by looking at the diff.
+# Every byte is in a permitted place and the document is now false.
+# ---------------------------------------------------------------------------
+
+def test_a_suite_that_did_not_finish_running_is_not_rewritten(repo):
+    readme = repo / "README.md"
+    readme.write_text("# thing\n\nThe test suite has 12 tests, all passing.\n")
+    changed, note = _remedy_doc_counts(
+        repo, [readme],
+        [_claim(repo, "README.md", 12, 30, line=3, unexamined=1)])
+    assert changed == 0
+    assert "12 tests" in readme.read_text()
+
+
+def test_the_refusal_says_which_number_is_not_a_total(repo):
+    """A refusal a human cannot act on is a refusal they will override.
+
+    Reported BESIDE a real cut, because that is the only way a remedy's
+    note reaches anybody: a run that declines everything returns no note at
+    all, which is a limitation of the operation flow rather than of this
+    guard and is recorded in `test_write_containment.py`.
+
+    The human is not left with nothing in that case. The finding itself is
+    MAJOR and its detail says why subtracting one number from the other
+    reads as green. The note is the second telling, not the only one.
+    """
+    readme = repo / "README.md"
+    readme.write_text("# thing\n\nThe test suite has 12 tests, all passing.\n")
+    other = repo / "CONTRIBUTING.md"
+    other.write_text("# contributing\n\nThe test suite has 9 tests, all passing.\n")
+    _, note = _remedy_doc_counts(
+        repo, [readme, other],
+        [_claim(repo, "README.md", 12, 30, line=3, unexamined=2),
+         _claim(repo, "CONTRIBUTING.md", 9, 30, line=3)])
+    assert "did not finish running" in note or "not a total" in note
+    assert "12 tests" in readme.read_text(), "the unexamined claim stood"
+
+
+def test_a_suite_that_fully_ran_is_still_rewritten(repo):
+    """The control. This refusal must not close the remedy it guards."""
+    readme = repo / "README.md"
+    readme.write_text("# thing\n\nThe test suite has 12 tests, all passing.\n")
+    changed, _ = _remedy_doc_counts(
+        repo, [readme],
+        [_claim(repo, "README.md", 12, 30, line=3, unexamined=0)])
+    assert changed == 1
+    assert "30 tests" in readme.read_text()
+
+
+def test_a_finding_that_never_heard_of_unexamined_behaves_as_before(repo):
+    """An absent attribute reads as zero rather than as a refusal. A finding
+    from an older run, or from a connector that does not publish it, must
+    not be declined on a number nobody supplied."""
+    readme = repo / "README.md"
+    readme.write_text("# thing\n\nThe test suite has 12 tests, all passing.\n")
+    claim = _claim(repo, "README.md", 12, 30, line=3)
+    del claim.attributes["unexamined"]
+    changed, _ = _remedy_doc_counts(repo, [readme], [claim])
+    assert changed == 1
+
+
+def test_a_non_numeric_unexamined_does_not_decline_and_does_not_raise(repo):
+    """Garbage in the attribute is not evidence of an unexamined file. It
+    must not crash the remedy and must not be read as a refusal -- a guard
+    that fires on malformed input fires on the wrong repositories."""
+    readme = repo / "README.md"
+    readme.write_text("# thing\n\nThe test suite has 12 tests, all passing.\n")
+    claim = _claim(repo, "README.md", 12, 30, line=3)
+    claim.attributes["unexamined"] = "several"
+    changed, _ = _remedy_doc_counts(repo, [readme], [claim])
+    assert changed == 1

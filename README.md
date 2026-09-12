@@ -1576,7 +1576,7 @@ package uses for its model-client tests. `test_branches.py`,
 repositories and pytest projects in `tmp_path` instead, the only honest way
 to test a ref-graph, git-history or suite-execution check (the secrets
 suite against a real gitleaks binary, skipped if one is not on PATH).
-`test_mutation.py` and the 49 `Tests/*_mutants.py` files run pytest in
+`test_mutation.py` and the 50 `Tests/*_mutants.py` files run pytest in
 subprocesses against scratch copies of the project, each mutant file
 breaking one component a named number of ways and requiring every mutant
 to fail a test; they account for most of the suite's wall-clock time. A

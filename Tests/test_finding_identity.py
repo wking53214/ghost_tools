@@ -1,167 +1,215 @@
-"""Two defects are never one finding.
+"""A measurement is not an identity.
 
-A finding's id hashes detector, project-relative path and summary -- and
-nothing else, deliberately, so that a finding which moves down a file when
-an import is added is still the same finding. The cost of that choice is
-that two findings agreeing on all three share an id.
+WHAT A FINDING'S ID IS FOR
 
-That cost was measured, not imagined. On a 38-repository library: 3,292
-findings, 8 colliding pairs, the sharpest being two separate committed
-secrets four lines apart in one test fixture, sharing one identity. The
-baseline keys on the id, so accepting one suppressed the other.
+A baseline suppresses by id. A ledger remembers by id. Both promises break
+if the id moves while the defect does not:
 
-These tests hold both halves: the id still survives code motion, and two
-distinct findings never share one.
+    the id moves    a committed baseline stops matching, every finding
+                    reads as new, and a triaged repository looks untriaged
+    the id collides two different defects share one identity, so accepting
+                    one silently stops the other being reported
+
+THE DEFECT THIS FILE GUARDS AGAINST (v1.7.3)
+
+The id is a content hash of detector + portable path + summary, and several
+summaries carry a number the run just measured. Measured against 1.7.2 by an
+adversarial harness: adding three tests to a suite, with the documented claim
+untouched at 12, gave three findings three new identities.
+
+    no_ci_configuration            "1 test file(s)" -> "2 test file(s)"
+    doc_count_contradicted_by_run  "collects 30"    -> "collects 33"
+    doc_test_count_drift           "at least 30"    -> "at least 33"
+
+Accepting any of them into a baseline meant accepting it until the next
+commit that changed a count.
+
+WHY NOT JUST STRIP DIGITS FROM EVERY SUMMARY
+
+Because `'core_0' is defined but never referenced` and `'core_1' is defined
+but never referenced` differ only in a digit, and collapsing those into one
+identity means accepting one suppresses the other. That is the same failure
+pointing the other way, and it is the worse direction. There is a test for
+it below.
+
+So the DETECTOR says what identifies its finding, because only the detector
+knows which part of its own sentence is the defect and which part is this
+morning's arithmetic.
 """
 from __future__ import annotations
 
+import pytest
 
-from ghost_buster.baseline import Baseline
-from ghost_buster.mechanical import run_all
-from ghost_buster.schema import (
-    Category, Evidence, Finding, Layer, Severity, Status, disambiguate_ids,
-)
+from ghost_buster.schema import (Category, Evidence, Finding, Layer, Severity,
+                                 Status)
 
 
-def _finding(summary, file="src/mod.py", line=1, detail=""):
+def _finding(summary, *, detector="doc_test_count_drift", file="README.md",
+             identity_key=None):
     return Finding(
-        detector="long_function", category=Category.COMPLEXITY, layer=Layer.MECHANICAL,
-        severity=Severity.MAJOR, status=Status.CONFIRMED, summary=summary, detail=detail,
-        evidence=Evidence(file=file, line_start=line, line_end=line + 10),
-    )
+        detector=detector, category=Category.DOC_DRIFT, layer=Layer.MECHANICAL,
+        severity=Severity.MINOR, status=Status.CONFIRMED,
+        summary=summary, detail="", identity_key=identity_key,
+        evidence=Evidence(file=file, line_start=1, line_end=1))
 
 
-def _twin_methods(tmp_path):
-    """Two classes, each with a 91-line method of the same name: one file,
-    two genuinely distinct long functions, one summary between them."""
-    body = "\n".join(f"        x{i} = {i}" for i in range(90))
-    src = (f"class Alpha:\n    def run(self):\n{body}\n        return x0\n\n\n"
-           f"class Beta:\n    def run(self):\n{body}\n        return x0\n")
-    path = tmp_path / "two.py"
-    path.write_text(src)
-    return path
+# ----------------------------------------------------------- the mechanism
+
+def test_without_a_key_the_summary_still_decides():
+    """Every detector that has not opted in behaves exactly as before."""
+    assert _finding("a").id != _finding("b").id
+    assert _finding("a").id == _finding("a").id
 
 
-# ------------------------------------------------- the property being kept
-
-def test_an_id_still_survives_the_finding_moving_down_its_file():
-    """The reason the line number is not in the id. If this fails, every
-    baseline in the library churns on the next unrelated edit."""
-    early = _finding("'wide' spans 91 lines (threshold 80)", line=4)
-    late = _finding("'wide' spans 91 lines (threshold 80)", line=204)
-    assert early.id == late.id
+def test_a_key_replaces_the_summary_in_the_id():
+    same = _finding("claims 12, and 30 exist", identity_key="claims 12")
+    moved = _finding("claims 12, and 33 exist", identity_key="claims 12")
+    assert same.id == moved.id
 
 
-def test_two_findings_that_are_the_same_finding_twice_keep_one_id():
-    """Same place, same detail: one finding reported twice, which is a
-    different defect from two findings sharing an identity. Splitting these
-    would invent a second finding out of a duplicate emission."""
-    twice = [_finding("'wide' spans 91 lines", line=4), _finding("'wide' spans 91 lines", line=4)]
-    assert disambiguate_ids(twice) == 0
-    assert twice[0].id == twice[1].id
+def test_an_empty_key_is_a_key_and_not_an_absence():
+    """`None` means "use the summary". An empty string is a detector saying
+    the path alone identifies this. Reading one as the other would silently
+    put the summary back."""
+    a = _finding("one summary", identity_key="")
+    b = _finding("a different summary", identity_key="")
+    assert a.id == b.id
+    assert a.id != _finding("one summary").id
 
 
-# -------------------------------------------------- the property being added
-
-def test_two_distinct_findings_in_one_file_get_distinct_ids(tmp_path):
-    """The measured case, from a real detector run rather than hand-built
-    Finding objects: two 91-line methods both named `run`."""
-    longs = [f for f in run_all([_twin_methods(tmp_path)]) if f.detector == "long_function"]
-    assert len(longs) == 2, "the fixture is meant to hold two long functions"
-    assert longs[0].summary == longs[1].summary, "and to give them one summary"
-
-    assert disambiguate_ids(longs) == 2, "both members of the pair are given their own id"
-    assert longs[0].id != longs[1].id
+def test_the_key_does_not_escape_the_file_or_the_detector():
+    """It replaces one of three parts. Two findings with the same key in
+    different files, or from different detectors, stay distinct."""
+    here = _finding("s", file="README.md", identity_key="claims 12")
+    there = _finding("s", file="docs/INDEX.md", identity_key="claims 12")
+    other = _finding("s", detector="dead_code", identity_key="claims 12")
+    assert len({here.id, there.id, other.id}) == 3
 
 
-def test_each_member_of_a_colliding_group_is_suffixed_from_its_own_place(tmp_path):
-    """1.3.0 numbered them by position, so inserting one renumbered the
-    rest. The suffix now comes from the finding's own line range and
-    detail, which depend on nothing but itself."""
-    longs = [f for f in run_all([_twin_methods(tmp_path)]) if f.detector == "long_function"]
-    base = longs[0].id
-    disambiguate_ids(longs)
-    for f in longs:
-        assert f.id.startswith(base + "-")
-        assert len(f.id.rsplit("-", 1)[1]) == 6
+def test_two_defects_differing_only_in_a_digit_stay_distinct():
+    """The reason a blanket digit-strip is not the fix. These two are
+    different defects and must never share an identity."""
+    first = _finding("'core_0' is defined but never referenced",
+                     detector="dead_code", file="app/core.py")
+    second = _finding("'core_1' is defined but never referenced",
+                      detector="dead_code", file="app/core.py")
+    assert first.id != second.id
 
 
-def test_a_new_sibling_does_not_renumber_the_others():
-    """The defect an external reviewer named in the 1.3.0 scheme: insert a
-    fourth occurrence above the others and every id below it shifted."""
-    a, b = _finding("'run' spans 91 lines", line=100), _finding("'run' spans 91 lines", line=300)
-    disambiguate_ids([a, b])
-    was = (a.id, b.id)
+# --------------------------------------------- the three that carried numbers
 
-    a2 = _finding("'run' spans 91 lines", line=100)
-    b2 = _finding("'run' spans 91 lines", line=300)
-    inserted = _finding("'run' spans 91 lines", line=10)
-    disambiguate_ids([a2, b2, inserted])
+def test_the_drift_finding_survives_the_suite_growing(tmp_path):
+    """One directory, rewritten in place.
 
-    assert (a2.id, b2.id) == was, "a finding's identity moved because a sibling appeared"
-    assert inserted.id not in was
+    Deliberately not two temporary directories. With no project marker the
+    portable path falls back to the last two segments, so the directory's
+    own name lands in the id and two tmpdirs differ for a reason that has
+    nothing to do with what is being tested. That is how this test failed
+    first time.
+    """
+    from ghost_buster.mechanical import run_all
 
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "t"\n')
+    (tmp_path / "README.md").write_text(
+        "# thing\n\nThe test suite has 12 tests, all passing.\n")
 
-def test_removing_a_sibling_does_not_renumber_the_others():
-    a, b, c = (_finding("'run' spans 91 lines", line=n) for n in (10, 100, 300))
-    disambiguate_ids([a, b, c])
-    was = (b.id, c.id)
+    def measure(tests):
+        (tmp_path / "test_main.py").write_text(
+            "".join("def test_%02d():\n    assert True\n\n\n" % i
+                    for i in range(tests)))
+        findings = run_all(sorted(tmp_path.iterdir()))
+        drift = [f for f in findings if f.detector == "doc_test_count_drift"]
+        assert drift, "the drift finding did not fire at %d tests" % tests
+        return drift[0]
 
-    b2, c2 = (_finding("'run' spans 91 lines", line=n) for n in (100, 300))
-    disambiguate_ids([b2, c2])
-    assert (b2.id, c2.id) == was, "fixing one finding renamed the ones left behind"
-
-
-def test_the_suffix_does_not_depend_on_the_order_they_were_scanned():
-    a, b = _finding("'run' spans 91 lines", line=100), _finding("'run' spans 91 lines", line=300)
-    disambiguate_ids([a, b])
-    a2, b2 = _finding("'run' spans 91 lines", line=100), _finding("'run' spans 91 lines", line=300)
-    disambiguate_ids([b2, a2])
-    assert (a2.id, b2.id) == (a.id, b.id)
-
-
-def test_accepting_one_of_two_no_longer_suppresses_the_other(tmp_path):
-    """The defect, end to end. Before this, a human accepted one finding
-    and the scan stopped reporting two."""
-    longs = [f for f in run_all([_twin_methods(tmp_path)]) if f.detector == "long_function"]
-    disambiguate_ids(longs)
-    first, second = sorted(longs, key=lambda f: f.evidence.line_start)
-
-    path = tmp_path / "baseline.json"
-    Baseline(path).accept([first])
-    new, known = Baseline(path).diff([first, second])
-
-    assert [f.id for f in known] == [first.id], "the accepted one is suppressed"
-    assert [f.id for f in new] == [second.id], "the one nobody read is still reported"
+    before, after = measure(30), measure(33)
+    assert "30" in before.summary and "33" in after.summary, (
+        "the summaries did not move, so this proves nothing")
+    assert before.id == after.id, (
+        "the same stale claim was given two identities because the suite grew")
 
 
-def test_a_distinct_detail_is_enough_to_split_a_shared_id():
-    """The library's real case: two correlation findings at different lines
-    of one file, same summary, different detail."""
-    pair = [_finding("the 'generic-api-key' secret is also in 1 copy", line=829, detail="first"),
-            _finding("the 'generic-api-key' secret is also in 1 copy", line=833, detail="second")]
-    assert disambiguate_ids(pair) == 2
-    assert len({f.id for f in pair}) == 2
+def test_a_document_edited_to_a_different_wrong_number_is_a_new_finding(tmp_path):
+    """The boundary, through the real detector.
+
+    The documented number IS part of what the claim says. Editing a README
+    from 12 to 13, still wrong, is a different claim and a different
+    finding. Only the MEASURED side was taken out of the identity, and a
+    key that dropped the claim as well would collapse every stale count in
+    a document into one.
+    """
+    from ghost_buster.mechanical import run_all
+
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "t"\n')
+    (tmp_path / "test_main.py").write_text(
+        "".join("def test_%02d():\n    assert True\n\n\n" % i
+                for i in range(30)))
+
+    def measure(documented):
+        (tmp_path / "README.md").write_text(
+            "# thing\n\nThe test suite has %d tests, all passing.\n" % documented)
+        drift = [f for f in run_all(sorted(tmp_path.iterdir()))
+                 if f.detector == "doc_test_count_drift"]
+        assert drift, "the drift finding did not fire at %d" % documented
+        return drift[0]
+
+    assert measure(12).id != measure(13).id
 
 
-def test_two_findings_at_one_line_are_split_by_their_detail_alone():
-    """The correlation case reduced to its essence: same detector, same
-    file, same summary, same line, different account of what was found."""
-    pair = [_finding("the secret is also in 1 copy", line=829, detail="copy in twin_a.py"),
-            _finding("the secret is also in 1 copy", line=829, detail="copy in twin_b.py")]
-    assert disambiguate_ids(pair) == 2
-    assert len({f.id for f in pair}) == 2
+def test_the_project_finding_survives_a_new_test_file(tmp_path):
+    from ghost_buster.project import scan
+
+    def build(count):
+        for existing in tmp_path.glob("test_*.py"):
+            existing.unlink()
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "t"\n')
+        for index in range(count):
+            (tmp_path / ("test_%d.py" % index)).write_text(
+                "def test_x():\n    assert True\n")
+        return [f for f in scan(tmp_path)[0]
+                if f.detector == "no_ci_configuration"]
+
+    one, two = build(1), build(2)
+    assert one and two, "no_ci_configuration did not fire"
+    assert one[0].id == two[0].id, (
+        "the repository still has no CI; only the count of affected files moved")
 
 
-def test_three_in_one_file_all_separate():
-    group = [_finding("'run' spans 91 lines", line=n) for n in (10, 200, 400)]
-    assert disambiguate_ids(group) == 3
-    assert len({f.id for f in group}) == 3
+def test_the_correlation_survives_the_measurement_moving():
+    from ghost_buster.correlate import run_connectors
+    from ghost_buster.schema import Finding as F
+
+    def drift():
+        return F(detector="doc_test_count_drift", category=Category.DOC_DRIFT,
+                 layer=Layer.MECHANICAL, severity=Severity.MINOR,
+                 status=Status.CONFIRMED,
+                 summary="'README.md' claims 12 test(s)", detail="",
+                 attributes={"documented_count": "12", "writable": "yes",
+                             "claim_context": "The test suite has "},
+                 evidence=Evidence(file="README.md", line_start=1, line_end=1))
+
+    class Report:
+        ran, errored, blocked = True, 0, 0
+        def __init__(self, n): self.collected = self.passed = n
+
+    first = run_connectors([drift()], test_report=Report(30))
+    later = run_connectors([drift()], test_report=Report(33))
+    assert first and later
+    assert first[0].id == later[0].id, (
+        "the claim is contradicted either way; only the measurement moved")
 
 
-def test_findings_that_do_not_collide_are_left_alone():
-    untouched = [_finding("'a' spans 91 lines"), _finding("'b' spans 91 lines"),
-                 _finding("'a' spans 91 lines", file="src/other.py")]
-    before = [f.id for f in untouched]
-    assert disambiguate_ids(untouched) == 0
-    assert [f.id for f in untouched] == before
+def test_a_different_claim_is_a_different_finding():
+    """The boundary. The documented number IS part of what the claim says,
+    so a document edited from 12 to 13 is a new claim and a new finding.
+    Only the measured side was taken out of the identity."""
+    twelve = _finding("s", identity_key="claims 12 test(s), stale")
+    thirteen = _finding("s", identity_key="claims 13 test(s), stale")
+    assert twelve.id != thirteen.id
+
+
+def test_the_round_trip_keeps_the_id():
+    """A baseline stores ids. One that changed on read would be inert."""
+    finding = _finding("claims 12, and 30 exist", identity_key="claims 12")
+    restored = Finding.from_dict(finding.as_dict())
+    assert restored.id == finding.id

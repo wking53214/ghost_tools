@@ -440,6 +440,24 @@ def correlate_doc_count_against_run(data: CorrelationInput) -> List[Finding]:
     passed = int(getattr(report, "passed", 0) or 0)
     not_passing = collected - passed
 
+    # WHAT NEVER RAN IS NOT IN EITHER NUMBER (v1.7.3).
+    #
+    # A module that cannot be imported contributes nothing to `collected`
+    # and nothing to `passed`, so `collected - passed` is zero and the
+    # suite reads as green. It is not green. Nobody knows what it is,
+    # because a whole file of it never executed.
+    #
+    # This tool already knows: the same run reports the blocked module as
+    # its own finding, in the same report, with the missing import named.
+    # Left out of these attributes, that knowledge never reached the
+    # remedy, which wrote "N tests, all passing" into a README over a
+    # suite with a file that could not be collected. Found by an
+    # adversarial harness; the mechanism is ordinary -- an optional
+    # dependency that is not installed in somebody's environment.
+    errored = int(getattr(report, "errored", 0) or 0)
+    blocked = int(getattr(report, "blocked", 0) or 0)
+    unexamined = max(errored, blocked)
+
     out: List[Finding] = []
     for drift in drifts:
         documented = drift.attributes.get("documented_count", "")
@@ -465,12 +483,15 @@ def correlate_doc_count_against_run(data: CorrelationInput) -> List[Finding]:
             detector="doc_count_contradicted_by_run",
             category=Category.DOC_DRIFT,
             layer=Layer.MECHANICAL,
-            severity=Severity.MINOR if not_passing == 0 else Severity.MAJOR,
+            severity=(Severity.MINOR if not_passing == 0 and not unexamined
+                      else Severity.MAJOR),
             status=Status.CONFIRMED,
             summary=(
                 f"'{drift.evidence.file}' claims {documented} test(s); the suite "
                 f"actually collects {collected} and {passed} pass"
                 + ("" if not_passing == 0 else f" ({not_passing} do not)")
+                + ("" if not unexamined
+                   else f"; {unexamined} test file(s) did not run at all")
             ),
             detail=(
                 "The static count is a lower bound and says so; this is the measured "
@@ -481,13 +502,33 @@ def correlate_doc_count_against_run(data: CorrelationInput) -> List[Finding]:
                    f" Note also that {not_passing} collected test(s) did not pass, so a "
                    "sentence claiming this suite is green is wrong independently of the "
                    "number.")
+                + ("" if not unexamined else
+                   f" And {unexamined} test file(s) could not be collected, so "
+                   "neither number describes the whole suite: what never ran is "
+                   "absent from the collected count and from the passed count "
+                   "alike, which is why subtracting one from the other says "
+                   "green. Nothing may be written into a document from this "
+                   "run until the suite runs.")
                 + f"\nBuilt from findings: {_ids([drift])} plus the --tests run."
             ),
+            # Everything measured is excluded. `collected`, `passed` and
+            # `unexamined` all move with the suite while the claim being
+            # contradicted stays exactly as wrong as it was. See
+            # `Finding.identity_key`.
+            identity_key=f"claims {documented} test(s), contradicted by the run",
             attributes={
                 "drift_finding": drift.id,
                 "documented_count": documented,
                 "collected": str(collected),
                 "passed": str(passed),
+                # The part of the suite that produced no result either way.
+                # A remedy that writes a measured total into somebody's
+                # document has to be able to see that the measurement is
+                # incomplete, and `collected - passed` structurally cannot
+                # show it.
+                "unexamined": str(unexamined),
+                "errored": str(errored),
+                "blocked": str(blocked),
                 # Carried, not recomputed: the verdict needs the document's
                 # name and the text around the claim, and this connector has
                 # neither. The detector read both and said so.
