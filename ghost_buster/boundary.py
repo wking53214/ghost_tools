@@ -308,18 +308,19 @@ def _test_corpus(files_by_root: Dict[str, List[Path]]) -> str:
     return "\n".join(chunks)
 
 
-def derive_findings(joined: JoinedModel, files_by_root: Dict[str, List[Path]]) -> List[Finding]:
-    if not joined.ran:
-        return []
-    out: List[Finding] = []
-    corpus = _test_corpus(files_by_root)
-
-    for reach in joined.reaches:
+def _process_reaches(
+    joined: JoinedModel,
+    reaches: List,
+    corpus: str,
+) -> List[Finding]:
+    """Find findings for cross-repository imports and unexercised symbols."""
+    findings: List[Finding] = []
+    for reach in reaches:
         provider = joined.provides.get(reach.package)
         file = str(Path(reach.repo) / reach.module.replace(".", "/")) + ".py"
 
         if provider is None:
-            out.append(_finding(
+            findings.append(_finding(
                 "boundary provider absent", Severity.MINOR, file,
                 f"'{reach.module}' reaches for '{reach.package}', which no "
                 f"repository in this joined set provides",
@@ -338,11 +339,8 @@ def derive_findings(joined: JoinedModel, files_by_root: Dict[str, List[Path]]) -
 
         provider_root, exported = provider
         if provider_root == reach.repo:
-            continue    # reaching for itself; not a boundary
+            continue
 
-        # `from ccc.matching import X` must be resolved against ccc.matching,
-        # not against every module in ccc. The union is the right answer only
-        # for `from ccc import X`, where a package __init__ may re-export it.
         if reach.source and reach.source != reach.package:
             exact = joined.provides_module.get(reach.source)
             if exact is None:
@@ -353,16 +351,12 @@ def derive_findings(joined: JoinedModel, files_by_root: Dict[str, List[Path]]) -
                 continue
             exported = exact | joined.provides_module.get(reach.package, set())
 
-        # A module whose surface could not be enumerated cannot be shown to
-        # be missing anything. Abstain rather than accuse: this check is
-        # CRITICAL, and a critical that is wrong costs more than one that is
-        # absent.
         if reach.source in joined.opaque_modules or reach.package in joined.opaque_modules:
             continue
 
         missing = [n for n in reach.names if n not in exported]
         if missing:
-            out.append(_finding(
+            findings.append(_finding(
                 "cross repo import unresolved", Severity.CRITICAL, file,
                 f"'{reach.module}' imports {', '.join(missing)} from "
                 f"'{reach.package}', which does not export "
@@ -384,7 +378,7 @@ def derive_findings(joined: JoinedModel, files_by_root: Dict[str, List[Path]]) -
 
         untested = [n for n in reach.names if n and not re.search(rf"\b{re.escape(n)}\b", corpus)]
         if untested:
-            out.append(_finding(
+            findings.append(_finding(
                 "boundary symbol untested", Severity.MAJOR, file,
                 f"'{reach.module}' imports {', '.join(untested)} from "
                 f"'{reach.package}', and no test in either repository mentions "
@@ -403,10 +397,15 @@ def derive_findings(joined: JoinedModel, files_by_root: Dict[str, List[Path]]) -
                  "reaching_module": reach.module},
                 reach.line,
             ))
+    return findings
 
-    for dormant in joined.dormant_tests:
+
+def _process_dormant_tests(dormant_tests: List) -> List[Finding]:
+    """Generate findings for dormant boundary tests."""
+    findings: List[Finding] = []
+    for dormant in dormant_tests:
         file = str(Path(dormant.repo) / dormant.module.replace(".", "/")) + ".py"
-        out.append(_finding(
+        findings.append(_finding(
             "dormant boundary test", Severity.INFORMATIONAL, file,
             f"'{dormant.module}' holds a test that skips: {dormant.reason!r}",
             "Inventory, not a complaint. A test written for a seam and waiting "
@@ -417,7 +416,16 @@ def derive_findings(joined: JoinedModel, files_by_root: Dict[str, List[Path]]) -
             "is indistinguishable from a test that does not exist.",
             {"reason": dormant.reason, "module": dormant.module}, dormant.line,
         ))
-    return out
+    return findings
+
+
+def derive_findings(joined: JoinedModel, files_by_root: Dict[str, List[Path]]) -> List[Finding]:
+    if not joined.ran:
+        return []
+    corpus = _test_corpus(files_by_root)
+    findings = _process_reaches(joined, joined.reaches, corpus)
+    findings.extend(_process_dormant_tests(joined.dormant_tests))
+    return findings
 
 
 def render_report(joined: JoinedModel, findings: List[Finding]) -> str:
