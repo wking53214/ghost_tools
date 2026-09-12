@@ -411,7 +411,10 @@ def _remedy_doc_counts(root: Path, files: Sequence[Path],
         stale = why_not_writable(
             path.name,
             text[max(0, claim_at - _WRITABILITY_LOOKBACK):claim_at],
-            text[claim_ends:claim_ends + _WRITABILITY_LOOKBACK])
+            text[claim_ends:claim_ends + _WRITABILITY_LOOKBACK],
+            # Re-derived from the file's own head at write time, like every
+            # other half of this verdict.
+            text)
         if stale is not None:
             declined.append(stale)
             continue

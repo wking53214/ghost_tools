@@ -1,5 +1,42 @@
 # Changelog
 
+## 1.7.4 (2026-09-12)
+
+**A document that says what it is, in its own words.**
+
+Writability was decided from two things, and neither can carry what a file
+says about itself: the NAME (`readme.md` is a current-state document,
+`STATUS_REPORT.md` is not) and the sentence beside the claim.
+
+Two worlds got through, both ordinary:
+
+    a README opening `<!-- generated: do not edit by hand -->`
+    a README opening "Recorded 2026-01-14. This document is a record of a
+      moment and is not updated afterwards."
+
+The first is what documentation tooling produces every day; whatever
+generates the file will overwrite the edit, so the edit is either pointless
+or a lie until it is overwritten. The second is what happens to a project
+nobody archived properly. Both had their claim rewritten.
+
+The second is instructive about why the existing checks could not do this
+job. `_DATED_SENTENCE` reads the seventy characters before the claim with
+no full stop in them; that declaration is a paragraph away with two full
+stops in between. It was never going to see it. And the existing historical
+test put the declaration in `STATUS_REPORT.md`, where the filename gate
+refuses it without the document ever being read -- so the case passed and
+the class stayed open, which is the same shape of miss as 1.7.1's.
+
+The document's own head is now read, bounded to `_HEAD` characters. A file
+that says what it is says so at the top; searching the whole document would
+let a phrase deep inside a long README, about some other file most likely,
+silence a real claim. Both directions have tests and mutants, because
+refusing too much is a real cost and an evaluator that cannot see
+over-caution cannot tell a safe tool from a blind one. Measured after the
+change: over-caution unchanged at one case in twenty-three.
+
+659 mutants. 1886 passed, 38 skipped.
+
 ## 1.7.3 (2026-09-12)
 
 Three defects, on two surfaces nothing had ever tested: what the tool
