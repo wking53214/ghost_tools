@@ -1,5 +1,43 @@
 # Changelog
 
+## 1.7.7 (2026-09-12)
+
+**A state only a test can create is still a state nothing reaches.**
+
+The third blind spot of the same shape in `unreachable_declared_state`, and
+the worst of the three. It counted a production in a TEST as a production.
+
+A test constructs a state artificially to prove it is *handled*. That is not
+something producing it. And the consequence is not a refinement: the harness
+defect this detector was built for -- a phase declared and never carried out
+-- would have gone completely unreported if one test had named the phase,
+which is the most likely thing in the world for a test to do.
+
+Library and test corpora are separated now, using the same path predicate
+the rest of this module already uses for "is this a test".
+
+**Weaker evidence, weaker claim.** A member nothing produces at all stays
+MINOR. A member only tests produce is INFORMATIONAL, because "deliberately
+not produced" and "accidentally not produced" look identical from here.
+
+Measured: the distinction added four true findings across the two
+repositories and not one was actionable. Every one was a state reached from
+stored data, or held unreachable on purpose -- among them SWIZZLE's
+`Phase.BETWEEN_RUNS`, which is now deliberately not carried out, and its
+`DocumentKind.CHANGELOG`. Reporting those at the same weight as a real gap
+is how a usable detector becomes a noisy one.
+
+Two more true findings surfaced here at INFORMATIONAL:
+`EvidenceKind.SHAPE_COMPLEMENTARITY` and `VoidKind.UNREALISED`, both in
+`blackhole_extrapolator`, both produced only by their tests.
+
+Also checked, and correct: three kinds that ARE produced have no entry in
+the confidence-weight table, so `_KIND_WEIGHT.get(k, 0.0)` gives them zero.
+Those three are exactly the kinds the enum documents as "never grouped into
+a void". The default is load-bearing and the omission is deliberate.
+
+676 mutants. 1932 passed, 38 skipped.
+
 ## 1.7.6 (2026-09-12)
 
 **A lookup table is a comparison in disguise.**

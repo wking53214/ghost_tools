@@ -1132,7 +1132,8 @@
         "enums where NO member is ever produced (reconstructed from data: an HTTP status, a wire protocol). Without this the detector's entire output would be such enums",
         "classes that do not inherit an Enum base, so a settings class of upper-case constants is not treated as a state machine",
         "lower-case class attributes, which are not enum members by convention",
-        "members named only inside a module-level upper-case constant holding a COLLECTION -- a lookup table is a comparison in disguise. A constant holding a single member is still a production. Added 1.7.6"
+        "members named only inside a module-level upper-case constant holding a COLLECTION -- a lookup table is a comparison in disguise. A constant holding a single member is still a production. Added 1.7.6",
+        "nothing. A member produced ONLY by test code is still reported, at INFORMATIONAL rather than MINOR: a test constructs a state to prove it is handled, which is not something producing it. Added 1.7.7"
       ],
       "disclosed": [
         "a member is matched by NAME, not by resolving the enum, so a member name shared by two enums is treated as produced for both. An AST-only tool; the cost is a lost finding rather than an invented one",
@@ -1141,7 +1142,7 @@
       "source": "CHANGELOG 1.7.5; Tests/test_unreachable_declared_state.py",
       "reproduce": {
         "command": "python -m ghost_buster.cli <path> --single-repo --no-secrets --no-branches --no-structure --no-ledger --json",
-        "tool_version": "1.7.6",
+        "tool_version": "1.7.7",
         "corpus_manifest": {
           "wking53214/SWIZZLE": {
             "commit": "70db473",
@@ -1152,7 +1153,7 @@
             "files": 0
           }
         },
-        "note": "Found 1 on each. On SWIZZLE: Phase.BETWEEN_RUNS, declared among four phases of which the world builder carries out three, so a case declaring it built a world without its mutation and was still judged as temporal. On ghost_tools itself: Status.REJECTED ('a human looked and said no'), which nothing produces and whose triage module does not exist. Both confirmed by hand. 1.7.6: counting lookup-table membership as production had made this detector miss a state of exactly the shape it was built to find -- it reported Status.REJECTED and stayed quiet about Status.CONFIRMED_BY_REVIEW, which is never assigned either. Findings on ghost_tools went 1 -> 5, and all five were confirmed by hand: two Status members superseded by `disposition`, and three EvidenceKind members in blackhole_extrapolator that appear only as keys in a confidence-weight table, so the table assigns confidence to evidence nothing can produce."
+        "note": "Found 1 on each. On SWIZZLE: Phase.BETWEEN_RUNS, declared among four phases of which the world builder carries out three, so a case declaring it built a world without its mutation and was still judged as temporal. On ghost_tools itself: Status.REJECTED ('a human looked and said no'), which nothing produces and whose triage module does not exist. Both confirmed by hand. 1.7.6: counting lookup-table membership as production had made this detector miss a state of exactly the shape it was built to find -- it reported Status.REJECTED and stayed quiet about Status.CONFIRMED_BY_REVIEW, which is never assigned either. Findings on ghost_tools went 1 -> 5, and all five were confirmed by hand: two Status members superseded by `disposition`, and three EvidenceKind members in blackhole_extrapolator that appear only as keys in a confidence-weight table, so the table assigns confidence to evidence nothing can produce. 1.7.7: counting a TEST production as a production was the third blind spot of the same shape, and the worst -- the harness defect this detector was built for would have gone unreported if a single test had named the phase, which is the most likely thing in the world. Library and test corpora are now separated. The distinction added four true findings across the two repositories and none was actionable (states reached from stored data, or held unreachable on purpose), so test-only findings are INFORMATIONAL: weaker evidence, weaker claim."
       }
     }
   ]

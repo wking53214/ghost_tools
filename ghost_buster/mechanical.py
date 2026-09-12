@@ -711,10 +711,23 @@ def detect_unreachable_declared_state(files: List[Path]) -> List[Finding]:
     if not declared:
         return []
 
+    # Two corpora, deliberately. A state only a TEST can create is still a
+    # state the library cannot reach: the test constructs it artificially to
+    # prove it is handled, which is not the same as something producing it.
+    #
+    # This is not a refinement, it is the difference between finding the
+    # defect and missing it. The harness defect that motivated this detector
+    # -- a phase declared and never carried out -- would have gone unreported
+    # if a single test had named the phase, and a test naming it is the most
+    # likely thing in the world.
     produced = _members_produced(parsed)
+    in_library = _members_produced(
+        {path: tree for path, tree in parsed.items()
+         if not _looks_like_a_test(path)})
+
     out: List[Finding] = []
     for enum, members in sorted(declared.items()):
-        live = {m for m in members if m in produced}
+        live = {m for m in members if m in in_library}
         # The asymmetry, and only the asymmetry. An enum where NOTHING is
         # named is reconstructed from data and is not a defect.
         #
@@ -726,15 +739,31 @@ def detect_unreachable_declared_state(files: List[Path]) -> List[Finding]:
             continue
         for member in sorted(set(members) - live):
             path, line = members[member]
+            only_tests = member in produced
+            where = ("only test code puts anything into it"
+                     if only_tests else "no code ever puts anything into it")
             out.append(Finding(
                 detector="unreachable_declared_state",
                 category=Category.OTHER,
                 layer=Layer.MECHANICAL,
-                severity=Severity.MINOR,
+                # WEAKER EVIDENCE, WEAKER CLAIM.
+                #
+                # Nothing at all producing a member is a straightforward
+                # finding. A member only a test produces is a weaker signal:
+                # somebody deliberately constructed the state to prove it is
+                # handled, and "deliberately not produced" and "accidentally
+                # not produced" look identical from here.
+                #
+                # Measured: making the distinction added four true findings
+                # across two repositories and none of them was actionable --
+                # every one was a state reached from stored data or held
+                # unreachable on purpose. Reporting those at the same weight
+                # as a real gap is how a usable detector becomes a noisy one.
+                severity=(Severity.INFORMATIONAL if only_tests
+                          else Severity.MINOR),
                 status=Status.CONFIRMED,
-                summary=(f"'{enum}.{member}' is declared and no code ever puts "
-                         f"anything into it, though {len(live)} other member(s) "
-                         f"of {enum} are produced"),
+                summary=(f"'{enum}.{member}' is declared and {where}, though "
+                         f"{len(live)} other member(s) of {enum} are produced"),
                 evidence=Evidence(file=str(path), line_start=line, line_end=line),
                 detail=(
                     "An enum is a vocabulary of states, and a member nothing "
@@ -746,7 +775,11 @@ def detect_unreachable_declared_state(files: List[Path]) -> List[Finding]:
                     "This is reported because OTHER members of the same enum "
                     "are produced. An enum reconstructed entirely from data is "
                     "not a defect and is not flagged.\n\n"
-                    "It does not claim the state is unreachable. A value read "
+                    + ("A test does construct it, which proves it is handled "
+                       "and not that anything reaches it. Handling a state "
+                       "nothing produces is the branch this finding is about.\n\n"
+                       if only_tests else "")
+                    + "It does not claim the state is unreachable. A value read "
                     "back from a stored record can still arrive here, which is "
                     "worse rather than better: the state enters from data into "
                     "code that never intends it. Either produce it, handle its "
@@ -757,7 +790,8 @@ def detect_unreachable_declared_state(files: List[Path]) -> List[Finding]:
                 ),
                 attributes={"enum": enum, "member": member,
                             "produced_members": str(len(live)),
-                            "declared_members": str(len(members))},
+                            "declared_members": str(len(members)),
+                            "produced_by_tests_only": "yes" if only_tests else "no"},
             ))
     return out
 

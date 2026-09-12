@@ -310,6 +310,100 @@ def test_a_local_collection_is_not_a_constant_table(tmp_path):
     assert _scan(tmp_path, m=LOCAL) == []
 
 
+# ------------------------ a state only a test can create is still unreached
+#
+# This is not a refinement. It is the difference between finding the defect
+# and missing it.
+#
+# The harness defect that motivated this detector -- a phase declared and
+# never carried out -- would have gone unreported if a single test had named
+# the phase, and a test naming it is the most likely thing in the world. A
+# test constructs a state artificially to prove it is HANDLED; that is not
+# something producing it.
+#
+# Weaker evidence, weaker claim: nothing at all producing a member is MINOR,
+# a member only tests produce is INFORMATIONAL. Measured, the distinction
+# added four true findings across two repositories and not one was
+# actionable -- every one was reached from stored data or held unreachable on
+# purpose. Reporting those at the same weight as a real gap is how a usable
+# detector becomes a noisy one.
+
+LIB = '''
+    from enum import Enum
+
+    class Phase(Enum):
+        BUILD = "build"
+        BETWEEN = "between"
+
+    def build():
+        return Phase.BUILD
+'''
+
+TEST_PRODUCES = '''
+    from lib import Phase
+
+    def test_between_is_handled():
+        assert Phase.BETWEEN.value
+        return Phase.BETWEEN
+'''
+
+
+def _files(tmp_path, **named):
+    import textwrap
+    out = []
+    for name, body in named.items():
+        path = tmp_path / ("%s.py" % name)
+        path.write_text(textwrap.dedent(body))
+        out.append(path)
+    return sorted(out)
+
+
+def test_a_state_only_a_test_produces_is_still_reported(tmp_path):
+    """THE ONE THAT MATTERS. Without this, one test naming the state hides
+    the defect entirely."""
+    from ghost_buster.mechanical import detect_unreachable_declared_state
+    found = detect_unreachable_declared_state(
+        _files(tmp_path, lib=LIB, test_phase=TEST_PRODUCES))
+    assert [f.attributes['member'] for f in found] == ['BETWEEN']
+
+
+def test_it_says_the_production_was_a_test(tmp_path):
+    from ghost_buster.mechanical import detect_unreachable_declared_state
+    found = detect_unreachable_declared_state(
+        _files(tmp_path, lib=LIB, test_phase=TEST_PRODUCES))
+    assert found[0].attributes['produced_by_tests_only'] == 'yes'
+    assert 'only test code' in found[0].summary
+    assert 'proves it is handled' in found[0].detail
+
+
+def test_weaker_evidence_gets_a_weaker_severity(tmp_path):
+    """A state nothing produces is MINOR. A state only a test produces is
+    INFORMATIONAL, because deliberate and accidental look identical from
+    here and the reader has to be able to filter."""
+    from ghost_buster.mechanical import detect_unreachable_declared_state
+    only_tests = detect_unreachable_declared_state(
+        _files(tmp_path, lib=LIB, test_phase=TEST_PRODUCES))
+    nothing = detect_unreachable_declared_state(_files(tmp_path, lib=LIB))
+    assert only_tests[0].severity is Severity.INFORMATIONAL
+    assert nothing[0].severity is Severity.MINOR
+    assert nothing[0].severity > only_tests[0].severity
+
+
+def test_a_state_the_library_produces_is_silent_either_way(tmp_path):
+    """The boundary. This must not start reporting live states."""
+    from ghost_buster.mechanical import detect_unreachable_declared_state
+    assert detect_unreachable_declared_state(_files(tmp_path, lib='''
+        from enum import Enum
+
+        class Phase(Enum):
+            BUILD = "build"
+            BETWEEN = "between"
+
+        def build(x):
+            return Phase.BUILD if x else Phase.BETWEEN
+    ''', test_phase=TEST_PRODUCES)) == []
+
+
 # ----------------------------------------------------- what it claims
 
 def test_the_severity_leaves_the_judgement_to_a_human(tmp_path):

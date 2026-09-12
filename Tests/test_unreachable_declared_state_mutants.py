@@ -58,6 +58,26 @@ MUTANTS = [
     ("a frozenset() wrapper hides the table", _M,
      '        if name in ("frozenset", "set", "tuple", "list"):',
      '        if name in ("nothing_at_all",):'),
+    # --- a test production is not a production (1.7.7) ---
+    ("a test producing the state hides it entirely", _M,
+     "    in_library = _members_produced(\n"
+     "        {path: tree for path, tree in parsed.items()\n"
+     "         if not _looks_like_a_test(path)})",
+     "    in_library = produced"),
+    ("test files are not recognised, so every file counts as library", _M,
+     "         if not _looks_like_a_test(path)})",
+     "         if True})"),
+    ("a test-only state is reported at full weight", _M,
+     "                severity=(Severity.INFORMATIONAL if only_tests\n"
+     "                          else Severity.MINOR),",
+     "                severity=Severity.MINOR,"),
+    ("a state nothing produces is downgraded to informational", _M,
+     "                severity=(Severity.INFORMATIONAL if only_tests\n"
+     "                          else Severity.MINOR),",
+     "                severity=Severity.INFORMATIONAL,"),
+    ("the finding stops saying the production was a test", _M,
+     '                     if only_tests else "no code ever puts anything into it")',
+     '                     if False else "no code ever puts anything into it")'),
     # --- flagging what is fine ---
     ("an enum nobody names is reported member by member", _M,
      "        if not live:\n            continue",
@@ -70,8 +90,8 @@ MUTANTS = [
      "                    if isinstance(target, ast.Name):"),
     # --- what the finding says ---
     ("the finding stops saying it is not a reachability claim", _M,
-     '                    "It does not claim the state is unreachable. A value read "',
-     '                    "This state is unreachable. A value read "'),
+     '                    + "It does not claim the state is unreachable. A value read "',
+     '                    + "This state is unreachable. A value read "'),
     # Not "substitute an empty tree": an empty tree contributes nothing, so
     # that mutant was behaviourally identical to skipping and survived. What
     # the guard actually buys is not walking None.
