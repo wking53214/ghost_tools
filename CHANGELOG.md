@@ -1,5 +1,83 @@
 # Changelog
 
+## 1.7.0 (2026-09-12)
+
+The surgeon learns to treat something, and learns two things about
+himself in the process. Everything here came from pointing a remedy at a
+real repository, which turns out to be a much sharper instrument than a
+scan: a scan only has to be interesting, and a remedy has to be right.
+
+### A remedy now knows what it is treating
+Remedies took the tree and nothing else, which is exactly why the only
+one that existed could heal nothing. They take the current findings now,
+and each declares what it acts on.
+
+### Reporting and writing are different questions
+`claim_shape` answers "is this a claim about the current suite at all",
+and something that passes it is worth reporting. That is not the same as
+being safe to rewrite, and treating it as the same is how the new
+doc-count remedy came within one commit of writing this project's test
+count over another project's true one.
+
+`why_not_writable` is the second question. Six signals, each one a real
+false positive in the library before it was a rule: not a current-state
+document, a dated or versioned document, scoped to a file or command, a
+table row, a dated sentence, and saying nothing about the whole suite. It
+reads both sides of the number, because English puts the subject on
+either: "Test suite: 429 tests" says it first, "135 tests passing across
+the suite" says it last. A first draft read only what came before and
+refused the one true positive this detector has ever recorded.
+
+The detector reports either way and records its verdict on the finding;
+the remedy acts only on a claim marked writable.
+
+### doc_test_count_drift has a measured precision, and it is zero
+65 findings across the 38-repository library survive every claim-shape
+filter. Read individually, none is a stale claim about the scanned
+repository's own current suite: 24 name another project in a comparison
+table, 13 are scoped to a single test file or pytest command, 12 sit in a
+dated record, and the remaining 16 are hedged, scoped or historical.
+Examples the detector was calling stale: "Roughly 670 tests" in an
+investor deck, "the repository's July 2026 governance status recorded 270
+tests", "161/161 tests" as a phase pass ratio.
+
+The calibration record now carries that number, the corpus manifest and
+the command, so it is reproducible rather than remembered. It also
+records the mistake that produced it: this pool was recommended as the
+highest-value remedy target on the strength of 65 plus 64 findings,
+before anybody read them. A finding count is not a defect count.
+
+`why_not_writable` refuses all 65 and accepts the three shapes a real
+claim takes, including the recorded true positive.
+
+### A block the repository hands over
+A sentence cannot say "this number is yours to keep current". A block
+can. Between `<!-- ghost_buster:test-count -->` and its closing marker the
+number is the tool's; outside them nothing is touched, and that is a fact
+about the document rather than a judgement about English.
+
+The tool never writes the markers itself. A scanner that inserts its own
+markup into somebody's README uninvited has decided something that was not
+its to decide, and the first thing this remedy would then have done is
+change 38 repositories nobody asked to change. No block, no cut. This
+repository's own README now carries one.
+
+### Two more couplings, both caught by the suite
+Adding the named-owner claim shape made the delta and attribution rules
+untestable, because it quietly covered for both: deleting either changed
+nothing. The lead-in list now names every word those two rules key on, so
+each is independently killable again.
+
+Naming a constant `_ATTRIBUTED_TO_A_SUBJECT` put `subject` into the
+vestigial-domain detector's reference corpus, made a shared cassette word
+generic, and turned a live naming mutant into a surviving one. This is the
+exact coupling 1.6.1 documented, with a guard whose word list was too
+narrow to catch it. The constant is `_NAMED_OWNER`, and the guard now
+covers the words both cassettes share as well as the words only one does.
+
+Twenty-two new tests and twenty-six new mutants. Four existing mutants
+re-pointed at code this restructured.
+
 ## 1.6.1 (2026-09-12)
 
 Found by putting a real repository on the table rather than by the suite,

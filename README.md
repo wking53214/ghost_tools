@@ -1555,7 +1555,20 @@ test suite runs.
 python -m pytest Tests/ -v
 ```
 
-1554 tests (measured 2026-09-11), 0 network calls, 0 API key required -- the semantic-layer
+<!-- ghost_buster:test-count -->
+1799 tests, all passing.
+<!-- /ghost_buster:test-count -->
+
+The number above is inside a block this tool maintains. `--operate` sets
+it from the suite that actually ran, and touches nothing outside the two
+markers. A repository opts in by writing the markers once; the tool never
+adds them itself, because inserting markup into somebody's README
+uninvited is a decision that was not its to make. Nothing else in this
+section is maintained, and nothing else is safe to maintain: see
+`why_not_writable` for the six reasons a sentence containing a test count
+is usually not a claim about the current suite at all.
+
+0 network calls, 0 API key required -- the semantic-layer
 tests verify the real parsing/fail-closed/injection-fencing logic via
 `StubModelClient`, the same technique `sentinel_os`'s own `interpretation/`
 package uses for its model-client tests. `test_branches.py`,
@@ -1563,7 +1576,7 @@ package uses for its model-client tests. `test_branches.py`,
 repositories and pytest projects in `tmp_path` instead, the only honest way
 to test a ref-graph, git-history or suite-execution check (the secrets
 suite against a real gitleaks binary, skipped if one is not on PATH).
-`test_mutation.py` and the 46 `Tests/*_mutants.py` files run pytest in
+`test_mutation.py` and the 48 `Tests/*_mutants.py` files run pytest in
 subprocesses against scratch copies of the project, each mutant file
 breaking one component a named number of ways and requiring every mutant
 to fail a test; they account for most of the suite's wall-clock time. A

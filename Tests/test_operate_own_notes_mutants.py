@@ -24,7 +24,7 @@ MUTANTS = [
      '        if code == "??" and path in SURGEONS_NOTES:\n            continue\n',
      ""),
     ("the cut sweeps the surgeon's notes into the patient's history", _OP,
-     '        _git(root, "add", "-A", "--", ".", *(f":(exclude){name}" for name in SURGEONS_NOTES))',
+     '        _git(root, "add", "-A", "--", ".", *(f":(exclude){note_file}" for note_file in SURGEONS_NOTES))',
      '        _git(root, "add", "-A")'),
     ("only the ledger is recognised as a note", _OP,
      'SURGEONS_NOTES = (".ghost_ledger.json", ".ghost_baseline.json", ".ghost_casefile.json")',

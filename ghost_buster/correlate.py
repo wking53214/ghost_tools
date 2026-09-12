@@ -488,6 +488,11 @@ def correlate_doc_count_against_run(data: CorrelationInput) -> List[Finding]:
                 "documented_count": documented,
                 "collected": str(collected),
                 "passed": str(passed),
+                # Carried, not recomputed: the verdict needs the document's
+                # name and the text around the claim, and this connector has
+                # neither. The detector read both and said so.
+                "writable": drift.attributes.get("writable", "no"),
+                "not_writable_because": drift.attributes.get("not_writable_because", ""),
             },
             evidence=Evidence(
                 file=drift.evidence.absolute_file or drift.evidence.file,

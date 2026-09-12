@@ -61,6 +61,7 @@ nothing breaks. The breaking is what the checks are for.
 
 from __future__ import annotations
 
+import re
 import subprocess
 import time
 from contextlib import contextmanager
@@ -72,7 +73,8 @@ from typing import Callable, Dict, List, Optional, Sequence, Set
 from . import corpus, readiness
 from .annotate import annotate as annotate_names
 from .casefile import EXPOSED, HEALED, Casefile
-from .mechanical import registered_detectors, run_all
+from .mechanical import (_TEST_COUNT_CLAIM_RE, claim_context, claim_shape,
+                        registered_detectors, run_all)
 from .schema import Finding
 from .speed import Profile
 
@@ -85,6 +87,12 @@ def _retired(casefile) -> set:
 
 class Refused(Exception):
     """The surgeon will not operate, and says why."""
+
+
+class RemedyFailed(Exception):
+    """A remedy wrote something and could not then prove it wrote what it
+    meant to. Raised rather than returned, so the restoration guard puts
+    the tree back: a cut whose verification did not hold is not a cut."""
 
 
 class LeftOnTheTable(Exception):
@@ -214,14 +222,245 @@ def _ids(findings: Sequence[Finding]) -> Set[str]:
     return {f.id for f in findings}
 
 
-def _remedy_annotate(root: Path, files: Sequence[Path]) -> tuple[int, str]:
-    """The one v1 remedy: every edit verified by syntax-tree identity."""
+def _remedy_annotate(root: Path, files: Sequence[Path],
+                     findings: Sequence[Finding]) -> tuple[int, str]:
+    """Write down every name disagreement. Verified by syntax-tree identity.
+
+    Takes `findings` and ignores them: it re-derives the disagreements from
+    the tree itself. The parameter is part of the remedy contract, which
+    every remedy shares whether or not it needs the whole of it.
+    """
     _, changed, wrote_readme = annotate_names(files, root / "README.md", root=root)
     return len(changed) + int(wrote_readme), "name disagreements written down, comment-only, AST-verified"
 
 
-REMEDIES: Dict[str, Callable[[Path, Sequence[Path]], tuple[int, str]]] = {
+def _resolve(root: Path, finding: Finding) -> Optional[Path]:
+    """The file a finding points at, as a path that exists under `root`.
+
+    A finding records whatever path the scan walked, which may be absolute
+    or relative to the caller's working directory rather than to the
+    repository. A remedy writes to disk, so it resolves the path itself and
+    declines rather than guessing when the answer is not inside the patient.
+    """
+    for candidate in (Path(finding.evidence.absolute_file or ""),
+                      Path(finding.evidence.file or ""),
+                      root / (finding.evidence.file or "")):
+        if not str(candidate):
+            continue
+        try:
+            resolved = candidate.resolve()
+            resolved.relative_to(root.resolve())
+        except (OSError, ValueError):
+            continue
+        if resolved.is_file():
+            return resolved
+    return None
+
+
+def _remedy_doc_counts(root: Path, files: Sequence[Path],
+                       findings: Sequence[Finding]) -> tuple[int, str]:
+    """Write the measured test count over a documented one that contradicts it.
+
+    WHY THIS IS THE SECOND REMEDY (v1.7.0)
+
+    The first operation on a full-size patient made one cut, changed four
+    files and healed nothing, because annotating a name disagreement
+    records it rather than resolving it. The remedy set was documentary.
+    This one closes findings.
+
+    It is also the only pool in the library where the correct value is
+    fully determined by evidence the tool already holds. A README claiming
+    a test count is either right or wrong about a number that a run just
+    measured; there is no judgement in the difference, which is what makes
+    it safe to automate and why it is first rather than the larger pools
+    (416 dead-code and 399 vestigial-name findings, both of which need a
+    judgement the tree does not contain).
+
+    THREE THINGS IT REFUSES, EACH FOR A DIFFERENT REASON
+
+    A claim the run did not measure. It acts only on
+    `doc_count_contradicted_by_run`, which exists only when `--tests`
+    actually ran. The static detector's own count is a lower bound and says
+    so, so writing that would replace a stale number with a wrong one.
+
+    A suite that is not green. When collected and passed disagree, the
+    sentence around the number is wrong for a reason no number can fix:
+    "1727 tests passing" beside forty failures is accurate arithmetic and a
+    false claim. Rewriting the digits would make the false sentence look
+    checked. That one goes to a human.
+
+    A claim that is not about this suite. A delta, a recorded transition,
+    or a count quoted from somewhere else all match the same regex and all
+    mean something other than a total. The connector filters these already;
+    this re-checks, because the connector recommends and this one WRITES.
+
+    THE VERIFICATION THAT CAN FAIL
+
+    After writing, the file is read back from disk and three things must
+    hold: the bytes are what was meant to be written, the claim at that
+    position now reads the measured number, and the file's length moved by
+    exactly the difference between the two numbers, so nothing but digits
+    changed. Any of them failing raises `RemedyFailed`, and the guard puts
+    the tree back.
+    """
+    claims = [f for f in findings if f.detector == "doc_count_contradicted_by_run"]
+    if not claims:
+        return 0, ""
+
+    changed = 0
+    declined: List[str] = []
+    for finding in claims:
+        documented = finding.attributes.get("documented_count", "")
+        collected = finding.attributes.get("collected", "")
+        passed = finding.attributes.get("passed", "")
+        if not (documented and collected):
+            continue
+        if finding.attributes.get("writable") != "yes":
+            # The detector read the document and the sentence around the
+            # claim and said a machine must not rewrite this one. Measured
+            # on the 38-repository library: this declines all 65.
+            declined.append(finding.attributes.get("not_writable_because")
+                            or "a claim the detector did not mark writable")
+            continue
+        if passed != collected:
+            declined.append("a suite that is not green")
+            continue
+        path = _resolve(root, finding)
+        line_no = finding.evidence.line_start
+        if path is None or not line_no:
+            declined.append("a claim whose file could not be resolved")
+            continue
+
+        text = path.read_text(encoding="utf-8")
+        lines = text.splitlines(keepends=True)
+        if line_no > len(lines):
+            declined.append("a claim past the end of its file")
+            continue
+        offset = sum(len(line) for line in lines[:line_no - 1])
+        here = [m for m in _TEST_COUNT_CLAIM_RE.finditer(lines[line_no - 1])
+                if m.group(1) == documented]
+        if len(here) != 1:
+            # Two claims of the same number on one line, or none: either way
+            # there is no single span this finding names.
+            declined.append("a line whose claim is not unique")
+            continue
+        match = here[0]
+        start, end = offset + match.start(1), offset + match.end(1)
+        if claim_shape(claim_context(text, offset + match.start())) is not None:
+            declined.append("a claim that is not about this suite")
+            continue
+
+        meant = text[:start] + collected + text[end:]
+        path.write_text(meant, encoding="utf-8")
+
+        # Two checks, and they are deliberately not three. A first draft
+        # also compared the whole file against what was meant and compared
+        # the length delta against the digits. Both were redundant with
+        # these, which mutation testing showed by killing neither: every
+        # failure one caught, another caught too. Two guards that cannot
+        # each be made to fail alone are one guard and some decoration.
+        written = path.read_text(encoding="utf-8")
+        after_lines = written.splitlines()
+        line_now = after_lines[line_no - 1] if line_no <= len(after_lines) else ""
+        if not any(m.group(1) == collected
+                   for m in _TEST_COUNT_CLAIM_RE.finditer(line_now)):
+            # The write did not land, or it landed somewhere other than the
+            # span this finding named.
+            raise RemedyFailed(
+                f"{path}:{line_no}: after writing, the claim does not read {collected}")
+        if written[:start] != text[:start] or written[start + len(collected):] != text[end:]:
+            # Everything outside the number is the author's, byte for byte.
+            raise RemedyFailed(f"{path}: text outside the claim changed")
+        changed += 1
+
+    if changed:
+        note = f"{changed} documented test count(s) rewritten to the measured collected count"
+        if declined:
+            note += "; left for a human: " + ", ".join(sorted(set(declined)))
+    else:
+        note = ""
+    return changed, note
+
+
+#: The block a repository can hand the tool to maintain. Inside it, the
+#: number is the tool's; outside it, every word belongs to whoever wrote it.
+COUNT_BLOCK_OPEN = "<!-- ghost_buster:test-count -->"
+COUNT_BLOCK_CLOSE = "<!-- /ghost_buster:test-count -->"
+_COUNT_BLOCK = re.compile(
+    re.escape(COUNT_BLOCK_OPEN) + r"(.*?)" + re.escape(COUNT_BLOCK_CLOSE), re.S)
+
+
+def _remedy_count_block(root: Path, files: Sequence[Path],
+                        findings: Sequence[Finding]) -> tuple[int, str]:
+    """Maintain the test count inside a block the repository handed over.
+
+    WHY A BLOCK, WHEN THERE IS ALREADY A REMEDY FOR THIS (v1.7.0)
+
+    The doc-count remedy rewrites a number inside somebody's prose, and
+    prose is why it has six refusals, five claim shapes and a measured
+    precision it had to earn. Of 65 candidate claims in the library, it
+    accepts none of them, and that is the correct answer: every one is a
+    count of another project, a single test file, or a moment in the past.
+
+    A sentence cannot say "this number is the tool's to keep current". A
+    block can. Inside these markers the number is maintained, outside them
+    nothing is touched, and the distinction is a fact about the document
+    rather than a judgement about English.
+
+    THE TOOL NEVER ADDS THE BLOCK ITSELF
+
+    A repository opts in by writing the markers once. A scanner that
+    inserts its own markup into somebody's README uninvited has decided
+    something that was not its to decide, and the first thing this remedy
+    would then do is put markup into 38 repositories nobody asked to change.
+    No block, no cut.
+
+    THE VERIFICATION THAT CAN FAIL
+
+    After writing, the file is read back: the block must contain the
+    measured number, and every byte outside the block must be unchanged.
+    """
+    measured = next((f.attributes.get("collected") for f in findings
+                     if f.detector == "doc_count_contradicted_by_run"
+                     and f.attributes.get("collected")
+                     and f.attributes.get("collected") == f.attributes.get("passed")), None)
+    if not measured:
+        return 0, ""
+
+    changed = 0
+    for path in sorted(p for p in files if p.suffix.lower() == ".md"):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        match = _COUNT_BLOCK.search(text)
+        if match is None:
+            continue
+        body = f"\n{measured} tests, all passing.\n"
+        if match.group(1) == body:
+            continue          # already current; not a cut
+        meant = text[:match.start(1)] + body + text[match.end(1):]
+        path.write_text(meant, encoding="utf-8")
+
+        written = path.read_text(encoding="utf-8")
+        again = _COUNT_BLOCK.search(written)
+        if again is None or measured not in again.group(1):
+            raise RemedyFailed(f"{path}: the block does not hold {measured} after writing")
+        if written[:again.start(1)] != text[:match.start(1)] or \
+                written[again.end(1):] != text[match.end(1):]:
+            raise RemedyFailed(f"{path}: text outside the block changed")
+        changed += 1
+
+    if not changed:
+        return 0, ""
+    return changed, (f"{changed} maintained test-count block(s) set to {measured}, "
+                     "the number this run measured")
+
+
+REMEDIES: Dict[str, Callable[[Path, Sequence[Path], Sequence[Finding]], tuple[int, str]]] = {
     "annotate": _remedy_annotate,
+    "doc_counts": _remedy_doc_counts,
+    "count_block": _remedy_count_block,
 }
 
 
@@ -332,7 +571,7 @@ def _cut(op: "Operation", root: Path, files: Sequence[Path], findings: Sequence[
     for name, remedy in REMEDIES.items():
         if dry_run:
             continue
-        changed, note = remedy(root, files)
+        changed, note = remedy(root, files, current)
         if not changed:
             continue
         step += 1
@@ -344,7 +583,7 @@ def _cut(op: "Operation", root: Path, files: Sequence[Path], findings: Sequence[
         # Only the patient. `add -A` would sweep the surgeon's own notes
         # into the patient's history, because a scan writes its ledger into
         # the tree it scanned and the operation runs in the same process.
-        _git(root, "add", "-A", "--", ".", *(f":(exclude){name}" for name in SURGEONS_NOTES))
+        _git(root, "add", "-A", "--", ".", *(f":(exclude){note_file}" for note_file in SURGEONS_NOTES))
         _git(root, "commit", "-q", "-m",
              f"operate: {name}\n\n{note}\n\n{len(closed)} finding(s) healed, "
              f"{len(exposed)} exposed by this cut.")
