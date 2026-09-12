@@ -78,7 +78,7 @@ class Boom(RuntimeError):
 def test_a_remedy_that_raises_leaves_the_tree_where_it_found_it(patient, monkeypatch):
     files, findings, checks = _workup(patient)
 
-    def exploding(root, files):
+    def exploding(root, files, findings):
         raise Boom("the remedy failed")
 
     monkeypatch.setitem(opmod.REMEDIES, "annotate", exploding)

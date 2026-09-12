@@ -39,7 +39,7 @@ MUTANTS = [
     # Re-pointed in 1.6.1: the cut stages the patient's files and excludes
     # the tool's own notes, so `add -A` is no longer the whole staging step.
     ("a cut is not staged, so nothing is committed", _O,
-     '        _git(root, "add", "-A", "--", ".", *(f":(exclude){name}" for name in SURGEONS_NOTES))',
+     '        _git(root, "add", "-A", "--", ".", *(f":(exclude){note_file}" for note_file in SURGEONS_NOTES))',
      "        pass"),
     ("what a cut healed is not learned", _O,
      "            for fid in closed:\n                casefile.record_outcome(by_id[fid], HEALED, f\"by {name}\")",

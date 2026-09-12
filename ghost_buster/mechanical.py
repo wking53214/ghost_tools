@@ -1292,6 +1292,55 @@ _NOT_A_CURRENT_CLAIM = (
     ("attribution", re.compile(r"\b(?:claimed|reported|said)\s*$", re.IGNORECASE)),
 )
 
+# The fifth shape, and the only one found by pointing a REMEDY at a real
+# repository rather than a detector: a count whose subject is named right
+# in front of it.
+#
+# Measured on ghost_tools' own CHANGELOG, 2026-09-12. The single live claim
+# in the entire repository was "(herald 390 tests, observe-perceive 565,
+# gsa-815 19 modules, sentinel_os 968 ...)" -- four other projects' suites,
+# listed as the corpus a feature was calibrated against. Every earlier
+# shape passed it, so the drift finding was raised, the connector confirmed
+# it, and the doc-count remedy was one commit away from writing this
+# project's test count over another project's true one.
+#
+# The rule is deliberately blunt and fails toward silence: a bare word
+# sitting directly before the number is read as the subject the count
+# belongs to, unless it is one of the ordinary ways English leads into a
+# total. Over-refusing costs a finding nobody gets told about. Under-
+# refusing costs a true sentence, rewritten by a machine.
+_COUNT_LEAD_INS = frozenset({
+    # articles and determiners
+    "the", "a", "an", "its", "our", "their", "this", "these", "those", "my",
+    # copulas and auxiliaries
+    "has", "have", "had", "is", "are", "was", "were", "be", "been",
+    # prepositions and conjunctions
+    "of", "with", "and", "or", "to", "in", "at", "on", "by", "from",
+    "about", "across", "than", "plus",
+    # quantifiers and adverbs
+    "all", "only", "just", "now", "still", "over", "under", "some",
+    "another", "roughly", "around", "nearly", "some",
+    # verbs that take a count as their object
+    "collects", "collected", "contains", "holds", "runs", "ran", "adds",
+    "added", "totals", "totalling", "totaling", "reaching", "reached",
+    "leaving", "leaves", "comprising", "numbering", "counts",
+    # Every word the delta and attribution rules above key on. Without
+    # these, this rule would also decline "gained 13 tests" and "claimed 3
+    # tests", which makes those two rules untestable: deleting either one
+    # changes nothing, because this one quietly covers for it. Mutation
+    # testing found exactly that, twice, the moment this rule was added.
+    "gained", "gains", "gain", "grew", "grown", "grows", "growing",
+    "plus", "minus", "removed", "removes", "dropped", "drops", "another",
+    "extra", "net", "more", "fewer", "claimed", "reported", "said",
+})
+
+#: Deliberately not named after the word it looks for. An earlier draft
+#: called this _ATTRIBUTED_TO_A_SUBJECT, which put `subject` into the
+#: package's identifiers and therefore into the vestigial-domain
+#: detector's reference corpus, where it silently made a shared cassette
+#: word generic and blinded a naming test. See Tests/test_reference_corpus.py.
+_NAMED_OWNER = re.compile(r"(?:^|[\s(\[,;])([A-Za-z][\w.\-]*)\s+$")
+
 
 def claim_shape(before: str) -> Optional[str]:
     """The reason a "N tests" claim preceded by `before` is not about the
@@ -1306,6 +1355,92 @@ def claim_shape(before: str) -> Optional[str]:
     for reason, pattern in _NOT_A_CURRENT_CLAIM:
         if pattern.search(before):
             return reason
+    named = _NAMED_OWNER.search(before)
+    if named and named.group(1).lower() not in _COUNT_LEAD_INS:
+        return "attributed to a named subject"
+    return None
+
+
+#: How much text before a claim the writability signals below read. Wider
+#: than _CLAIM_LOOKBACK because these need a sentence and sometimes the
+#: heading above it, not just the words touching the number.
+_WRITABILITY_LOOKBACK = 240
+
+#: Documents that describe what is true NOW. Everything else in a
+#: repository -- a report, a status page, a deck, a manifest, a changelog --
+#: describes a moment, and a moment's numbers are correct as written.
+WRITABLE_DOCUMENTS = frozenset({"readme.md", "contributing.md", "index.md"})
+
+_SCOPED_CLAIM = re.compile(
+    r"\.py`?|\bpytest\b|python -m pytest|--ignore|/tests?/|`test_"
+    r"|\b(?:core|smoke|unit|integration|new|added)\s+tests?\b", re.I)
+_TABULAR_CLAIM = re.compile(r"\|[^|]*$|\*\*[^*]+\*\*[^.]{0,12}$")
+_DATED_DOCUMENT = re.compile(
+    r"\d{4}-\d{2}-\d{2}|_v\d|FINAL|PHASE|COMPLETE|REPORT|STATUS|MANIFEST"
+    r"|APPLY|REVIEW|BRIEF|DECK|COMPLIANCE|CHANGELOG|GUIDE|START_HERE"
+    r"|PRESENTATION", re.I)
+_DATED_SENTENCE = re.compile(
+    r"\b(?:recorded|as of|at the time|back in|shipped|released"
+    r"|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|20\d\d)\b[^.]{0,70}$", re.I)
+_WHOLE_SUITE = re.compile(
+    r"\b(?:test )?suite\b|\ball tests\b|\bthe repository\b|#+\s*tests?\b", re.I)
+
+
+def why_not_writable(filename: str, before: str, after: str = "") -> Optional[str]:
+    """Why a machine must not rewrite this claim, or None if it may.
+
+    REPORTING AND WRITING ARE DIFFERENT QUESTIONS (v1.7.0)
+
+    `claim_shape` answers "is this a claim about the current suite at all",
+    and a claim that passes it is worth REPORTING. That is not the same as
+    being safe to rewrite, and treating it as the same is how the doc-count
+    remedy came within one commit of writing this project's test count over
+    another project's true one.
+
+    Measured on the 38-repository library: of 3,358 findings, 65 were
+    doc_test_count_drift and every earlier filter passed all 65. Read
+    individually, none was a stale claim about the scanned repository's own
+    current suite. This predicate refuses all 65, and accepts all four
+    shapes a real claim takes -- the one recorded true positive from HERALD,
+    a plain "429 tests, all passing" under a Tests heading, a badge line,
+    and a bare count opening a line.
+
+    Six signals, in the order they are cheap to check. Each one is a claim
+    about English and each cost a reading of real documents:
+
+      not a current-state document   a README or CONTRIBUTING says what is
+                                     true now; a report says what was true
+      a dated or versioned document  FINAL_STATUS, PHASE_4_COMPLETE, _v3
+      scoped to a file or command    "test_circuit_breaker.py, 16 tests"
+      a table row or labelled entry  "| **AUGUR** (34 tests"
+      a dated or historical sentence "the July 2026 status recorded 270"
+      not about the whole suite      the claim never says what it counts
+
+    Both sides of the number are read, because English puts the subject on
+    either: "Test suite: 429 tests" says it before, "429 tests passing
+    across the suite" says it after. A first draft read only the text
+    before, which refused the one recorded true positive.
+
+    A bare "429 tests, all passing." alone on a line, with nothing saying
+    what it counts, is refused. That is deliberate and it is the case the
+    marked block exists for: if a project wants that number maintained, it
+    can hand the tool a block to own rather than have prose guessed at.
+
+    Silence is the safe direction. A refusal costs a finding nobody is told
+    about; an acceptance costs a true sentence, rewritten by a machine.
+    """
+    if filename.lower() not in WRITABLE_DOCUMENTS:
+        return "not a current-state document"
+    if _DATED_DOCUMENT.search(filename):
+        return "a dated or versioned document"
+    if _SCOPED_CLAIM.search(before + after):
+        return "scoped to a file, command or subset"
+    if _TABULAR_CLAIM.search(before):
+        return "a table row or labelled list entry"
+    if _DATED_SENTENCE.search(before):
+        return "a dated or historical sentence"
+    if not _WHOLE_SUITE.search(before + after):
+        return "does not assert about the whole suite"
     return None
 
 
@@ -1383,6 +1518,10 @@ def detect_doc_test_count_drift(
             if actual - documented < min_absolute_growth:
                 continue
             line = text.count("\n", 0, match.start()) + 1
+            refusal = why_not_writable(
+                path.name,
+                text[max(0, match.start() - _WRITABILITY_LOOKBACK):match.start()],
+                text[match.end():match.end() + _WRITABILITY_LOOKBACK])
             findings.append(Finding(
                 detector="doc_test_count_drift",
                 category=Category.DOC_DRIFT,
@@ -1406,6 +1545,11 @@ def detect_doc_test_count_drift(
                 attributes={
                     "documented_count": str(documented),
                     "static_lower_bound": str(actual),
+                    # Reported either way; rewritten only when this is "yes".
+                    # See why_not_writable: a claim worth telling somebody
+                    # about is not automatically one a machine may edit.
+                    "writable": "no" if refusal else "yes",
+                    "not_writable_because": refusal or "",
                     # The text this claim sits in, so a consumer can re-run
                     # claim_shape() itself instead of assuming the claim was
                     # already filtered. correlate.py does.

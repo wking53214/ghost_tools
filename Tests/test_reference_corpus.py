@@ -43,6 +43,18 @@ _SPLIT = re.compile(r"[_\W]+|(?<=[a-z0-9])(?=[A-Z])")
 CLINICAL = {"patient", "pediatric", "oxygen", "respiratory", "saturation", "heart"}
 INDUSTRIAL = {"vibration", "bearing", "asset"}
 
+#: Words BOTH toy cassettes use. These are not domain vocabulary, and the
+#: naming suite proves it by asserting they stay out of every domain's
+#: words. That proof needs them to reach the "appears in more than one
+#: cassette" rule, and a word already in the reference corpus never gets
+#: that far, so the rule stops being tested.
+#:
+#: Added after `subject` slipped in, inside a constant named
+#: _ATTRIBUTED_TO_A_SUBJECT, and a naming mutant went from killed to
+#: surviving. The first version of this file listed only domain words and
+#: did not catch it.
+SHARED_BY_BOTH_CASSETTES = {"subject", "reading"}
+
 
 def _reference_corpus() -> set[str]:
     words = set()
@@ -53,7 +65,8 @@ def _reference_corpus() -> set[str]:
 
 
 def test_the_tool_does_not_speak_the_domains_it_measures():
-    swallowed = sorted((CLINICAL | INDUSTRIAL) & _reference_corpus())
+    swallowed = sorted((CLINICAL | INDUSTRIAL | SHARED_BY_BOTH_CASSETTES)
+                       & _reference_corpus())
     assert not swallowed, (
         "ghost_buster now uses these domain words as identifiers: "
         + ", ".join(swallowed)
