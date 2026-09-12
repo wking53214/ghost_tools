@@ -1473,6 +1473,60 @@ def _count_test_functions(files: List[Path]) -> int:
     return count
 
 
+def _is_test_count_stale(documented: int, actual: int, min_growth_ratio: float, min_absolute_growth: int) -> bool:
+    """Check if documented test count is stale relative to actual count."""
+    if documented == 0:
+        return False
+    if actual < documented * min_growth_ratio:
+        return False
+    if actual - documented < min_absolute_growth:
+        return False
+    return True
+
+
+def _build_drift_finding(path: Path, text: str, match, documented: int, actual: int) -> Finding:
+    """Build a Finding for stale test count documentation."""
+    before = claim_context(text, match.start())
+    line = text.count("\n", 0, match.start()) + 1
+    refusal = why_not_writable(
+        path.name,
+        text[max(0, match.start() - _WRITABILITY_LOOKBACK):match.start()],
+        text[match.end():match.end() + _WRITABILITY_LOOKBACK])
+
+    return Finding(
+        detector="doc_test_count_drift",
+        category=Category.DOC_DRIFT,
+        layer=Layer.MECHANICAL,
+        severity=Severity.MINOR,
+        status=Status.CONFIRMED,
+        summary=(
+            f"'{path.name}' claims {documented} test(s), but at least "
+            f"{actual} test_* function(s) exist in the scanned .py files "
+            "-- this claim is stale"
+        ),
+        detail=(
+            "actual is a static AST lower bound (functions named test_*, "
+            "counted directly, no pytest run) -- the true collected count "
+            "can only be higher (pytest.mark.parametrize expands one "
+            "function into several cases), never lower, so this can only "
+            "under-flag, not over-flag. Confirm by running the real suite "
+            "and update the claim, or remove the specific number if it "
+            "will keep going stale."
+        ),
+        attributes={
+            "documented_count": str(documented),
+            "static_lower_bound": str(actual),
+            "writable": "no" if refusal else "yes",
+            "not_writable_because": refusal or "",
+            "claim_context": " ".join(before.split()),
+        },
+        evidence=Evidence(
+            file=str(path), line_start=line, line_end=line,
+            snippet=" ".join((before + match.group(0)).split())[-160:],
+        ),
+    )
+
+
 @register("doc_test_count_drift")
 def detect_doc_test_count_drift(
     files: List[Path], min_growth_ratio: float = 1.15, min_absolute_growth: int = 10
@@ -1508,58 +1562,12 @@ def detect_doc_test_count_drift(
             continue
         for match in _TEST_COUNT_CLAIM_RE.finditer(text):
             documented = int(match.group(1))
-            if documented == 0:
-                continue
             before = claim_context(text, match.start())
             if claim_shape(before) is not None:
                 continue
-            if actual < documented * min_growth_ratio:
+            if not _is_test_count_stale(documented, actual, min_growth_ratio, min_absolute_growth):
                 continue
-            if actual - documented < min_absolute_growth:
-                continue
-            line = text.count("\n", 0, match.start()) + 1
-            refusal = why_not_writable(
-                path.name,
-                text[max(0, match.start() - _WRITABILITY_LOOKBACK):match.start()],
-                text[match.end():match.end() + _WRITABILITY_LOOKBACK])
-            findings.append(Finding(
-                detector="doc_test_count_drift",
-                category=Category.DOC_DRIFT,
-                layer=Layer.MECHANICAL,
-                severity=Severity.MINOR,
-                status=Status.CONFIRMED,
-                summary=(
-                    f"'{path.name}' claims {documented} test(s), but at least "
-                    f"{actual} test_* function(s) exist in the scanned .py files "
-                    "-- this claim is stale"
-                ),
-                detail=(
-                    "actual is a static AST lower bound (functions named test_*, "
-                    "counted directly, no pytest run) -- the true collected count "
-                    "can only be higher (pytest.mark.parametrize expands one "
-                    "function into several cases), never lower, so this can only "
-                    "under-flag, not over-flag. Confirm by running the real suite "
-                    "and update the claim, or remove the specific number if it "
-                    "will keep going stale."
-                ),
-                attributes={
-                    "documented_count": str(documented),
-                    "static_lower_bound": str(actual),
-                    # Reported either way; rewritten only when this is "yes".
-                    # See why_not_writable: a claim worth telling somebody
-                    # about is not automatically one a machine may edit.
-                    "writable": "no" if refusal else "yes",
-                    "not_writable_because": refusal or "",
-                    # The text this claim sits in, so a consumer can re-run
-                    # claim_shape() itself instead of assuming the claim was
-                    # already filtered. correlate.py does.
-                    "claim_context": " ".join(before.split()),
-                },
-                evidence=Evidence(
-                    file=str(path), line_start=line, line_end=line,
-                    snippet=" ".join((before + match.group(0)).split())[-160:],
-                ),
-            ))
+            findings.append(_build_drift_finding(path, text, match, documented, actual))
     return findings
 
 
