@@ -942,6 +942,56 @@ def detect_duplicate_files(files: List[Path]) -> List[Finding]:
     return findings
 
 
+def _build_fingerprints(representatives: List[Path], min_lines: int) -> Dict[str, List[tuple]]:
+    """Build structural fingerprints for all functions in representative files."""
+    by_fingerprint: Dict[str, List[tuple]] = {}
+    for path in representatives:
+        tree = _parse(path)
+        if tree is None:
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if node.end_lineno is None or (node.end_lineno - node.lineno) < min_lines:
+                    continue
+                fp = _structural_fingerprint(node)
+                by_fingerprint.setdefault(fp, []).append((path, node))
+    return by_fingerprint
+
+
+def _build_duplicate_finding(fp: str, occurrences: List[tuple]) -> Finding:
+    """Build a Finding for a cluster of duplicate functions."""
+    names = [f"{p.name}:{n.lineno}:{n.name}" for p, n in occurrences]
+    primary_path, primary_node = occurrences[0]
+    if all(_is_test_file(p) for p, _ in occurrences):
+        severity = Severity.INFORMATIONAL
+    elif len(occurrences) > 2:
+        severity = Severity.MAJOR
+    else:
+        severity = Severity.MINOR
+    return Finding(
+        detector="near_duplicate_function",
+        category=Category.DUPLICATION,
+        layer=Layer.MECHANICAL,
+        severity=severity,
+        status=Status.CONFIRMED,
+        summary=(
+            f"{len(occurrences)} functions share identical AST structure "
+            f"(names/literals differ, control flow and shape don't): {', '.join(names)}"
+        ),
+        detail=(
+            "Structural fingerprint match, not textual diff -- this is the "
+            "'copy-pasted then renamed' shape specifically. Confirm these are "
+            "actually solving the same problem before merging; some structural "
+            "matches are coincidental (e.g. two unrelated simple validators)."
+        ),
+        evidence=Evidence(
+            file=str(primary_path), line_start=primary_node.lineno,
+            line_end=primary_node.end_lineno,
+            related_files=[str(p) for p, _ in occurrences[1:]],
+        ),
+    )
+
+
 @register("near_duplicate_function")
 def detect_near_duplicate_functions(files: List[Path], min_lines: int = 10) -> List[Finding]:
     """Groups functions by structural fingerprint; any group with 2+
@@ -963,73 +1013,18 @@ def detect_near_duplicate_functions(files: List[Path], min_lines: int = 10) -> L
         suite looks like, and the README had already disclosed it as the
         detector's dominant noise. MAJOR findings went from 42 to 27.
     """
-    representatives: List[Path] = []
     seen_twins = set()
     for _digest, group in _identical_file_groups(files):
         for path in sorted(group)[1:]:
             seen_twins.add(path)
     representatives = [p for p in files if p not in seen_twins]
 
-    by_fingerprint: Dict[str, List[tuple]] = {}
-    for path in representatives:
-        tree = _parse(path)
-        if tree is None:
-            continue
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                if node.end_lineno is None:
-                    continue
-                if (node.end_lineno - node.lineno) < min_lines:
-                    continue
-                fp = _structural_fingerprint(node)
-                by_fingerprint.setdefault(fp, []).append((path, node))
+    by_fingerprint = _build_fingerprints(representatives, min_lines)
 
     findings: List[Finding] = []
     for fp, occurrences in by_fingerprint.items():
-        if len(occurrences) < 2:
-            continue
-        # One label per OCCURRENCE, not per unique (file, name) pair --
-        # v0.1.2 bug fix, found via a real run against HERALD's own test
-        # suite: two distinct nested functions both happened to be named
-        # `thread_b` in the same file (a legitimate, common pattern --
-        # multiple similarly-shaped test functions each defining their
-        # own locally-scoped helper of the same name). The original
-        # `{f"{p.name}:{n.name}"}` SET silently collapsed both into one
-        # identical string, producing a finding that claimed "2 functions
-        # share..." while naming only one -- correct occurrence count,
-        # misleading/incomplete label. Line numbers make every label
-        # unique by construction; a plain list (not a set) means no
-        # future case can silently lose an occurrence this way again.
-        names = [f"{p.name}:{n.lineno}:{n.name}" for p, n in occurrences]
-        primary_path, primary_node = occurrences[0]
-        if all(_is_test_file(p) for p, _ in occurrences):
-            severity = Severity.INFORMATIONAL
-        elif len(occurrences) > 2:
-            severity = Severity.MAJOR
-        else:
-            severity = Severity.MINOR
-        findings.append(Finding(
-            detector="near_duplicate_function",
-            category=Category.DUPLICATION,
-            layer=Layer.MECHANICAL,
-            severity=severity,
-            status=Status.CONFIRMED,
-            summary=(
-                f"{len(occurrences)} functions share identical AST structure "
-                f"(names/literals differ, control flow and shape don't): {', '.join(names)}"
-            ),
-            detail=(
-                "Structural fingerprint match, not textual diff -- this is the "
-                "'copy-pasted then renamed' shape specifically. Confirm these are "
-                "actually solving the same problem before merging; some structural "
-                "matches are coincidental (e.g. two unrelated simple validators)."
-            ),
-            evidence=Evidence(
-                file=str(primary_path), line_start=primary_node.lineno,
-                line_end=primary_node.end_lineno,
-                related_files=[str(p) for p, _ in occurrences[1:]],
-            ),
-        ))
+        if len(occurrences) >= 2:
+            findings.append(_build_duplicate_finding(fp, occurrences))
     return findings
 
 
