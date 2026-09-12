@@ -376,17 +376,233 @@ def test_it_says_the_production_was_a_test(tmp_path):
     assert 'proves it is handled' in found[0].detail
 
 
-def test_weaker_evidence_gets_a_weaker_severity(tmp_path):
-    """A state nothing produces is MINOR. A state only a test produces is
-    INFORMATIONAL, because deliberate and accidental look identical from
-    here and the reader has to be able to filter."""
+def test_a_test_producing_it_does_not_buy_a_lower_severity(tmp_path):
+    """THE 1.7.7 DEFECT, WRITTEN DOWN SO IT CANNOT COME BACK.
+
+    1.7.7 reported a test-only state at INFORMATIONAL instead of MINOR, on
+    the reasoning that somebody constructing the state deliberately is weak
+    evidence it was meant to be unreachable.
+
+    The reasoning was wrong in a way that generalises. A test file is the
+    cheapest artifact anyone can add to a repository, so grading it measures
+    willingness to type, not intent. An adversary looking for a cheap edit
+    that changes this tool's verdict was handed one, and the comment next to
+    it explained where.
+
+    Evidence that costs nothing to manufacture never lowers a severity here.
+    """
     from ghost_buster.mechanical import detect_unreachable_declared_state
     only_tests = detect_unreachable_declared_state(
-        _files(tmp_path, lib=LIB, test_phase=TEST_PRODUCES))
-    nothing = detect_unreachable_declared_state(_files(tmp_path, lib=LIB))
-    assert only_tests[0].severity is Severity.INFORMATIONAL
-    assert nothing[0].severity is Severity.MINOR
-    assert nothing[0].severity > only_tests[0].severity
+        _files(tmp_path, lib=LIB, test_phase=TEST_PRODUCES), history=False)
+    nothing = detect_unreachable_declared_state(
+        _files(tmp_path, lib=LIB), history=False)
+    assert only_tests[0].severity is nothing[0].severity
+    assert only_tests[0].severity is Severity.MINOR
+    # Still recorded, because it is true and a reader may want it. Recorded
+    # is not the same as credited.
+    assert only_tests[0].attributes["produced_by_tests_only"] == "yes"
+    assert nothing[0].attributes["produced_by_tests_only"] == "no"
+
+
+# ---------------------------------------------------------------------------
+# Structural reachability: a member built from a runtime value is reachable
+# ---------------------------------------------------------------------------
+
+FROM_DATA = '''
+    from enum import Enum
+
+    class Phase(Enum):
+        BUILD = "build"
+        BETWEEN = "between"
+
+    def build():
+        return Phase.BUILD
+
+    def load(record):
+        return Phase(record["phase"])
+'''
+
+DOCUMENTED = '''
+    from enum import Enum
+
+    class Phase(Enum):
+        """Phases.
+
+        produced here      BUILD
+        arrives from data  BETWEEN
+        """
+        BUILD = "build"
+        BETWEEN = "between"
+
+    def build():
+        return Phase.BUILD
+
+    def load(record):
+        return Phase(record["phase"])
+'''
+
+CLAIMED_ONLY = '''
+    from enum import Enum
+
+    class Phase(Enum):
+        """Phases.
+
+        produced here      BUILD
+        arrives from data  BETWEEN
+        """
+        BUILD = "build"
+        BETWEEN = "between"
+
+    def build():
+        return Phase.BUILD
+'''
+
+
+def test_a_member_built_from_a_runtime_value_is_reachable(tmp_path):
+    """`Phase(record["phase"])` can produce any member. A detector that only
+    looks for `Phase.BETWEEN` calls that member unreachable, which is not a
+    near miss but the opposite of the truth.
+
+    This was a live false positive: `Status.CONFIRMED_BY_REVIEW` and
+    `Status.REJECTED` in this repository, reported at the top severity this
+    detector emitted, while `Finding.from_dict` built either from a stored
+    record thirty lines away.
+    """
+    found = _scan(tmp_path, m=FROM_DATA)
+    assert [f.severity for f in found] == [Severity.MINOR]
+    assert found[0].attributes["reachable_from_data"] == "yes"
+
+
+def test_a_documented_data_path_is_silent(tmp_path):
+    """Reachable, and the enum says so. Nothing to report."""
+    assert _scan(tmp_path, m=DOCUMENTED) == []
+
+
+def test_an_undocumented_data_path_is_worth_one_line(tmp_path):
+    """Reachable but unexplained. The member looks abandoned to a reader, and
+    the next person tidying up deletes it and turns reading an old file into
+    a crash."""
+    found = _scan(tmp_path, m=FROM_DATA)
+    assert found[0].attributes["documented_as_from_data"] == "no"
+    assert "nothing says so" in found[0].summary
+
+
+def test_a_claim_the_code_does_not_back_is_critical(tmp_path):
+    """PROSE CANNOT BUY A LOWER SEVERITY, AND CAN BUY A HIGHER ONE.
+
+    A docstring saying a member arrives from stored data, with nothing
+    building the enum from a value, is worse than silence: an undocumented
+    gap is a gap, a documented one is a gap plus an assurance that it is
+    fine, and the assurance is what stops the next reader looking.
+
+    CRITICAL is this repository's own definition -- "actively misleading or
+    dangerous if acted on" -- applied rather than stretched.
+    """
+    found = _scan(tmp_path, m=CLAIMED_ONLY)
+    assert [f.severity for f in found] == [Severity.CRITICAL]
+    assert found[0].attributes["documented_as_from_data"] == "yes"
+    assert found[0].attributes["reachable_from_data"] == "no"
+
+
+def test_a_claim_alone_never_suppresses(tmp_path):
+    """The asymmetry stated as a test. Without structure behind it the claim
+    does not quiet the finding, it escalates it."""
+    claimed = _scan(tmp_path, m=CLAIMED_ONLY)
+    assert claimed, "a bare claim must not suppress the finding"
+    assert claimed[0].severity is Severity.CRITICAL
+
+
+def test_a_literal_argument_only_accounts_for_its_own_member(tmp_path):
+    """`Phase("middle")` accounts for MIDDLE and says nothing about BETWEEN.
+    Treating every construction as a blanket data path would suppress real
+    findings wherever anyone wrote one literal."""
+    found = _scan(tmp_path, m='''
+        from enum import Enum
+
+        class Phase(Enum):
+            BUILD = "build"
+            MIDDLE = "middle"
+            BETWEEN = "between"
+
+        def build():
+            return Phase.BUILD
+
+        def middle():
+            return Phase("middle")
+    ''')
+    reach = {f.attributes["member"]: f.attributes["reachable_from_data"]
+             for f in found}
+    assert reach == {"MIDDLE": "yes", "BETWEEN": "no"}
+
+
+def test_mentioning_a_member_is_not_a_claim_about_it(tmp_path):
+    """A docstring that merely NAMES the member says nothing about how it
+    arrives. Treating any line naming a member as a claim would turn every
+    documented enum into a CRITICAL, which is how an escalation rule becomes
+    a reason to stop writing docstrings."""
+    found = _scan(tmp_path, m='''
+        from enum import Enum
+
+        class Phase(Enum):
+            """Phases.
+
+            BETWEEN is not used yet.
+            """
+            BUILD = "build"
+            BETWEEN = "between"
+
+        def build():
+            return Phase.BUILD
+    ''')
+    assert [f.severity for f in found] == [Severity.MINOR]
+    assert found[0].attributes["documented_as_from_data"] == "no"
+
+
+def test_a_claim_can_cover_the_whole_enum_without_naming_members(tmp_path):
+    """"`Finding.from_dict` reconstructs any member from a stored record" is
+    how this repository actually states it, and it names nobody. A reader of
+    the claim form that only matched named members would miss the commonest
+    way the claim is written."""
+    found = _scan(tmp_path, m='''
+        from enum import Enum
+
+        class Phase(Enum):
+            """Phases. `load` reconstructs any member from a stored record."""
+            BUILD = "build"
+            BETWEEN = "between"
+
+        def build():
+            return Phase.BUILD
+
+        def load(record):
+            return Phase(record["phase"])
+    ''')
+    assert found == [], "a blanket claim, backed by a data path, is satisfied"
+
+
+def test_a_member_name_is_not_matched_inside_a_longer_one(tmp_path):
+    """`CONFIRMED` must not be found inside `CONFIRMED_BY_REVIEW`. An
+    underscore is a word character, so the boundary does this without a
+    special case -- and a mutant dropping the boundaries proves it matters."""
+    found = _scan(tmp_path, m='''
+        from enum import Enum
+
+        class S(Enum):
+            """States.
+
+            arrives from data  CONFIRMED_BY_REVIEW
+            """
+            CONFIRMED = "c"
+            CONFIRMED_BY_REVIEW = "cbr"
+            OTHER = "o"
+
+        def f():
+            return S.OTHER
+    ''')
+    claimed = {f.attributes["member"]: f.attributes["documented_as_from_data"]
+               for f in found}
+    assert claimed["CONFIRMED_BY_REVIEW"] == "yes"
+    assert claimed["CONFIRMED"] == "no"
 
 
 def test_a_state_the_library_produces_is_silent_either_way(tmp_path):
@@ -451,3 +667,36 @@ def test_the_defect_this_was_built_for(tmp_path):
             pass
     ''')
     assert [f.attributes["member"] for f in found] == ["BETWEEN_RUNS"]
+
+
+def test_a_data_path_written_in_a_test_does_not_clear_the_finding(tmp_path):
+    """THE SAME HOLE, ONE LEVEL UP.
+
+    Structural evidence clears this finding because faking it means writing a
+    real deserialiser. That argument only holds for LIBRARY code. A
+    `Phase(record["phase"])` in a test file is barely more typing than naming
+    the member, and if it counted, the free lever this version exists to
+    remove would be back -- clearing the finding outright rather than merely
+    discounting it.
+    """
+    lib = '''
+        from enum import Enum
+
+        class Phase(Enum):
+            BUILD = "build"
+            BETWEEN = "between"
+
+        def build():
+            return Phase.BUILD
+    '''
+    test = '''
+        from lib import Phase
+
+        def test_round_trip(record):
+            return Phase(record["phase"])
+    '''
+    found = detect_unreachable_declared_state(
+        _files(tmp_path, lib=lib, test_phase=test), history=False)
+    assert [f.attributes["member"] for f in found] == ["BETWEEN"]
+    assert found[0].attributes["reachable_from_data"] == "no"
+    assert found[0].severity is Severity.MINOR

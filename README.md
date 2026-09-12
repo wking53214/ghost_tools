@@ -179,7 +179,7 @@ is checked against `registered_detectors()` by the test suite.
 | `near_duplicate_function` | two functions with the same structural fingerprint | MAJOR |
 | `intra_function_duplicate_block` | repeated branch bodies inside one function | MAJOR |
 | `swallowed_exception` | a handler that catches something and does nothing | MAJOR |
-| `unreachable_declared_state` | an enum member no code produces, in an enum whose others it does | MINOR |
+| `unreachable_declared_state` | an enum member no code produces, in an enum whose others it does | MINOR&nbsp;/&nbsp;MAJOR&nbsp;/&nbsp;CRITICAL |
 | `doc_test_count_drift` | a test count in a markdown file the real suite has grown well past | MINOR |
 | `name_disagreement` | one value passed under two names, only where it is a bijection | MINOR |
 | `vestigial_domain_name` | an identifier carrying a domain this repository no longer has | MINOR |
@@ -190,6 +190,20 @@ is checked against `registered_detectors()` by the test suite.
 | `unauthenticated_route` | a route with no auth while most of its siblings have it | MAJOR |
 | `loop_invariant_call` | a call inside a loop whose arguments the loop cannot change (a serum pitstop) | MINOR |
 | `list_membership_in_loop` | membership tests against a list literal inside a loop (a serum pitstop) | MINOR |
+
+One detector reads more than the files on disk. `unreachable_declared_state`
+grades a declared-but-unproduced enum member by what the evidence costs to
+fake. Structure clears it: something building the enum from a runtime value
+(`Status(row["s"])`) means the member really can arrive, and faking that
+means writing a real deserialiser. Prose never clears it on its own, and a
+docstring claiming a member arrives from stored data with no such path is
+CRITICAL -- a documented gap is a gap plus an assurance that stops the next
+reader looking. And git history, through `ghost_buster/forensics.py`,
+separates a state nobody wired up (MINOR) from one a commit stopped
+producing (MAJOR), including the case where the last production moved out of
+library code and into a test. An unreadable history grades at the weight of
+what was actually observed and never escalates; `history=False` makes the
+detector a pure function of the files on disk.
 
 Beside the detectors, six repository-level checks and two passes over
 everything, each with its own section below: unmerged branches, test
@@ -1577,7 +1591,7 @@ package uses for its model-client tests. `test_branches.py`,
 repositories and pytest projects in `tmp_path` instead, the only honest way
 to test a ref-graph, git-history or suite-execution check (the secrets
 suite against a real gitleaks binary, skipped if one is not on PATH).
-`test_mutation.py` and the 52 `Tests/*_mutants.py` files run pytest in
+`test_mutation.py` and the 53 `Tests/*_mutants.py` files run pytest in
 subprocesses against scratch copies of the project, each mutant file
 breaking one component a named number of ways and requiring every mutant
 to fail a test; they account for most of the suite's wall-clock time. A

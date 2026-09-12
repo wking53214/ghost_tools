@@ -1,10 +1,20 @@
 """mechanical.py -- Layer 1: deterministic, AST-based detectors.
 
-Every detector here is a pure function of the files on disk: same input,
-same output, every time. No API calls, no LLM, nothing probabilistic --
-which is exactly why every finding this layer produces is Status.CONFIRMED
-(see schema.py's module docstring for why that's enforced, not just a
-convention).
+Every detector here is deterministic: same input, same output, every time.
+No API calls, no LLM, nothing probabilistic -- which is exactly why every
+finding this layer produces is Status.CONFIRMED (see schema.py's module
+docstring for why that's enforced, not just a convention).
+
+ONE OF THEM READS MORE THAN THE FILES ON DISK
+
+`unreachable_declared_state` consults git history, through forensics.py, to
+tell a state nobody wired up from a state something stopped producing. It is
+still deterministic -- a commit graph does not change under it -- but it is
+no longer a function of the working tree alone, and this paragraph exists
+because the sentence above used to say "a pure function of the files on
+disk" and quietly stopped being true. It takes `history=False` for callers
+that need the narrower guarantee, and reports UNKNOWN provenance rather than
+a different answer when history cannot be read.
 
 Stdlib only (ast, hashlib) -- no third-party dependency for v0.1. This
 intentionally does NOT try to out-do purpose-built tools like vulture,
@@ -22,7 +32,7 @@ import re
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional, Set, Tuple
 
-from . import corpus
+from . import corpus, forensics
 from .schema import Category, Evidence, Finding, Layer, Severity, Status, _portable_path
 
 DetectorFn = Callable[[List[Path]], List[Finding]]
@@ -679,8 +689,192 @@ def detect_unassessable_file(files: List[Path]) -> List[Finding]:
 _ENUM_BASES = frozenset({"Enum", "IntEnum", "StrEnum", "Flag", "IntFlag"})
 
 
+# ---------------------------------------------------------------------------
+# INTENT, AND WHAT COUNTS AS EVIDENCE OF IT
+#
+# A member declared and not produced can be an oversight or a decision, and
+# the two want different answers. The temptation is to look for something
+# that correlates with a decision and treat it as the decision. This detector
+# did exactly that in 1.7.7: it took "a test constructs it" as a sign the
+# state was deliberately unreachable and cut the severity.
+#
+# That was wrong in a way worth writing down, because it is the general
+# mistake. A test file is the cheapest artifact anyone can add to a
+# repository. Grading evidence that an adversary can manufacture for free
+# does not measure intent; it measures willingness to type. The harness that
+# attacks this tool exists to find edits that change its verdict cheaply, and
+# that change handed it one.
+#
+# So evidence is ranked here by what it costs to fake:
+#
+#   FREE, and never reduces a severity
+#       A test constructs the member. A comment says it is fine. One file,
+#       no behaviour.
+#
+#   STRUCTURAL, and can clear the finding entirely
+#       Something builds the enum from a runtime value -- `Status(row["s"])`
+#       -- so any member can arrive from stored data. Faking this means
+#       writing a real deserialiser, at which point it is not fake: the
+#       member genuinely is reachable.
+#
+#   HISTORICAL, and raises a severity
+#       Library code used to produce it. See forensics.py. Being unable to
+#       read history yields UNKNOWN and never an escalation.
+#
+# The asymmetry between prose and structure is deliberate and is the whole
+# design. A docstring claiming a member arrives from data SUPPRESSES nothing
+# on its own; the structure has to be there. But a docstring making that
+# claim when the structure is ABSENT is worse than silence, because a reader
+# believes a state is reachable that is not. Prose cannot buy a lower
+# severity, and it can buy a higher one. Claims are free to write and so are
+# only ever held against the writer.
+# ---------------------------------------------------------------------------
+
+_CLAIMS_FROM_DATA = re.compile(
+    r"\barrives?\s+(?:only\s+|here\s+)?from\b"
+    r"|\bcomes?\s+(?:only\s+)?from\s+(?:a\s+|the\s+)?(?:stored|saved|data|record)"
+    r"|\breconstruct(?:s|ed|ing)?\s+(?:any\s+|a\s+|the\s+)?\w*\s*from\b"
+    r"|\bread\s+back\b"
+    r"|\bdeserial"
+    r"|\bfrom_dict\b"
+    r"|\bfrom\s+(?:a\s+|the\s+)?(?:stored|saved|persisted|serialised|serialized)\b"
+    r"|\bloaded\s+from\b",
+    re.I)
+
+# A claim that covers the whole enum rather than naming members, as in
+# "`Finding.from_dict` reconstructs any member from a stored record".
+_BLANKET_MEMBER = re.compile(r"\b(?:any|every|all|each)\s+members?\b", re.I)
+
+
+def _declared_data_reachable(doc: str, members: Set[str]) -> Set[str]:
+    """Members the enum's own docstring says arrive from stored data.
+
+    Matched per LINE rather than per sentence, because the claim is as often
+    a table row as a sentence:
+
+        produced here      CONFIRMED, REASONED, SUPPRESSED
+        arrives from data  CONFIRMED_BY_REVIEW, REJECTED
+
+    Member names are matched on word boundaries, so `CONFIRMED` is not found
+    inside `CONFIRMED_BY_REVIEW`: an underscore is a word character, which
+    makes the boundary do the right thing here without a special case.
+
+    This reads a claim. It does not believe it. The caller checks the claim
+    against the code and the interesting outcome is the one where they
+    disagree.
+    """
+    if not doc:
+        return set()
+    claimed: Set[str] = set()
+    for line in doc.splitlines():
+        if not _CLAIMS_FROM_DATA.search(line):
+            continue
+        named = {m for m in members
+                 if re.search(r"\b" + re.escape(m) + r"\b", line)}
+        if named:
+            claimed |= named
+        elif _BLANKET_MEMBER.search(line):
+            claimed |= set(members)
+    return claimed
+
+
+def _reachable_from_data(parsed, declared) -> Dict[str, Set[str]]:
+    """Members that can arrive by building the enum from a runtime value.
+
+    `Status.CONFIRMED` is an attribute access and is what `_members_produced`
+    looks for. `Status(payload["status"])` is not, and is how most members of
+    most enums actually come into existence in a program that reads its own
+    output back. A detector blind to it reports every deserialised-only
+    member as unreachable, which is not a near miss but the opposite of the
+    truth.
+
+    A NON-LITERAL argument means any member can arrive. A literal names one,
+    resolved by value for a call and by name for a subscript, so
+    `Status("confirmed")` and `Status["CONFIRMED"]` each account for exactly
+    the member they produce and no more.
+    """
+    values: Dict[str, Dict[object, str]] = {}
+    for enum, members in declared.items():
+        values[enum] = {v: m for m, (_p, _l, v) in members.items()
+                        if v is not None}
+    out: Dict[str, Set[str]] = {enum: set() for enum in declared}
+    for _path, tree in parsed.items():
+        for node in ast.walk(tree):
+            enum: Optional[str] = None
+            arg = None
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                    and node.func.id in declared and node.args):
+                enum, arg = node.func.id, node.args[0]
+            elif (isinstance(node, ast.Subscript)
+                  and isinstance(node.value, ast.Name)
+                  and node.value.id in declared):
+                enum, arg = node.value.id, node.slice
+            elif (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                  and node.func.id == "getattr" and len(node.args) >= 2
+                  and isinstance(node.args[0], ast.Name)
+                  and node.args[0].id in declared):
+                enum, arg = node.args[0].id, node.args[1]
+            if enum is None:
+                continue
+            if isinstance(arg, ast.Constant):
+                named = values[enum].get(arg.value)
+                if named is None and arg.value in declared[enum]:
+                    named = arg.value
+                if named is not None:
+                    out[enum].add(named)
+            else:
+                out[enum] |= set(declared[enum])
+    return out
+
+
+def _within(root: Path, path: Path) -> bool:
+    """Is `path` inside `root`? Resolved, so a symlinked or relative path
+    answers the same as the absolute one."""
+    try:
+        Path(path).resolve().relative_to(Path(root).resolve())
+    except (ValueError, OSError):
+        return False
+    return True
+
+
+def _analyse_sources(sources: Dict[str, str]) -> Tuple[Set[str], Set[str]]:
+    """(produced in library, produced in tests) for source text off a commit.
+
+    Handed to forensics.py so the question asked of a past revision is the
+    same question asked of the working tree. If this drifted from what the
+    detector does at HEAD, every historical comparison would be between two
+    different measurements and the escalations built on it would be noise.
+    """
+    library, tests = {}, {}
+    for name, text in sources.items():
+        try:
+            tree = ast.parse(text)
+        except (SyntaxError, ValueError):
+            continue
+        path = Path(name)
+        (tests if _looks_like_a_test(path) else library)[path] = tree
+    return _members_produced(library), _members_produced(tests)
+
+
+_HISTORY_SEVERITY = {
+    forensics.Provenance.NEVER_PRODUCED: Severity.MINOR,
+    forensics.Provenance.REMOVED_FROM_LIBRARY: Severity.MAJOR,
+    forensics.Provenance.RELOCATED_TO_TESTS: Severity.MAJOR,
+    forensics.Provenance.UNKNOWN: Severity.MINOR,
+}
+
+
 @register("unreachable_declared_state")
-def detect_unreachable_declared_state(files: List[Path]) -> List[Finding]:
+def detect_unreachable_declared_state(
+        files: List[Path], *, history: bool = True) -> List[Finding]:
+    """Enum members declared as states the code cannot reach.
+
+    `history` consults git to tell an oversight from a removal. It is a
+    parameter rather than an assumption so a caller that needs a pure
+    function of the files -- a test, a reproducible calibration run -- can
+    have one, and gets UNKNOWN provenance rather than a silently different
+    answer.
+    """
     parsed = {}
     for path in files:
         if path.suffix != ".py":
@@ -689,8 +883,9 @@ def detect_unreachable_declared_state(files: List[Path]) -> List[Finding]:
         if tree is not None:
             parsed[path] = tree
 
-    # enum name -> {member -> (path, line)}
+    # enum name -> {member -> (path, line, literal value or None)}
     declared: Dict[str, Dict[str, tuple]] = {}
+    docs: Dict[str, str] = {}
     for path, tree in parsed.items():
         for node in ast.walk(tree):
             if not isinstance(node, ast.ClassDef):
@@ -700,13 +895,18 @@ def detect_unreachable_declared_state(files: List[Path]) -> List[Finding]:
                      for b in node.bases}
             if not (bases & _ENUM_BASES):
                 continue
+            doc = ast.get_docstring(node)
+            if doc:
+                docs[node.name] = docs.get(node.name, "") + "\n" + doc
             for item in node.body:
                 if not isinstance(item, ast.Assign):
                     continue
+                value = (item.value.value
+                         if isinstance(item.value, ast.Constant) else None)
                 for target in item.targets:
                     if isinstance(target, ast.Name) and target.id.isupper():
                         declared.setdefault(node.name, {})[target.id] = (
-                            path, item.lineno)
+                            path, item.lineno, value)
 
     if not declared:
         return []
@@ -721,9 +921,18 @@ def detect_unreachable_declared_state(files: List[Path]) -> List[Finding]:
     # if a single test had named the phase, and a test naming it is the most
     # likely thing in the world.
     produced = _members_produced(parsed)
-    in_library = _members_produced(
-        {path: tree for path, tree in parsed.items()
-         if not _looks_like_a_test(path)})
+    library = {path: tree for path, tree in parsed.items()
+               if not _looks_like_a_test(path)}
+    in_library = _members_produced(library)
+    # LIBRARY ONLY, for the same reason productions are counted library only.
+    # A deserialiser in a test does not make the running system able to
+    # produce the state, and counting one would hand back the free lever this
+    # version exists to remove: `Phase(record["x"])` in a test file is barely
+    # more typing than naming the member, and would clear the finding
+    # outright rather than merely discount it.
+    from_data = _reachable_from_data(library, declared)
+
+    root = forensics.repo_root(files) if history else None
 
     out: List[Finding] = []
     for enum, members in sorted(declared.items()):
@@ -737,30 +946,146 @@ def detect_unreachable_declared_state(files: List[Path]) -> List[Finding]:
         # deleting it survived, which is how it was found.
         if not live:
             continue
+        claimed = _declared_data_reachable(docs.get(enum, ""), set(members))
         for member in sorted(set(members) - live):
-            path, line = members[member]
+            path, line, _value = members[member]
+            reachable = member in from_data.get(enum, set())
+            claims = member in claimed
             only_tests = member in produced
+            attributes = {
+                "enum": enum, "member": member,
+                "produced_members": str(len(live)),
+                "declared_members": str(len(members)),
+                "produced_by_tests_only": "yes" if only_tests else "no",
+                "reachable_from_data": "yes" if reachable else "no",
+                "documented_as_from_data": "yes" if claims else "no",
+            }
+
+            # Structure present, and the enum says so. The member is
+            # reachable and the reader is told. Nothing to report.
+            if reachable and claims:
+                continue
+
+            if reachable and not claims:
+                out.append(Finding(
+                    detector="unreachable_declared_state",
+                    category=Category.OTHER,
+                    layer=Layer.MECHANICAL,
+                    # NOT informational. The member arrives from data into
+                    # code that never produces it, so every branch handling
+                    # it was written by somebody who never made one, and is
+                    # untested by construction. That is the mechanism of the
+                    # defect this detector was built for: a phase a stored
+                    # record could carry, reaching a builder that carried out
+                    # the other three.
+                    severity=Severity.MINOR,
+                    status=Status.CONFIRMED,
+                    summary=(f"'{enum}.{member}' is produced only by reading "
+                             f"stored data, and nothing says so"),
+                    evidence=Evidence(file=str(path), line_start=line,
+                                      line_end=line),
+                    detail=(
+                        "No code here produces this member, but something "
+                        f"builds {enum} from a runtime value, so a stored "
+                        "record can carry it in. The finding is not that the "
+                        "state is dead. It is that the state arrives from "
+                        "outside into code that never intends it.\n\n"
+                        "Check what happens when it does. Anything "
+                        f"dispatching on {enum} was written by people who "
+                        "never produce this member, so the branch for it -- "
+                        "if there is one -- is untested by construction, and "
+                        "if there is not, the dispatch quietly does "
+                        "nothing.\n\n"
+                        "A reader cannot tell either: a member nothing "
+                        "assigns looks abandoned, and the next person tidying "
+                        "up deletes it and turns reading an old record into a "
+                        "crash. Saying so in the enum's docstring costs a "
+                        "line and is checked -- this tool verifies the claim "
+                        "against the code, and reports it if the data path is "
+                        "ever removed."
+                    ),
+                    attributes=attributes,
+                ))
+                continue
+
+            if claims:
+                # A claim the code does not back. Worse than saying nothing,
+                # because a reader who acts on it writes a handler for a
+                # state that cannot arrive, or keeps a member alive on the
+                # strength of a deserialiser that no longer exists.
+                out.append(Finding(
+                    detector="unreachable_declared_state",
+                    category=Category.OTHER,
+                    layer=Layer.MECHANICAL,
+                    severity=Severity.CRITICAL,
+                    status=Status.CONFIRMED,
+                    summary=(f"'{enum}' documents '{member}' as arriving from "
+                             f"stored data, and nothing builds {enum} from a "
+                             f"value"),
+                    evidence=Evidence(file=str(path), line_start=line,
+                                      line_end=line),
+                    detail=(
+                        f"The docstring of {enum} says this member arrives "
+                        "from stored data. No code here constructs the enum "
+                        f"from a runtime value -- no `{enum}(...)` on a "
+                        "non-literal, no subscript, no getattr -- so there is "
+                        "no path by which it can.\n\n"
+                        "This is reported above an ordinary unreachable "
+                        "member, not below it. An undocumented gap is a gap. "
+                        "A documented one is a gap plus an assurance that it "
+                        "is fine, and the assurance is what stops the next "
+                        "reader looking. Either restore the path that made "
+                        "the claim true, or delete the claim and let the "
+                        "member be judged on what the code actually does."
+                    ),
+                    attributes=attributes,
+                ))
+                continue
+
+            # No structure, no claim. Ask history why.
+            #
+            # Only for a declaration that actually lives in the repository
+            # being read. A scan can be handed files from more than one place
+            # -- `--join` reads two repositories -- and asking THIS repository
+            # about a member declared in another one gets a confident
+            # NEVER_PRODUCED off a search of the wrong history. Not knowing is
+            # the correct answer there.
+            provenance = forensics.Provenance.UNKNOWN
+            if root is not None and _within(root, path):
+                provenance = forensics.provenance(
+                    root, enum, member, analyse=_analyse_sources)
+            attributes["provenance"] = provenance.value
+
             where = ("only test code puts anything into it"
                      if only_tests else "no code ever puts anything into it")
+            became = {
+                forensics.Provenance.NEVER_PRODUCED:
+                    "No commit ever produced it: it was declared and never "
+                    "wired up.",
+                forensics.Provenance.REMOVED_FROM_LIBRARY:
+                    "Library code used to produce it, and a commit removed "
+                    "the production and left the declaration standing. This "
+                    "is a regression, not an oversight, and it is reported "
+                    "above one.",
+                forensics.Provenance.RELOCATED_TO_TESTS:
+                    "The last production moved out of library code and into "
+                    "a test in a single commit. The state did not become "
+                    "more reachable; the evidence that it is unreachable "
+                    "became quieter. That is the shape of quieting this "
+                    "finding rather than answering it, and it is why a test "
+                    "producing a member never lowers a severity here.",
+                forensics.Provenance.UNKNOWN:
+                    "The history could not be read, so why it is unproduced "
+                    "is not known. That is not the same as nothing ever "
+                    "having produced it, and this finding is reported at the "
+                    "weight of the thing that was actually observed.",
+            }[provenance]
+
             out.append(Finding(
                 detector="unreachable_declared_state",
                 category=Category.OTHER,
                 layer=Layer.MECHANICAL,
-                # WEAKER EVIDENCE, WEAKER CLAIM.
-                #
-                # Nothing at all producing a member is a straightforward
-                # finding. A member only a test produces is a weaker signal:
-                # somebody deliberately constructed the state to prove it is
-                # handled, and "deliberately not produced" and "accidentally
-                # not produced" look identical from here.
-                #
-                # Measured: making the distinction added four true findings
-                # across two repositories and none of them was actionable --
-                # every one was a state reached from stored data or held
-                # unreachable on purpose. Reporting those at the same weight
-                # as a real gap is how a usable detector becomes a noisy one.
-                severity=(Severity.INFORMATIONAL if only_tests
-                          else Severity.MINOR),
+                severity=_HISTORY_SEVERITY[provenance],
                 status=Status.CONFIRMED,
                 summary=(f"'{enum}.{member}' is declared and {where}, though "
                          f"{len(live)} other member(s) of {enum} are produced"),
@@ -775,23 +1100,23 @@ def detect_unreachable_declared_state(files: List[Path]) -> List[Finding]:
                     "This is reported because OTHER members of the same enum "
                     "are produced. An enum reconstructed entirely from data is "
                     "not a defect and is not flagged.\n\n"
+                    + became + "\n\n"
                     + ("A test does construct it, which proves it is handled "
                        "and not that anything reaches it. Handling a state "
                        "nothing produces is the branch this finding is about.\n\n"
                        if only_tests else "")
-                    + "It does not claim the state is unreachable. A value read "
-                    "back from a stored record can still arrive here, which is "
-                    "worse rather than better: the state enters from data into "
-                    "code that never intends it. Either produce it, handle its "
-                    "arrival explicitly, or remove it -- and if something "
-                    "dispatches on this enum, check what that dispatch does "
-                    "when this member arrives, because today it may do nothing "
-                    "at all."
+                    + "It does not claim the state is unreachable. What is "
+                    "checked here is syntactic, and a value read back from a "
+                    "stored record can still arrive by a path this tool "
+                    "cannot see -- which is worse rather than better: the "
+                    "state enters from data into code that never intends "
+                    "it.\n\n"
+                    "Either produce it, give it a documented path in from "
+                    "stored data, or remove it -- and if something dispatches "
+                    "on this enum, check what that dispatch does when this "
+                    "member arrives, because today it may do nothing at all."
                 ),
-                attributes={"enum": enum, "member": member,
-                            "produced_members": str(len(live)),
-                            "declared_members": str(len(members)),
-                            "produced_by_tests_only": "yes" if only_tests else "no"},
+                attributes=attributes,
             ))
     return out
 

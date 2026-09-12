@@ -1,5 +1,121 @@
 # Changelog
 
+## 1.7.8 (2026-09-12)
+
+**Evidence that costs nothing to fake does not get to lower a severity.**
+
+1.7.7 discounted a test-only state to INFORMATIONAL, reasoning that somebody
+constructing a state deliberately is weak evidence it was meant to be
+unreachable. That reasoning was wrong, and wrong in a way worth writing down
+because it is the general mistake.
+
+A test file is the cheapest artifact anyone can add to a repository. Grading
+it does not measure intent; it measures willingness to type. The attack that
+1.7.7 was written to close -- one test naming the state -- therefore still
+worked, at a cost of one severity notch instead of total suppression, and a
+comment next to the discount explained exactly where the lever was. The
+harness that attacks this tool exists to find cheap edits that change its
+verdict, and 1.7.7 handed it one.
+
+The discount is gone. Three things replace it, ranked by what it costs to
+fake the evidence.
+
+**Structural: a member built from a runtime value is reachable.** `Status.X`
+is an attribute access and is what the detector looked for. `Status(row["s"])`
+is not, and is how most members of most enums actually come into existence
+in a program that reads its own output back. Subscript and `getattr` count
+too; a LITERAL argument accounts only for the member it names.
+
+This retired two FALSE POSITIVES in this repository. `Status.CONFIRMED_BY_REVIEW`
+and `Status.REJECTED` were reported at the top severity this detector emitted
+while `Finding.from_dict` built either of them from a stored record at
+`schema.py:347`. They had been hand-confirmed as true findings. They were not.
+
+Faking this evidence means writing a real deserialiser, at which point it is
+not fake -- but only in LIBRARY code, so that is the only place it counts. A
+`Phase(record["x"])` sitting in a test file is barely more typing than naming
+the member, and counting it would have restored the free lever in a stronger
+form: clearing the finding outright rather than merely discounting it.
+
+Reachable-from-data is not the same as fine, and is only silent when the
+enum SAYS so. A data path nobody documents stays MINOR, because the member
+then arrives from outside into code that never produces it: every branch
+handling it was written by somebody who never made one and is untested by
+construction, and if there is no branch the dispatch quietly does nothing.
+That is the mechanism of the defect this detector was built for. Pointed at
+SWIZZLE, `Phase.BETWEEN_RUNS` and `DocumentKind.CHANGELOG` land here --
+`genome.py` rebuilds both from a stored record, so a saved genome really can
+carry a phase the world builder never carries out.
+
+**Declared: prose is checked, never believed.** A docstring saying a member
+arrives from stored data suppresses nothing on its own -- the data path has
+to be there. The same claim with no data path is CRITICAL, which is this
+repository's own definition ("actively misleading or dangerous if acted on")
+applied rather than stretched: an undocumented gap is a gap, and a
+documented one is a gap plus an assurance that stops the next reader
+looking.
+
+The asymmetry is the design. A claim cannot buy a lower severity and can buy
+a higher one. Claims are free to write, so they are only ever held against
+the writer.
+
+**Historical: the timeline separates an oversight from an act.** New module
+`ghost_buster/forensics.py` walks git history to answer why a member is
+unproduced. Never wired up is MINOR. Library code produced it and a commit
+removed the production while leaving the declaration standing is MAJOR: that
+is a regression wearing an oversight's clothes.
+
+And the case the module was built for -- the last production MOVED out of
+library code and into a test in one commit. The state became no more
+reachable; the evidence that it is unreachable became quieter. That is the
+shape of quieting this detector rather than answering it.
+
+Note the inversion. "Only a test produces it" read as a snapshot is weak
+evidence of nothing much, which is what 1.7.7 tried and failed to act on.
+Read against history it is the strongest signal here, because the question
+was never whether a test produces the member but whether library code
+stopped. The same observation escalates instead of excusing, purely because
+the timeline is available.
+
+**Not knowing is said out loud.** No repository, no git, a shallow clone, a
+walk that exceeds its budget: all yield UNKNOWN, which grades at the weight
+of what was actually observed and never escalates. Collapsing UNKNOWN into
+"never produced" would report the end of the search as the end of the
+history, which is the exact failure this tool exists to find in other
+people's code.
+
+History is only asked about declarations that live in the repository being
+read. A scan can be handed files from more than one place -- `--join` reads
+two repositories at once -- and asking this repository about a member
+declared in another one returns a confident NEVER_PRODUCED off a search of
+the wrong history, which is the most misleading answer available.
+
+Relocation is recognised within a single commit, so splitting the move
+across two commits reports REMOVED_FROM_LIBRARY instead. That carries the
+same severity, which is the point: the evasion loses the label and gains
+nothing. It is asserted as a property, because a later version escalating
+only relocation would create the incentive that today does not exist.
+
+`history=False` makes the detector a pure function of the files on disk
+again, for callers that need one.
+
+**A claim this module made about itself, corrected.** `mechanical.py` opened
+by saying every detector here is "a pure function of the files on disk".
+One of them now reads a commit graph. The sentence was true when written and
+quietly stopped being true; it says what it does instead.
+
+On this repository the detector now reports 5, all `never_produced`, all
+confirmed by hand: four `EvidenceKind` members and `VoidKind.UNREALISED`,
+all in `blackhole_extrapolator`. The two `Status` findings are correctly
+silent.
+
+706 mutants across 53 files, including a new `test_forensics_mutants.py`
+whose mutants are mostly collapses -- every question the history layer asks
+can be answered "never produced", and a layer that degraded to its most
+common answer whenever it could not read the history would pass a suite that
+only checked the common case.
+1994 passed, 38 skipped.
+
 ## 1.7.7 (2026-09-12)
 
 **A state only a test can create is still a state nothing reaches.**
