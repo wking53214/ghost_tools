@@ -73,8 +73,9 @@ from typing import Callable, Dict, List, Optional, Sequence, Set
 from . import corpus, readiness
 from .annotate import annotate as annotate_names
 from .casefile import EXPOSED, HEALED, Casefile
-from .mechanical import (_TEST_COUNT_CLAIM_RE, claim_context, claim_shape,
-                        registered_detectors, run_all)
+from .mechanical import (_DATED_DOCUMENT, _TEST_COUNT_CLAIM_RE,
+                        _WRITABILITY_LOOKBACK, claim_context, claim_shape,
+                        registered_detectors, run_all, why_not_writable)
 from .schema import Finding
 from .speed import Profile
 
@@ -346,8 +347,44 @@ def _remedy_doc_counts(root: Path, files: Sequence[Path],
             continue
         match = here[0]
         start, end = offset + match.start(1), offset + match.end(1)
-        if claim_shape(claim_context(text, offset + match.start())) is not None:
+        claim_at = offset + match.start()
+        claim_ends = offset + match.end()
+        if claim_shape(claim_context(text, claim_at)) is not None:
             declined.append("a claim that is not about this suite")
+            continue
+
+        # THE WRITABILITY DECISION IS RE-DERIVED HERE, AND FROM THIS FILE.
+        #
+        # `finding.attributes["writable"]` was decided during the workup,
+        # about the text as it was then and about the path the scan walked.
+        # Two things can have changed by the time this runs, and both were
+        # found by pointing an adversary at it rather than by reading it.
+        #
+        # The text. A repository's own test suite runs during the workup --
+        # the tool starts it -- so a test that rewrites a document executes
+        # inside the window between the reading and the writing. Re-running
+        # `claim_shape` above is not enough: that predicate answers "is this
+        # a claim about the current suite at all", which is the REPORTING
+        # question. The one that authorises a write is this one, and it was
+        # never re-asked. A live sentence replaced mid-run by a dated one
+        # passes claim_shape and is exactly the sentence a machine must not
+        # edit.
+        #
+        # The path. `_resolve` follows symlinks, correctly, because the
+        # question is which file the bytes land in. But the name the
+        # workup judged was the one it walked, and `why_not_writable` opens
+        # by asking whether the FILENAME is a current-state document. Judge
+        # `README.md`, write through the link, and a file whose own name the
+        # same rule would have refused gets rewritten -- while the finding
+        # names a path whose history will show no change.
+        #
+        # So: the resolved file's real name, and the text as it is now.
+        stale = why_not_writable(
+            path.name,
+            text[max(0, claim_at - _WRITABILITY_LOOKBACK):claim_at],
+            text[claim_ends:claim_ends + _WRITABILITY_LOOKBACK])
+        if stale is not None:
+            declined.append(stale)
             continue
 
         meant = text[:start] + collected + text[end:]
@@ -415,10 +452,26 @@ def _remedy_count_block(root: Path, files: Sequence[Path],
     would then do is put markup into 38 repositories nobody asked to change.
     No block, no cut.
 
+    WHAT THE MARKERS HAND OVER (v1.7.1)
+
+    The COUNT, and nothing else. The first version replaced the whole region
+    between the markers, which is a different promise and a worse one: a
+    repository that wrote a sentence inside the block -- explaining why the
+    suite is split the way it is, say -- had that sentence deleted on the
+    next operation.
+
+    So the number is rewritten in place and every other byte in the block is
+    the author's. A block with no count in it and nothing else in it is a
+    repository asking for the sentence to be written, and gets it. A block
+    with something that is not a count in it is left alone and said so. A
+    block with two counts is left alone: there is no single span to name.
+
     THE VERIFICATION THAT CAN FAIL
 
-    After writing, the file is read back: the block must contain the
-    measured number, and every byte outside the block must be unchanged.
+    After writing, the file is read back: the block must hold the measured
+    number, and every byte outside THE DIGITS must be unchanged. The earlier
+    version checked the bytes outside the block, which was sound and could
+    not fail for the defect above -- the loss was inside.
     """
     measured = next((f.attributes.get("collected") for f in findings
                      if f.detector == "doc_count_contradicted_by_run"
@@ -428,6 +481,7 @@ def _remedy_count_block(root: Path, files: Sequence[Path],
         return 0, ""
 
     changed = 0
+    declined: List[str] = []
     for path in sorted(p for p in files if p.suffix.lower() == ".md"):
         try:
             text = path.read_text(encoding="utf-8")
@@ -436,25 +490,80 @@ def _remedy_count_block(root: Path, files: Sequence[Path],
         match = _COUNT_BLOCK.search(text)
         if match is None:
             continue
-        body = f"\n{measured} tests, all passing.\n"
-        if match.group(1) == body:
+        if _DATED_DOCUMENT.search(path.name):
+            # The prose remedy refuses a dated or versioned document by name,
+            # on the reasoning that such a document records a moment and its
+            # numbers are correct as written. This remedy applied the same
+            # tool to every markdown file carrying the markers and performed
+            # no document check at all, so one repository could get two
+            # different answers to "may a machine update this number",
+            # decided by which mechanism happened to reach it. The markers
+            # are consent to maintain a count; they are not consent to
+            # falsify a record of a named day.
+            declined.append("a dated or versioned document")
+            continue
+
+        body = match.group(1)
+        claims = list(_TEST_COUNT_CLAIM_RE.finditer(body))
+
+        if not claims:
+            if body.strip():
+                # Something is in there that is not a count. Whatever it is,
+                # it is not this remedy's, and replacing the block would
+                # delete it.
+                declined.append("a block holding something other than a count")
+                continue
+            # An empty block is a repository saying "fill this in". Writing
+            # the sentence into it destroys nothing.
+            meant = text[:match.start(1)] + f"\n{measured} tests, all passing.\n" \
+                + text[match.end(1):]
+            start = end = None
+        elif len(claims) > 1:
+            declined.append("a block whose count is not unique")
+            continue
+        else:
+            claim = claims[0]
+            start = match.start(1) + claim.start(1)
+            end = match.start(1) + claim.end(1)
+            meant = text[:start] + measured + text[end:]
+
+        if meant == text:
             continue          # already current; not a cut
-        meant = text[:match.start(1)] + body + text[match.end(1):]
         path.write_text(meant, encoding="utf-8")
 
         written = path.read_text(encoding="utf-8")
         again = _COUNT_BLOCK.search(written)
         if again is None or measured not in again.group(1):
             raise RemedyFailed(f"{path}: the block does not hold {measured} after writing")
-        if written[:again.start(1)] != text[:match.start(1)] or \
-                written[again.end(1):] != text[match.end(1):]:
-            raise RemedyFailed(f"{path}: text outside the block changed")
+        if start is None:
+            # The block was empty and is now the canonical sentence. What has
+            # to hold is that nothing outside the block moved.
+            if written[:again.start(1)] != text[:match.start(1)] or \
+                    written[again.end(1):] != text[match.end(1):]:
+                raise RemedyFailed(f"{path}: text outside the block changed")
+        elif written[:start] != text[:start] or \
+                written[start + len(measured):] != text[end:]:
+            # EVERYTHING EXCEPT THE DIGITS, BYTE FOR BYTE.
+            #
+            # The check this replaces compared the bytes OUTSIDE the block and
+            # was sound, and it could not fail for the defect that mattered:
+            # the remedy replaced the whole block body, so a sentence the
+            # author had written inside the markers was deleted -- outside the
+            # block nothing had moved, the verification passed, and three
+            # lines of somebody's writing were gone. The verification was not
+            # weak. It was answering a different question from the one the
+            # invariant needed, which is the failure this comment exists to
+            # stop coming back.
+            raise RemedyFailed(f"{path}: text outside the count changed")
         changed += 1
 
     if not changed:
         return 0, ""
-    return changed, (f"{changed} maintained test-count block(s) set to {measured}, "
-                     "the number this run measured")
+    note = (f"{changed} maintained test-count block(s) set to {measured}, "
+            "the number this run measured")
+    if declined:
+        note += "; left alone: " + ", ".join(sorted(set(declined)))
+    return changed, note
 
 
 REMEDIES: Dict[str, Callable[[Path, Sequence[Path], Sequence[Finding]], tuple[int, str]]] = {

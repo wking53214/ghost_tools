@@ -121,17 +121,32 @@ def _collect_files(root: Path, extra_excludes: Iterable[str] = ()) -> List[Path]
     # Each real path once: a symlinked file is otherwise listed under both
     # names, and every function in it becomes its own near-duplicate.
     # Measured on OBSERVE, which keeps genuine symlinks.
-    seen_real = set()
-    out = []
+    #
+    # WHICH OF THE TWO NAMES SURVIVES (v1.7.1)
+    #
+    # The file, never the link to it. De-duplicating kept whichever name
+    # sorted first, which is arbitrary, and when the link sorted first every
+    # finding in that file named the link -- so a reader who followed the
+    # reported path and looked at its history saw a symlink that had never
+    # changed, and concluded nothing had happened. The bytes were in the
+    # other file, which no finding mentioned.
+    #
+    # A finding has to name the path whose history will show the change.
+    # Nothing else here moves for a repository with no symlinks in it.
+    seen_real: Dict[Path, int] = {}
+    out: List[Path] = []
     for p in sorted(list(root.rglob("*.py")) + list(root.rglob("*.md"))):
         if not excluded.isdisjoint(p.parts) or p.name.startswith("."):
             continue
         if any(part.endswith(".egg-info") for part in p.parts[:-1]):
             continue
         real = p.resolve()
-        if real in seen_real:
+        already = seen_real.get(real)
+        if already is not None:
+            if out[already].is_symlink() and not p.is_symlink():
+                out[already] = p
             continue
-        seen_real.add(real)
+        seen_real[real] = len(out)
         out.append(p)
     return out
 

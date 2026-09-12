@@ -1,5 +1,116 @@
 # Changelog
 
+## 1.7.1 (2026-09-12)
+
+An adversarial harness was pointed at the operating mode, and the surgeon
+turned out to have three ways of writing somewhere he had not looked. All
+three are the same mistake wearing different clothes: a decision reached
+about one thing and applied to another.
+
+None of them were reachable by a scan. They are all in the write path,
+which is the half a scanner cannot exercise on itself, and every one was
+found by constructing a repository state rather than by reading the code.
+
+### A write could land outside the patient
+
+`--operate` composes `root / "README.md"` and writes to it. A README that
+is a symlink to a file outside the repository is an ordinary thing for a
+repository to contain, and the write followed it -- outside the branch the
+operation opened, so outside anything the operation can revert, and
+outside the commit it then tries to make, which fails with nothing to
+commit and reports a symptom after the damage.
+
+Every other write in the tool resolved its target and checked containment
+first. This one did not, because it takes its paths by construction rather
+than from a finding, and "by construction" was doing work it could not do.
+`annotate.refuses` now answers the question at the write, where both
+callers reach it, rather than at each caller, where a guard on one of them
+is a guard on neither.
+
+### A maintained block replaced a paragraph somebody wrote
+
+The markers hand over a COUNT. The remedy replaced the whole region
+between them, so a repository that had written a sentence inside the block
+lost it on the next operation.
+
+The verification could not fail for this. It checked that every byte
+OUTSIDE the block was unchanged, which was true, and which was answering a
+different question from the one the invariant needed. That distinction --
+a verification that is sound and does not establish the property it exists
+for -- is the most useful thing this release learned.
+
+The number is now rewritten in place and every other byte in the block is
+the author's. A block with nothing but whitespace in it is a repository
+asking for the sentence and gets it; a block holding something that is not
+a count is left alone and said so; a block with two counts is left alone,
+because there is no single span to name. The verification is now that
+everything except the digits is unchanged, byte for byte.
+
+The same remedy also applied itself to any markdown file with the markers
+in it, with no document check at all, while the prose remedy one function
+away refuses a dated or versioned document by name. One repository could
+get two different answers to "may a machine update this number", decided
+by which mechanism happened to reach it. It refuses dated documents now.
+
+### A writability verdict was trusted after the world moved
+
+`writable: yes` is decided during the workup. Two things can have changed
+by the time a remedy acts on it.
+
+The text: the tool runs the repository's own test suite as part of the
+workup, so a test that rewrites a document executes inside the window
+between the reading and the writing. A live sentence replaced mid-run by a
+dated one still carried a verdict reached about the sentence that was
+there before. Re-running `claim_shape` was not enough -- that answers the
+REPORTING question, and a dated sentence passes it.
+
+The path: `_resolve` follows symlinks, correctly, because the question is
+which file the bytes land in. But `why_not_writable` opens by asking
+whether the FILENAME is a current-state document, and the name it had been
+given was the one the scan walked. Judge `README.md`, write through the
+link, and a file whose own name the same rule would have refused gets
+rewritten.
+
+The verdict is now re-derived at the write, from the resolved file's real
+name and its text as it stands.
+
+### A finding named the link instead of the file
+
+The corpus lists each real file once, which is right, and kept whichever
+of two names sorted first, which is arbitrary. When a symlink sorted
+first, every finding in that file named the link -- so a reader who
+followed the reported path and looked at its history saw a symlink that
+had never changed, and concluded nothing had happened. The bytes were in
+the other file, which no finding mentioned. The file wins now, never the
+link to it.
+
+### The name-disagreement section is no longer written uninvited
+
+The block remedy states the principle and declines to write its own
+markers for it: a scanner that inserts its own markup into somebody's
+README uninvited has decided something that was not its to decide. The
+annotation writer was doing exactly that on every operation, including
+when it had nothing to report, appending a section whose table read
+`_none_`. A section recording nothing is no longer created. An existing
+block is still maintained, because a repository carrying one opted in.
+
+### What this cost, and one guard that went
+
+634 mutants, up from 625, with a new suite for the containment guards:
+each of the three fixes above has a mutant that deletes it and a test that
+notices.
+
+Two of the existing mutants survived the fixes and both were the same
+lesson twice. The containment check in `_resolve` and the ambiguous-line
+check had each become undetectable, not because they stopped mattering but
+because the new writability re-derivation refused those particular test
+cases first. The tests were rewritten so each guard can be made to fail
+alone -- one of them for the second time, its own docstring having warned
+about this exact failure. A third pair really was redundant: with the
+block body no longer replaced whole, the explicit "already current" check
+and the `meant == text` check could not each be made to fail alone, so one
+of them was decoration and it went.
+
 ## 1.7.0 (2026-09-12)
 
 The surgeon learns to treat something, and learns two things about

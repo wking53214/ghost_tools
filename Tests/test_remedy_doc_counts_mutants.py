@@ -55,10 +55,18 @@ MUTANTS = [
      '            continue\n',
      ""),
     ("a delta or a quotation is overwritten with today's total", _OP,
-     '        if claim_shape(claim_context(text, offset + match.start())) is not None:\n'
+     '        if claim_shape(claim_context(text, claim_at)) is not None:\n'
      '            declined.append("a claim that is not about this suite")\n'
      '            continue\n',
      ""),
+    # v1.7.1. The workup's writability verdict is re-derived here, from the
+    # resolved file and its text as it is NOW. Without it a sentence that
+    # became a dated one while the repository's own suite was running -- which
+    # this tool starts, inside its own window -- is still rewritten, and a
+    # document reached through a symlink is judged by the link's name.
+    ("the workup's writability verdict is trusted instead of re-derived", _OP,
+     "        stale = why_not_writable(\n            path.name,",
+     "        stale = None and why_not_writable(\n            path.name,"),
     ("an ambiguous line is written into anyway", _OP,
      "        if len(here) != 1:",
      "        if len(here) < 1:"),
