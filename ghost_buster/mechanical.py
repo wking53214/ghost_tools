@@ -1123,6 +1123,42 @@ def _stmt_candidates(
 
 
 @register("intra_function_duplicate_block")
+def _build_intra_dup_finding(path: Path, func: ast.AST, fp: str, units: List[List[ast.stmt]], blocks_of: Dict[str, Set[int]]) -> Finding:
+    """Build a Finding for duplicate blocks within a function."""
+    spans = [f"{u[0].lineno}-{u[-1].lineno}" for u in units]
+    first = units[0]
+    shape_note = (
+        "single statement" if len(first) == 1
+        else f"{len(first)}-statement block"
+    )
+    return Finding(
+        detector="intra_function_duplicate_block",
+        category=Category.DUPLICATION,
+        layer=Layer.MECHANICAL,
+        severity=Severity.MAJOR if len(units) > 2 else Severity.MINOR,
+        status=Status.CONFIRMED,
+        summary=(
+            f"'{func.name}' repeats the same {shape_note} "
+            f"{len(units)} times (lines {', '.join(spans)}): "
+            "same shape, names/literals differ"
+        ),
+        detail=(
+            "Structural fingerprint match within one function, not a "
+            "whole-function match (near_duplicate_function's detection "
+            "is blind to this shape). Typical real cause: several "
+            "branches each hand-build the same kind of object or "
+            "perform the same sequence of calls -- worth a single "
+            "shared helper if the branches really are doing the same "
+            "thing, not just a coincidental resemblance."
+        ),
+        evidence=Evidence(
+            file=str(path), line_start=first[0].lineno,
+            line_end=first[-1].lineno,
+            related_files=[f"{path}:{s}" for s in spans[1:]],
+        ),
+    )
+
+
 def detect_intra_function_duplicate_blocks(
     files: List[Path], min_statements: int = 3, min_complexity: int = 20
 ) -> List[Finding]:
@@ -1188,39 +1224,8 @@ def detect_intra_function_duplicate_blocks(
                 if len(units) < 2:
                     continue
                 if len(units[0]) == 1 and len(blocks_of[fp]) < 2:
-                    continue  # one block repeating a statement is a list, not a ghost
-                spans = [f"{u[0].lineno}-{u[-1].lineno}" for u in units]
-                first = units[0]
-                shape_note = (
-                    "single statement" if len(first) == 1
-                    else f"{len(first)}-statement block"
-                )
-                findings.append(Finding(
-                    detector="intra_function_duplicate_block",
-                    category=Category.DUPLICATION,
-                    layer=Layer.MECHANICAL,
-                    severity=Severity.MAJOR if len(units) > 2 else Severity.MINOR,
-                    status=Status.CONFIRMED,
-                    summary=(
-                        f"'{func.name}' repeats the same {shape_note} "
-                        f"{len(units)} times (lines {', '.join(spans)}): "
-                        "same shape, names/literals differ"
-                    ),
-                    detail=(
-                        "Structural fingerprint match within one function, not a "
-                        "whole-function match (near_duplicate_function's detection "
-                        "is blind to this shape). Typical real cause: several "
-                        "branches each hand-build the same kind of object or "
-                        "perform the same sequence of calls -- worth a single "
-                        "shared helper if the branches really are doing the same "
-                        "thing, not just a coincidental resemblance."
-                    ),
-                    evidence=Evidence(
-                        file=str(path), line_start=first[0].lineno,
-                        line_end=first[-1].lineno,
-                        related_files=[f"{path}:{s}" for s in spans[1:]],
-                    ),
-                ))
+                    continue
+                findings.append(_build_intra_dup_finding(path, func, fp, units, blocks_of))
     return findings
 
 
