@@ -366,6 +366,35 @@ def _finding(root: Path, entry: dict) -> Optional[Finding]:  # ghost_buster: nam
     )
 
 
+def _execute_gitleaks_scan(binary: str, root: Path, timeout: float) -> Tuple[Optional[str], Optional[SecretsScanReport]]:
+    """Execute gitleaks detect command and return JSON report content.
+    Returns (json_content, error_report) where error_report is set if execution fails."""
+    with tempfile.TemporaryDirectory(prefix="ghost_secrets_") as tmp:
+        report_path = Path(tmp) / "report.json"
+        cmd = [
+            binary, "detect", "--source", str(root), "--no-banner",
+            "--report-format", "json", "--report-path", str(report_path),
+            "--redact", "--exit-code", "0",
+        ]
+        try:
+            proc = subprocess.run(
+                cmd, capture_output=True, text=True, errors="replace", timeout=timeout,
+            )
+        except subprocess.TimeoutExpired:
+            return None, SecretsScanReport(ran=False, reason=f"gitleaks did not finish within {timeout:.0f}s")
+        except (OSError, ValueError) as e:
+            return None, SecretsScanReport(ran=False, reason=f"gitleaks could not be run: {type(e).__name__}: {e}")
+
+        if proc.returncode != 0:
+            tail = (proc.stderr or proc.stdout or "no output").strip()
+            return None, SecretsScanReport(ran=False, reason=f"gitleaks exited {proc.returncode}: {tail[-500:]}")
+
+        if not report_path.exists():
+            return None, SecretsScanReport(ran=False, reason="gitleaks exited 0 but produced no report file")
+
+        return report_path.read_text(encoding="utf-8", errors="replace"), None
+
+
 def scan(root: Path, *, gitleaks_path: Optional[str] = None,
          timeout: float = _TIMEOUT_DEFAULT) -> Tuple[List[Finding], SecretsScanReport]:
     """Scan `root`'s checked-out branch history for committed secrets with
@@ -373,12 +402,6 @@ def scan(root: Path, *, gitleaks_path: Optional[str] = None,
     reported as a clean scan -- when the directory is not a git repository,
     gitleaks is not available, the run times out, or gitleaks itself fails.
     """
-    # Resolved once, up front: gitleaks is given `--source str(root)` below
-    # with no `cwd` set (it needs none -- `--source` alone fully specifies
-    # the target). A relative root combined with a `cwd` pointed at that
-    # same relative root used to resolve twice (root/root); resolving here
-    # once removes the whole class of bug rather than papering over one
-    # call site.
     root = Path(root).resolve()
     report = SecretsScanReport(ran=False)
 
@@ -397,44 +420,14 @@ def scan(root: Path, *, gitleaks_path: Optional[str] = None,
         return [], report
 
     report.gitleaks_version = _gitleaks_version(binary)
-    # Two facts about the evidence, established before the scan runs so they
-    # are on the report whether it finds anything or not: what the target
-    # told gitleaks to ignore, and how far this scan reaches.
     report.suppression = target_suppression(root)
     report.scope = ("scanned the checked-out branch's own history, not every "
                     "ref (gitleaks' default, not --log-opts=--all)")
 
-    with tempfile.TemporaryDirectory(prefix="ghost_secrets_") as tmp:
-        report_path = Path(tmp) / "report.json"
-        cmd = [
-            binary, "detect", "--source", str(root), "--no-banner",
-            "--report-format", "json", "--report-path", str(report_path),
-            "--redact", "--exit-code", "0",
-        ]
-        try:
-            # No cwd: --source above is already absolute and is gitleaks'
-            # only source of the target path, deliberately not doubled up
-            # with cwd (see the resolve() comment above).
-            proc = subprocess.run(
-                cmd, capture_output=True, text=True, errors="replace", timeout=timeout,
-            )
-        except subprocess.TimeoutExpired:
-            report.reason = f"gitleaks did not finish within {timeout:.0f}s"
-            return [], report
-        except (OSError, ValueError) as e:
-            report.reason = f"gitleaks could not be run: {type(e).__name__}: {e}"
-            return [], report
-
-        if proc.returncode != 0:
-            tail = (proc.stderr or proc.stdout or "no output").strip()
-            report.reason = f"gitleaks exited {proc.returncode}: {tail[-500:]}"
-            return [], report
-
-        if not report_path.exists():
-            report.reason = "gitleaks exited 0 but produced no report file"
-            return [], report
-
-        raw = report_path.read_text(encoding="utf-8", errors="replace")
+    raw, error_report = _execute_gitleaks_scan(binary, root, timeout)
+    if error_report:
+        report.reason = error_report.reason
+        return [], report
 
     try:
         entries = json.loads(raw) if raw.strip() else []
@@ -446,7 +439,7 @@ def scan(root: Path, *, gitleaks_path: Optional[str] = None,
         report.reason = "gitleaks report was not a JSON array"
         return [], report
 
-    findings = [f for f in (_finding(root, e) for e in entries if isinstance(e, dict)) if f]  # ghost_buster: name-disagreement -- `e` is `entry` in the signature
+    findings = [f for f in (_finding(root, e) for e in entries if isinstance(e, dict)) if f]
     report.ran = True
     report.leaks_found = len(findings)
     return findings, report
