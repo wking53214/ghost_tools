@@ -204,10 +204,12 @@
       "after": null,
       "exclusions": [
         "Protocol and ABC interface classes",
-        "string-keyed dynamic dispatch (registry['Name'], exec() into a dict)"
+        "string-keyed dynamic dispatch (registry['Name'], exec() into a dict)",
+        "decorated definitions (a decorator hands the name to a registry, so the name is reached through that registry and never appears as an identifier again) -- added 1.7.5"
       ],
       "disclosed": [
-        "getattr-by-string and decorator-based registration are not traced; the tool's own @register self-flags"
+        "getattr-by-string is not traced",
+        "decorator-based registration was untraced until 1.7.5. Measured on SWIZZLE 70db473: 51 of 85 findings were this class, and every one of them was a live CLI command. Now excluded; the cost is false negatives on genuinely dead decorated code."
       ],
       "source": "README, ghost_buster: dead_code; CHANGELOG 0.1.1",
       "reproduce": {
@@ -1117,6 +1119,39 @@
         "tool_version": null,
         "corpus_manifest": null,
         "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
+      }
+    },
+    {
+      "name": "unreachable_declared_state",
+      "kind": "detector",
+      "date": "2026-09-12",
+      "corpus": "SWIZZLE 70db473 (105 files, 67 enum members across 13 enums) and ghost_tools 1320339 (4 enums)",
+      "before": null,
+      "after": null,
+      "exclusions": [
+        "enums where NO member is ever produced (reconstructed from data: an HTTP status, a wire protocol). Without this the detector's entire output would be such enums",
+        "classes that do not inherit an Enum base, so a settings class of upper-case constants is not treated as a state machine",
+        "lower-case class attributes, which are not enum members by convention"
+      ],
+      "disclosed": [
+        "a member is matched by NAME, not by resolving the enum, so a member name shared by two enums is treated as produced for both. An AST-only tool; the cost is a lost finding rather than an invented one",
+        "it does not claim the state is unreachable. Enum(value) reconstructs any member from data, so a stored record can still carry it -- which is worse, not better, and the finding says so"
+      ],
+      "source": "CHANGELOG 1.7.5; Tests/test_unreachable_declared_state.py",
+      "reproduce": {
+        "command": "python -m ghost_buster.cli <path> --single-repo --no-secrets --no-branches --no-structure --no-ledger --json",
+        "tool_version": "1.7.5",
+        "corpus_manifest": {
+          "wking53214/SWIZZLE": {
+            "commit": "70db473",
+            "files": 105
+          },
+          "wking53214/ghost_tools": {
+            "commit": "1320339",
+            "files": 0
+          }
+        },
+        "note": "Found 1 on each. On SWIZZLE: Phase.BETWEEN_RUNS, declared among four phases of which the world builder carries out three, so a case declaring it built a world without its mutation and was still judged as temporal. On ghost_tools itself: Status.REJECTED ('a human looked and said no'), which nothing produces and whose triage module does not exist. Both confirmed by hand."
       }
     }
   ]

@@ -179,6 +179,7 @@ is checked against `registered_detectors()` by the test suite.
 | `near_duplicate_function` | two functions with the same structural fingerprint | MAJOR |
 | `intra_function_duplicate_block` | repeated branch bodies inside one function | MAJOR |
 | `swallowed_exception` | a handler that catches something and does nothing | MAJOR |
+| `unreachable_declared_state` | an enum member no code produces, in an enum whose others it does | MINOR |
 | `doc_test_count_drift` | a test count in a markdown file the real suite has grown well past | MINOR |
 | `name_disagreement` | one value passed under two names, only where it is a bijection | MINOR |
 | `vestigial_domain_name` | an identifier carrying a domain this repository no longer has | MINOR |
@@ -1576,7 +1577,7 @@ package uses for its model-client tests. `test_branches.py`,
 repositories and pytest projects in `tmp_path` instead, the only honest way
 to test a ref-graph, git-history or suite-execution check (the secrets
 suite against a real gitleaks binary, skipped if one is not on PATH).
-`test_mutation.py` and the 51 `Tests/*_mutants.py` files run pytest in
+`test_mutation.py` and the 52 `Tests/*_mutants.py` files run pytest in
 subprocesses against scratch copies of the project, each mutant file
 breaking one component a named number of ways and requiring every mutant
 to fail a test; they account for most of the suite's wall-clock time. A

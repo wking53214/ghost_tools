@@ -1,5 +1,61 @@
 # Changelog
 
+## 1.7.5 (2026-09-12)
+
+The alignment reversed: the harness that had been attacking this tool became
+the patient, and this tool was pointed at it. Two findings came out of the
+first scan and neither was about the harness's Python.
+
+**A decorator is a reference.** `@register("audit")` hands a function to
+something that keeps it; the name is reached through that registry and never
+appears as an identifier again, so `dead_code` called it dead.
+
+This was DISCLOSED, not hidden. The detector's docstring has named it, and
+named this tool's own `@register` as the example, since 0.1.1. Disclosure is
+enough for a report a human reads, and stops being enough the moment autonomy
+is contemplated: measured on the patient, **51 of 85 findings were this class,
+and every one was a live CLI command.** A remedy authorised to delete dead code
+would have removed every command that tool has.
+
+Decorated definitions count as referenced now. The cost is false negatives on
+genuinely dead decorated code, which is the direction this detector already
+chose everywhere else it had to choose. The calibration record moves the entry
+out of `disclosed`, because a disclosure that has been fixed and left standing
+tells a reader to distrust a result that is now sound.
+
+**A new detector: `unreachable_declared_state`.** An enum is a vocabulary of
+states, and a member nothing ever produces is a distinction the vocabulary
+claims and the behaviour does not have. Every branch written to handle it is
+unreachable, anything dispatching on the enum silently does nothing for it,
+and a reader believes the system can be in a state it cannot deliberately
+enter.
+
+Reported only when SOME members of the same enum are produced and others are
+not. An enum reconstructed entirely from data -- an HTTP status, a wire
+protocol -- is not a defect, and without that rule it would be the whole
+output.
+
+It found one on each repository, on the first run, both confirmed by hand:
+
+- on the patient, a phase declared among four of which the world builder
+  carries out three. A case declaring it built a world WITHOUT its mutation,
+  recorded an empty construction history, and was still judged by a check that
+  adjusted its verdict because the phase was declared. The experiment stopped
+  asking its question and produced an answer anyway.
+- here, `Status.REJECTED` -- "a human looked and said no" -- which nothing
+  produces, whose `triage.py` does not exist, and about which a test asserts a
+  property.
+
+Neither is repaired autonomously. The right fix for a state nothing produces
+is to produce it, to handle its arrival, or to remove it, and which of those
+is correct is not something an AST can decide.
+
+Two of its guards turned out to be unkillable by any test and were deleted
+rather than kept looking proven: one was subsumed by an empty set difference,
+the other by case-sensitive string comparison.
+
+666 mutants. 1914 passed, 38 skipped.
+
 ## 1.7.4 (2026-09-12)
 
 **A document that says what it is, in its own words.**

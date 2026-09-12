@@ -642,6 +642,155 @@ def detect_unassessable_file(files: List[Path]) -> List[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# Detector: unreachable_declared_state -- an enum member no code ever puts
+# anything into, in an enum whose other members it does.
+#
+# WHY THIS IS NOT A STYLE COMPLAINT
+#
+# An enum is a vocabulary of states. A member nothing ever produces is a
+# distinction the vocabulary claims and the behaviour does not have, and the
+# damage is specific: every branch written to handle it is unreachable, every
+# reader believes the system can be in a state it cannot reach, and anything
+# that dispatches on the enum silently does nothing for that member.
+#
+# Found in the wild on an experimental harness: a phase enum declared four
+# phases and the world builder carried out three. A case declaring the fourth
+# built a world WITHOUT its mutation, recorded an empty construction history,
+# and was then judged by a check that adjusted its verdict because the phase
+# was declared. The experiment stopped asking its question and still produced
+# an answer.
+#
+# THE ASYMMETRY IS THE SIGNAL
+#
+# Reported only when SOME members of the same enum are produced and others are
+# not. An enum where nothing is ever named -- an HTTP status, a wire protocol,
+# anything reconstructed from data -- is not a defect and would otherwise be
+# the entire output of this detector.
+#
+# WHAT IT DOES NOT CLAIM
+#
+# That the member is unreachable. `Phase(raw["phase"])` reconstructs any
+# member from a string, so a stored record can still carry it. That makes the
+# finding worse rather than better -- the state arrives from data into code
+# that never intends it -- and the wording says so rather than claiming
+# nothing can get there.
+# ---------------------------------------------------------------------------
+
+_ENUM_BASES = frozenset({"Enum", "IntEnum", "StrEnum", "Flag", "IntFlag"})
+
+
+@register("unreachable_declared_state")
+def detect_unreachable_declared_state(files: List[Path]) -> List[Finding]:
+    parsed = {}
+    for path in files:
+        if path.suffix != ".py":
+            continue
+        tree = _parse(path)
+        if tree is not None:
+            parsed[path] = tree
+
+    # enum name -> {member -> (path, line)}
+    declared: Dict[str, Dict[str, tuple]] = {}
+    for path, tree in parsed.items():
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ClassDef):
+                continue
+            bases = {b.id if isinstance(b, ast.Name) else
+                     (b.attr if isinstance(b, ast.Attribute) else "")
+                     for b in node.bases}
+            if not (bases & _ENUM_BASES):
+                continue
+            for item in node.body:
+                if not isinstance(item, ast.Assign):
+                    continue
+                for target in item.targets:
+                    if isinstance(target, ast.Name) and target.id.isupper():
+                        declared.setdefault(node.name, {})[target.id] = (
+                            path, item.lineno)
+
+    if not declared:
+        return []
+
+    produced = _members_produced(parsed)
+    out: List[Finding] = []
+    for enum, members in sorted(declared.items()):
+        live = {m for m in members if m in produced}
+        # The asymmetry, and only the asymmetry. An enum where NOTHING is
+        # named is reconstructed from data and is not a defect.
+        #
+        # There is deliberately no "and not all of them" clause beside this:
+        # the set difference below is already empty when every member is
+        # produced, so such a clause is a guard no test can fail on. A mutant
+        # deleting it survived, which is how it was found.
+        if not live:
+            continue
+        for member in sorted(set(members) - live):
+            path, line = members[member]
+            out.append(Finding(
+                detector="unreachable_declared_state",
+                category=Category.OTHER,
+                layer=Layer.MECHANICAL,
+                severity=Severity.MINOR,
+                status=Status.CONFIRMED,
+                summary=(f"'{enum}.{member}' is declared and no code ever puts "
+                         f"anything into it, though {len(live)} other member(s) "
+                         f"of {enum} are produced"),
+                evidence=Evidence(file=str(path), line_start=line, line_end=line),
+                detail=(
+                    "An enum is a vocabulary of states, and a member nothing "
+                    "produces is a distinction the vocabulary claims and the "
+                    "behaviour does not have. Every branch written to handle it "
+                    "is unreachable; anything dispatching on the enum silently "
+                    "does nothing for it; and a reader believes the system can "
+                    "be in a state it cannot deliberately enter.\n\n"
+                    "This is reported because OTHER members of the same enum "
+                    "are produced. An enum reconstructed entirely from data is "
+                    "not a defect and is not flagged.\n\n"
+                    "It does not claim the state is unreachable. A value read "
+                    "back from a stored record can still arrive here, which is "
+                    "worse rather than better: the state enters from data into "
+                    "code that never intends it. Either produce it, handle its "
+                    "arrival explicitly, or remove it -- and if something "
+                    "dispatches on this enum, check what that dispatch does "
+                    "when this member arrives, because today it may do nothing "
+                    "at all."
+                ),
+                attributes={"enum": enum, "member": member,
+                            "produced_members": str(len(live)),
+                            "declared_members": str(len(members))},
+            ))
+    return out
+
+
+def _members_produced(parsed) -> Set[str]:
+    """Member names used as a VALUE rather than merely compared against.
+
+    `status = Status.DONE` produces one. `if status is Status.DONE` does not:
+    something else had to produce it for the comparison to ever be true, and
+    counting comparisons would make every member look produced by the code
+    that checks for it.
+
+    Attribute access is matched by member name alone rather than by resolving
+    the enum. This is an AST-only tool, and the cost is the safe direction: a
+    name shared by two enums is treated as produced for both, which loses a
+    finding rather than inventing one.
+    """
+    out: Set[str] = set()
+    for _path, tree in parsed.items():
+        compared: Set[int] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Compare):
+                for side in [node.left, *node.comparators]:
+                    for sub in ast.walk(side):
+                        if isinstance(sub, ast.Attribute):
+                            compared.add(id(sub))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and id(node) not in compared:
+                out.add(node.attr)
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Detector: dead_code -- module-level functions/classes defined but never
 # referenced anywhere else in the scanned file set.
 # ---------------------------------------------------------------------------
@@ -739,6 +888,28 @@ def detect_dead_code(files: List[Path]) -> List[Finding]:
                 key = node.slice
                 if isinstance(key, ast.Constant) and isinstance(key.value, str):
                     referenced_names.add(key.value)
+            # A DECORATOR IS A REFERENCE (v1.7.5).
+            #
+            # `@register("audit")` hands the function to something that keeps
+            # it. The name is then reached through that registry and never
+            # appears as an identifier again, so a scan for identifiers calls
+            # it dead.
+            #
+            # This was a DISCLOSED limitation rather than a hidden defect --
+            # the docstring above has named it, and named this tool's own
+            # `@register` as the example, since 0.1.1. Disclosure is enough
+            # for a report a human reads and stops being enough the moment
+            # autonomy is contemplated: measured on one real patient, 51 of
+            # 85 findings were this class, and a remedy authorised to delete
+            # dead code would have removed every command the tool has.
+            #
+            # Decorated definitions are treated as referenced. The cost is
+            # false negatives -- a genuinely dead decorated function stays
+            # unreported -- which is the direction this detector already
+            # chose everywhere else it had to choose.
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef,
+                                   ast.ClassDef)) and node.decorator_list:
+                referenced_names.add(node.name)
 
     findings: List[Finding] = []
     for name, def_paths in definitions.items():
