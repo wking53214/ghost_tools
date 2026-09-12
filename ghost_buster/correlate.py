@@ -243,6 +243,43 @@ def correlate_secret_in_duplicated_file(data: CorrelationInput) -> List[Finding]
 # ---------------------------------------------------------------------------
 
 @connector("secret_in_multiple_repositories")
+def _build_secret_cross_repo_finding(secret: Finding, fingerprint: str, elsewhere: List[Tuple[str, Finding]]) -> Finding:
+    """Build a Finding for a secret appearing in multiple repositories."""
+    labels = ", ".join(label for label, _ in elsewhere)
+    return Finding(
+        detector="secret_in_multiple_repositories",
+        category=Category.COMMITTED_SECRET,
+        layer=Layer.MECHANICAL,
+        severity=Severity.CRITICAL,
+        status=Status.CONFIRMED,
+        summary=(
+            f"the '{secret.attributes.get('rule', 'unknown-rule')}' secret in "
+            f"{secret.evidence.file} is the same leak as one in: {labels}"
+        ),
+        detail=(
+            "Matched on gitleaks' own fingerprint (commit:file:rule:line), so this "
+            "is the same commit carrying the same secret in more than one "
+            "repository -- a fork, a vendored copy, or a directory copied with its "
+            "history. A single-repository scan cannot see this: each repository "
+            "reports its own leak with nothing to say they are one credential. "
+            "Rotate once; purge history in every repository listed, or the "
+            "rotation is the only thing that happened.\n"
+            f"Fingerprint: {fingerprint}\n"
+            f"Built from findings: {_ids([secret] + [f for _, f in elsewhere])}."
+        ),
+        attributes={
+            "fingerprint": fingerprint,
+            "repositories": str(len(elsewhere) + 1),
+            "also_in": labels,
+        },
+        evidence=Evidence(
+            file=secret.evidence.absolute_file or secret.evidence.file,
+            line_start=secret.evidence.line_start,
+            line_end=secret.evidence.line_end,
+        ),
+    )
+
+
 def correlate_secret_across_repositories(data: CorrelationInput) -> List[Finding]:
     """The same leak, by gitleaks' own fingerprint, in more than one
     repository.
@@ -282,48 +319,12 @@ def correlate_secret_across_repositories(data: CorrelationInput) -> List[Finding
             for other in prior.findings:
                 if other.detector != "committed_secret":
                     continue
-                # Same default on both sides. With one side defaulting to
-                # None and the other to "", two findings that both lack a
-                # fingerprint could never collide -- which quietly made the
-                # empty-key guard above unreachable rather than unnecessary.
                 if other.attributes.get("fingerprint", "") == fingerprint:
                     elsewhere.append((prior.label, other))
                     break
         if not elsewhere:
             continue
-        labels = ", ".join(label for label, _ in elsewhere)
-        out.append(Finding(
-            detector="secret_in_multiple_repositories",
-            category=Category.COMMITTED_SECRET,
-            layer=Layer.MECHANICAL,
-            severity=Severity.CRITICAL,
-            status=Status.CONFIRMED,
-            summary=(
-                f"the '{secret.attributes.get('rule', 'unknown-rule')}' secret in "
-                f"{secret.evidence.file} is the same leak as one in: {labels}"
-            ),
-            detail=(
-                "Matched on gitleaks' own fingerprint (commit:file:rule:line), so this "
-                "is the same commit carrying the same secret in more than one "
-                "repository -- a fork, a vendored copy, or a directory copied with its "
-                "history. A single-repository scan cannot see this: each repository "
-                "reports its own leak with nothing to say they are one credential. "
-                "Rotate once; purge history in every repository listed, or the "
-                "rotation is the only thing that happened.\n"
-                f"Fingerprint: {fingerprint}\n"
-                f"Built from findings: {_ids([secret] + [f for _, f in elsewhere])}."
-            ),
-            attributes={
-                "fingerprint": fingerprint,
-                "repositories": str(len(elsewhere) + 1),
-                "also_in": labels,
-            },
-            evidence=Evidence(
-                file=secret.evidence.absolute_file or secret.evidence.file,
-                line_start=secret.evidence.line_start,
-                line_end=secret.evidence.line_end,
-            ),
-        ))
+        out.append(_build_secret_cross_repo_finding(secret, fingerprint, elsewhere))
     return out
 
 
