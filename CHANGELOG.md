@@ -1,5 +1,94 @@
 # Changelog
 
+## 1.8.0 (2026-09-17)
+
+**Three defects this toolkit walked past on a repository it was scanning.**
+
+Pointed at fortress-kernel, ghost_buster reported one MAJOR finding and two
+MINOR ones. The MAJOR one was wrong, and two real defects sitting in plain
+sight in the same two files went unmentioned. All three are fixed here, and
+the reason they are one release rather than three is that they are the same
+mistake: the scan read `[project]` and stopped.
+
+**`undeclared dependency` now reads `[build-system].requires`.**
+
+`setup.py` imports `setuptools`. fortress-kernel declares it in
+`[build-system].requires`, which is the only correct place: a PEP 517
+frontend installs that list into an isolated environment before `setup.py`
+is ever imported, and putting it in `[project].dependencies` would install
+a build tool alongside the package at runtime. The scan read only
+`[project].dependencies`, `[project].optional-dependencies` and
+`requirements.txt`, so it reported the one right answer as a MAJOR
+works-on-my-machine failure.
+
+A build-time file's imports are now satisfied by `[build-system].requires`.
+The exemption is for build-time files only -- currently `setup.py` at the
+repository root. A runtime module importing the same package is still
+undeclared, because consent to install something before the build is not a
+promise that it will be importable after it, and treating it as one would
+hide a real ImportError.
+
+**`parallel packaging metadata`: two files declaring one package.**
+
+fortress-kernel ships both `setup.py` and `pyproject.toml`, and both
+declare the name, the version, the description, the Python floor and the
+dependencies. The descriptions had already drifted: `pyproject.toml` said
+"Minimal, composable governance kernel...", `setup.py` said "FORTRESS
+Unified Governance Kernel - Multi-controller safety orchestration". Which
+one a user gets depends on how they installed it.
+
+This is the packaging case of `drifted_copy`, and it is graded the same
+way. Disagreeing is MAJOR: one of the two answers is already wrong.
+Agreeing is MINOR -- nothing is broken today, and the defect is that
+keeping it that way is an obligation nobody agreed to and nothing checks.
+
+Only literal values are compared. `version=read_version()` is not a
+declaration this scan can read, so it is counted on neither side, and a
+name is compared the way an index compares it (PEP 503) so that
+`Fortress_Kernel` and `fortress-kernel` are not reported as drift.
+
+**`test_config_collects_nothing`: a runner pointed at nothing.**
+
+fortress-kernel set `testpaths = ["tests"]` and has no `tests/` directory.
+Its 48 tests sit at the repository root. pytest does not fail on this: it
+warns once and falls back to searching the working directory, or -- version
+and invocation depending -- collects nothing and exits 0.
+
+The second outcome is what this is for. A CI job whose whole purpose is to
+run the suite passes in seconds having run none of it, and a green check
+for zero tests is indistinguishable from a green check for all of them. The
+fallback is not a safety net either: it fires where somebody is watching
+(a local run) and not where nobody is.
+
+`no_ci_configuration` already said "you wrote tests and nothing runs them".
+This says the worse thing: somebody configured a runner and it does not.
+Read from the first of `pytest.ini`, `pyproject.toml`, `tox.ini`,
+`setup.cfg` that declares `testpaths`, which is pytest's own order. It is
+static -- it never runs pytest -- so unlike `--tests` it holds for an
+untrusted repository, which is exactly where nobody is going to notice by
+watching the output.
+
+It stays quiet in the two places where quiet is right. A repository with no
+test files at all is not reported, because `testpaths` naming a directory
+nobody has created yet is a plan. A path that exists is not reported,
+whatever is or is not under it. One missing entry of several is MINOR, not
+MAJOR: the suite still runs, and what is reported is that a configuration
+has started naming things that are not there.
+
+The check is also not suppressed by CI being configured, which is the
+opposite of how `no_ci_configuration` behaves and is deliberate. CI is what
+turns "collected nothing" into a green badge, so the finding matters more
+there, not less.
+
+**Measured 2026-09-17** on three repositories in this ecosystem, pinned by
+commit in `ghost_buster/calibration.json`: one finding each, both on
+fortress-kernel, and none on the two that are configured correctly. That is
+a small corpus and the record says so.
+
+**The project scan now prints a test-configuration line on every run**,
+including the runs where it found nothing -- a configuration that was
+checked and is fine must not print identically to one nobody looked at.
+
 ## 1.7.8 (2026-09-12)
 
 **Evidence that costs nothing to fake does not get to lower a severity.**

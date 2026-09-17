@@ -111,7 +111,7 @@ state on every run** -- performed, impossible, or declined.
 | unmerged branches | on | `--no-branches` |
 | test status | on, for a trusted repository (`--trust`, once) | `--no-tests` |
 | committed secrets | on | `--no-secrets` |
-| project checks (CI, deploy artifacts) | on | `--no-project` |
+| project checks (CI, deploy artifacts, test configuration) | on | `--no-project` |
 | structural model | on | `--no-structure` |
 | correlation | on | `--no-correlate` |
 | ledger (memory) | on | `--no-ledger` |
@@ -207,8 +207,9 @@ detector a pure function of the files on disk.
 
 Beside the detectors, six repository-level checks and two passes over
 everything, each with its own section below: unmerged branches, test
-status, committed secrets, the project checks (`no_ci_configuration`), the
-structural model (`entry point target missing`, `undeclared dependency`),
+status, committed secrets, the project checks (`no_ci_configuration`,
+`test_config_collects_nothing`), the structural model (`entry point target
+missing`, `undeclared dependency`, `parallel packaging metadata`),
 the seam between repositories (`--join`), the shared kernel (`--kernel`:
 `kernel_shadow`, `drifted_contract`), the ledger (`regressed_finding`,
 `flapping_finding`, `persistent_finding`, `blind_spot`, trajectory), and
@@ -323,6 +324,8 @@ because a security check people learn to skim is worth less than none.
 |---|---|---|
 | `no_ci_configuration` | a deploy artifact ships this code and no CI runs first | MAJOR |
 | | test files exist and no CI runs them | MINOR |
+| `test_config_collects_nothing` | `testpaths` names only paths that do not exist, and tests are in the tree | MAJOR |
+| | one `testpaths` entry of several does not exist | MINOR |
 | `insecure_default` | `DEBUG = True`, `run(debug=True)` | CRITICAL |
 | | CORS allows every origin **and** credentials | CRITICAL |
 | | `ALLOWED_HOSTS = ["*"]`, `verify=False` | MAJOR |
@@ -339,6 +342,11 @@ because a security check people learn to skim is worth less than none.
   permissive is usually the point. Wide-open CORS *without* credentials is
   a normal public API and is not reported. Measured across three real
   repositories: zero findings.
+- **Not "your test configuration is unusual".** The claim is that a
+  runner is pointed at nothing and the tests are somewhere else, which is
+  decidable from a file listing. A repository with no tests at all is
+  silent -- `testpaths` naming a directory nobody has created yet is a
+  plan. A path that exists is silent, whatever is or is not under it.
 - **Not "routes with no auth".** That version is unusable: a login
   endpoint has no auth by definition, and so do signup, health probes,
   webhooks, OAuth callbacks, and every endpoint of every public API. What
@@ -348,6 +356,33 @@ because a security check people learn to skim is worth less than none.
   silent; a fully protected module is silent; auth applied by middleware
   makes every route look unprotected, which drops the module below the
   threshold and reports nothing. It fails quiet, deliberately.
+
+### `test_config_collects_nothing`: a runner pointed at nothing
+
+The `no_ci_configuration` check says nobody runs your tests. This one says
+something worse: somebody configured a runner to run them, and it does
+not.
+
+pytest reads `testpaths` when no path is given on the command line. When
+every entry names something that is not there, pytest does not fail. It
+warns once and falls back to searching the working directory, or -- version
+and invocation depending -- collects nothing and exits 0. The second
+outcome is what it costs: a CI job whose whole purpose is to run the suite
+passes in seconds having run none of it, and a green check for zero tests
+looks exactly like a green check for all of them. The fallback is not a
+safety net either, because it fires where somebody is watching (a local
+run) and not where nobody is (CI, invoked with an explicit path).
+
+Read from the first of `pytest.ini`, `pyproject.toml`, `tox.ini`,
+`setup.cfg` that declares `testpaths`, which is pytest's own order. This
+is a static check: it never runs pytest, so unlike `--tests` it holds for
+an untrusted repository, which is exactly where nobody is going to notice
+by watching the output.
+
+Found on fortress-kernel 2026-09-17: `testpaths = ["tests"]`, no `tests/`
+directory, 48 tests at the repository root, and a suite that passed
+locally on the fallback while the repository had no CI to expose the other
+half of the behaviour.
 
 ## The structural model: `--structure`
 
@@ -366,6 +401,7 @@ observed facts rather than a judgement:
 |---|---|
 | `entry point target missing` | a console script points at a module or symbol that does not exist |
 | `undeclared dependency` | a package is imported, resolvable to a distribution, and declared nowhere |
+| `parallel packaging metadata` | `setup.py` and `pyproject.toml` declare the same field, and disagree (MAJOR) or agree (MINOR) |
 
 ### What it refuses to say
 
@@ -392,6 +428,41 @@ undeclared on a real repository that declares every one of them. Imports
 are now mapped through installed distribution metadata, and an import that
 cannot be mapped goes to `unresolved` rather than becoming a finding --
 because a missing declaration and an ordinary alias look identical.
+
+**A build-time import is declared somewhere else.** `setup.py` imports
+`setuptools`, and the only correct place to declare that is
+`[build-system].requires` -- a PEP 517 frontend installs that list into an
+isolated environment before `setup.py` is ever imported. Reading only
+`[project]` reported the right answer as the defect, on this toolkit's own
+scan of fortress-kernel in 1.7.8. Since 1.8.0 a build-time file's imports
+are satisfied by `[build-system].requires`; a runtime module importing the
+same package is still undeclared, because consent to install something
+before the build is not a promise that it will be importable after it.
+
+### Two files that declare one package
+
+`parallel packaging metadata` is the packaging case of `drifted_copy`.
+When `setup.py` and `pyproject.toml` both name the package, its version,
+its description, its Python floor or its dependencies, there are two
+answers to one question, and which one an installer believes depends on
+how it was invoked: a PEP 517 frontend (`pip install .`, `build`) reads
+`pyproject.toml` and never executes `setup.py`'s arguments, while a direct
+`python setup.py ...` reads `setup.py` and never opens `pyproject.toml`.
+
+The grading is the point. Disagreeing is MAJOR: one of the two answers is
+already wrong and the package installs differently depending on the route.
+Agreeing is MINOR -- nothing is broken today, and the defect is that
+keeping it that way is an obligation nobody agreed to and nothing checks.
+
+Only literal values are compared. `version=read_version()` is not a
+declaration this scan can read, so it is counted on neither side; a name
+is compared the way an index compares it (PEP 503), so `Fortress_Kernel`
+and `fortress-kernel` are not drift.
+
+Measured 2026-09-17 on three repositories in this ecosystem: one finding,
+on fortress-kernel, where five fields were declared twice and the
+descriptions had drifted apart. The other two declare a package in one
+file each and were reported on neither.
 
 ## The seam between two repositories: `--join`
 

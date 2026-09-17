@@ -124,6 +124,16 @@ class StructuralModel:
     distribution: Optional[str] = None
     declared_dependencies: List[str] = field(default_factory=list)
     dependency_sources: List[str] = field(default_factory=list)
+    #: `[build-system].requires`. A declaration, but only for code that
+    #: runs at build time: the frontend installs these into an isolated
+    #: environment that no runtime import can see.
+    build_requires: List[str] = field(default_factory=list)
+    #: Modules that run at build time, not at import time -- setup.py and
+    #: friends. Their imports are satisfied by `build_requires`.
+    build_modules: List[str] = field(default_factory=list)
+    #: What each packaging file declares, field by field, for the
+    #: `parallel packaging metadata` check.
+    packaging_declarations: Dict[str, Dict[str, str]] = field(default_factory=dict)
     console_scripts: Dict[str, str] = field(default_factory=dict)
     packages: List[str] = field(default_factory=list)
     modules: List[ModuleFacts] = field(default_factory=list)
@@ -138,17 +148,71 @@ class StructuralModel:
 
 # --------------------------------------------------------------- packaging
 
-def _read_pyproject(root: Path) -> Tuple[Optional[str], List[str], Dict[str, str], List[str]]:
-    """(distribution name, dependencies, console scripts, unresolved notes)."""
+@dataclass
+class PyprojectFacts:
+    """What pyproject.toml declares. A record rather than a tuple because
+    the tuple had grown to four positions and was about to grow to six."""
+    name: Optional[str] = None
+    dependencies: List[str] = field(default_factory=list)
+    scripts: Dict[str, str] = field(default_factory=dict)
+    notes: List[str] = field(default_factory=list)
+    #: `[build-system].requires`, verbatim.
+    build_requires: List[str] = field(default_factory=list)
+    #: `[project]` fields that setup.py also declares, for drift detection.
+    declarations: Dict[str, str] = field(default_factory=dict)
+
+
+#: The fields a package can declare in two places at once. Compared as
+#: strings after `_normalise_declaration`, because `[project]` and
+#: `setup()` spell the same value differently often enough that a raw
+#: comparison would report drift where there is none.
+_PACKAGING_FIELDS = ("name", "version", "description", "requires-python", "dependencies")
+
+#: Files that run when the package is BUILT, not when it is imported.
+#: Their imports are satisfied by `[build-system].requires`.
+_BUILD_TIME_FILES = frozenset({"setup.py"})
+
+#: setup() keyword -> the `[project]` key that means the same thing.
+_SETUP_TO_PROJECT = {
+    "name": "name",
+    "version": "version",
+    "description": "description",
+    "python_requires": "requires-python",
+    "install_requires": "dependencies",
+}
+
+
+def _normalise_declaration(key: str, value) -> str:
+    """One spelling for a declared value, so that only real disagreement
+    reads as disagreement.
+
+    `name` is compared the way a package index compares it (PEP 503:
+    case-folded, runs of `-_.` collapsed), because `fortress-kernel` and
+    `Fortress_Kernel` install the same thing. A dependency list is
+    compared as a sorted set of requirement strings with whitespace
+    stripped, because ordering is not a declaration.
+    """
+    if value is None:
+        return ""
+    if key == "name":
+        import re as _re
+        return _re.sub(r"[-_.]+", "-", str(value)).strip().lower()
+    if isinstance(value, (list, tuple)):
+        return ", ".join(sorted(str(v).strip() for v in value))
+    return str(value).strip()
+
+
+def _read_pyproject(root: Path) -> PyprojectFacts:
     import tomllib
     p = root / "pyproject.toml"
     if not p.is_file():
-        return None, [], {}, []
+        return PyprojectFacts()
     try:
         with p.open("rb") as fh:
             data = tomllib.load(fh)
     except (OSError, tomllib.TOMLDecodeError) as e:
-        return None, [], {}, [f"pyproject.toml could not be read: {type(e).__name__}: {e}"]
+        return PyprojectFacts(
+            notes=[f"pyproject.toml could not be read: {type(e).__name__}: {e}"])
     project = data.get("project") or {}
     deps = [str(d) for d in (project.get("dependencies") or [])]
     # Optional dependencies are still declarations. Reading only
@@ -166,7 +230,54 @@ def _read_pyproject(root: Path) -> Tuple[Optional[str], List[str], Dict[str, str
             f"pyproject declares {project['dynamic']} as dynamic; those values are "
             f"resolved by the build backend and are not visible to this scan"
         )
-    return project.get("name"), deps, scripts, notes
+    build = data.get("build-system") or {}
+    build_requires = [str(r) for r in (build.get("requires") or [])]
+    declarations = {
+        key: _normalise_declaration(key, project[key])
+        for key in _PACKAGING_FIELDS if key in project
+    }
+    return PyprojectFacts(
+        name=project.get("name"), dependencies=deps, scripts=scripts, notes=notes,
+        build_requires=build_requires, declarations=declarations,
+    )
+
+
+def _read_setup_py(root: Path) -> Optional[Dict[str, str]]:
+    """What a literal `setup(...)` call in setup.py declares, or None.
+
+    Only literal keyword arguments are read. A value computed at import
+    time -- `version=read_version()`, `install_requires=parse(reqs)` -- is
+    not a declaration this scan can compare against anything, and
+    guessing at one would manufacture the disagreement the caller is
+    about to report. None means "no setup.py, or nothing literal in it",
+    which reads as "nothing to compare" at the call site rather than as
+    "compared and agreed".
+    """
+    p = root / "setup.py"
+    if not p.is_file():
+        return None
+    try:
+        tree = ast.parse(p.read_text(encoding="utf-8", errors="replace"))
+    except (OSError, SyntaxError, ValueError):
+        return None
+    out: Dict[str, str] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        name = func.id if isinstance(func, ast.Name) else getattr(func, "attr", "")
+        if name != "setup":
+            continue
+        for kw in node.keywords:
+            key = _SETUP_TO_PROJECT.get(kw.arg or "")
+            if key is None:
+                continue
+            try:
+                value = ast.literal_eval(kw.value)
+            except (ValueError, SyntaxError):
+                continue        # computed, so not a declaration to compare
+            out[key] = _normalise_declaration(key, value)
+    return out or None
 
 
 def _requirements_files(root: Path) -> List[Path]:
@@ -414,10 +525,17 @@ def build_model(root, files) -> StructuralModel:
         return model
     model.ran = True
 
-    name, deps, scripts, notes = _read_pyproject(root)
+    facts = _read_pyproject(root)
+    name, deps, scripts = facts.name, facts.dependencies, facts.scripts
     model.distribution = name
     model.console_scripts = scripts
-    model.unresolved.extend(notes)
+    model.unresolved.extend(facts.notes)
+    model.build_requires = sorted({requirement_name(r) for r in facts.build_requires} - {""})
+    if facts.declarations:
+        model.packaging_declarations["pyproject.toml"] = facts.declarations
+    setup_declarations = _read_setup_py(root)
+    if setup_declarations is not None:
+        model.packaging_declarations["setup.py"] = setup_declarations
     if deps:
         model.dependency_sources.append("pyproject.toml:project.dependencies")
     req_files = _requirements_files(root)
@@ -448,8 +566,11 @@ def build_model(root, files) -> StructuralModel:
         model.modules.append(facts)
         model.entry_points.extend(facts.entry_points)
         model.unresolved.extend(facts.unresolved)
-        if "test" in Path(facts.path).name or "tests" in Path(facts.path).parts:
+        relative = Path(facts.path)
+        if "test" in relative.name or "tests" in relative.parts:
             model.test_modules.append(facts.dotted)
+        elif relative.name in _BUILD_TIME_FILES and len(relative.parts) == 1:
+            model.build_modules.append(facts.dotted)
 
     for facts in model.modules:
         for boundary in facts.boundaries:
@@ -466,13 +587,116 @@ def build_model(root, files) -> StructuralModel:
 # --------------------------------------------------------------- findings
 
 def _finding(model: StructuralModel, kind: str, severity: Severity, file: str,
-             summary: str, detail: str, attributes: dict) -> Finding:
+             summary: str, detail: str, attributes: dict,
+             identity_key: Optional[str] = None) -> Finding:
     return Finding(
         detector=DETECTOR, category=Category.ARCHITECTURE, layer=Layer.MECHANICAL,
         severity=severity, status=Status.CONFIRMED,
         summary=f"{kind}: {summary}", evidence=Evidence(file=file),
         detail=detail, attributes=dict(attributes, kind=kind),
+        identity_key=identity_key,
     )
+
+
+def _external_imports(model: StructuralModel, stdlib: Set[str]) -> Dict[str, List[str]]:
+    """package name -> the modules that import it, for everything the
+    repository reaches for and does not provide.
+
+    Two exemptions, and they are not the same exemption. A TEST module's
+    imports are skipped outright: test-only tools live in dev extras this
+    scan cannot see. A BUILD-TIME module's imports are skipped only when
+    `[build-system].requires` declares them -- setup.py importing
+    setuptools was reported as an undeclared dependency on a repository
+    that declares it in the one correct place, because a PEP 517 frontend
+    installs that list into an isolated environment before setup.py is
+    ever imported. A build requirement a build-time file imports and
+    nobody declared is still reported.
+    """
+    imported: Dict[str, List[str]] = {}
+    build_declared = set(model.declared_dependencies) | set(model.build_requires)
+    for facts in model.modules:
+        if facts.dotted in model.test_modules:
+            continue
+        at_build_time = facts.dotted in model.build_modules
+        for module in facts.imports_external:
+            top = module.split(".", 1)[0]
+            if top in stdlib or top.startswith("_"):
+                continue
+            package = top.lower().replace("_", "-")
+            if at_build_time and package in build_declared:
+                continue
+            imported.setdefault(package, []).append(facts.dotted)
+    return imported
+
+
+def _packaging_findings(model: StructuralModel) -> List[Finding]:
+    """setup.py and pyproject.toml declaring the same package, differently.
+
+    Two files that both say what this package is called, what version it
+    is, and what it depends on are two answers to one question, and which
+    one an installer believes depends on how it was invoked: a PEP 517
+    frontend reads pyproject.toml, `python setup.py` reads setup.py, and
+    an older pip reads whichever it finds first. Nobody edits both.
+
+    So the finding is graded by whether they still agree. Disagreeing is
+    MAJOR: one of the two answers is already wrong and the package
+    installs differently depending on the route. Agreeing is MINOR --
+    nothing is broken today, and the defect is that keeping it that way
+    is a thing somebody has to remember, with no check that they did.
+    """
+    declared = model.packaging_declarations
+    pyproject = declared.get("pyproject.toml")
+    setup = declared.get("setup.py")
+    if not pyproject or not setup:
+        return []
+    shared = sorted(set(pyproject) & set(setup))
+    if not shared:
+        return []
+    drifted = [k for k in shared if pyproject[k] != setup[k]]
+    root = Path(model.root)
+    if drifted:
+        lines = "; ".join(
+            f"{k}: pyproject.toml says {pyproject[k]!r}, setup.py says {setup[k]!r}"
+            for k in drifted
+        )
+        return [_finding(
+            model, "parallel packaging metadata", Severity.MAJOR,
+            str(root / "setup.py"),
+            f"setup.py and pyproject.toml declare {len(shared)} of the same "
+            f"field(s) and {len(drifted)} disagree -- {lines}",
+            "Two files declare this package and they no longer say the same "
+            "thing. Which one is true depends on how the package is built: a "
+            "PEP 517 frontend (`pip install .`, `build`) reads pyproject.toml "
+            "and never executes setup.py's arguments; a direct `python setup.py "
+            "...` reads setup.py and never opens pyproject.toml. So both "
+            "answers ship, and the one a given user gets is decided by their "
+            "tooling rather than by anyone here.\n\n"
+            "The fix is almost always to delete the duplicate rather than to "
+            "reconcile it: move anything setup.py declares that pyproject.toml "
+            "does not into `[project]`, and leave setup.py out entirely, or "
+            "reduce it to a bare `setup()` call that reads its arguments from "
+            "pyproject.toml.\n\nScope limit: only literal values are "
+            "compared. A version computed at import time is not a declaration "
+            "this scan can read, and is not counted on either side.",
+            {"fields": ", ".join(shared), "drifted": ", ".join(drifted)},
+            identity_key="parallel packaging metadata",
+        )]
+    return [_finding(
+        model, "parallel packaging metadata", Severity.MINOR,
+        str(root / "setup.py"),
+        f"setup.py and pyproject.toml both declare {', '.join(shared)}, and "
+        f"agree today",
+        "Nothing is broken right now: both files say the same thing. The "
+        "defect is that they will only keep saying it for as long as "
+        "everybody who edits one remembers the other, and nothing here "
+        "checks that they did. This is reported at MINOR for exactly that "
+        "reason -- it is a maintenance obligation nobody agreed to, not a "
+        "bug. It becomes MAJOR the day the two answers differ.\n\n"
+        "Scope limit: only literal values are compared, so a field whose "
+        "value is computed at import time is not counted on either side.",
+        {"fields": ", ".join(shared)},
+        identity_key="parallel packaging metadata",
+    )]
 
 
 def derive_findings(model: StructuralModel) -> List[Finding]:
@@ -482,6 +706,10 @@ def derive_findings(model: StructuralModel) -> List[Finding]:
     if not model.ran:
         return []
     out: List[Finding] = []
+    # Before the guard below: packaging metadata is read from the files
+    # themselves, so it is knowable even when no module was scanned, and
+    # skipping it there would be an unreported blind spot.
+    out.extend(_packaging_findings(model))
     if not model.modules:
         # Nothing was scanned, so "this symbol does not exist" and "this
         # symbol was not looked at" are indistinguishable. Reporting the
@@ -520,15 +748,7 @@ def derive_findings(model: StructuralModel) -> List[Finding]:
     # 2. Imported and never declared.
     declared = set(model.declared_dependencies)
     stdlib = _stdlib_names()
-    imported: Dict[str, List[str]] = {}
-    for facts in model.modules:
-        if facts.dotted in model.test_modules:
-            continue    # test-only tools live in dev extras this scan cannot see
-        for module in facts.imports_external:
-            top = module.split(".", 1)[0]
-            if top in stdlib or top.startswith("_"):
-                continue
-            imported.setdefault(top.lower().replace("_", "-"), []).append(facts.dotted)
+    imported = _external_imports(model, stdlib)
 
     mapping = _import_to_distribution()
 

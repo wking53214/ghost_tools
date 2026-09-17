@@ -383,3 +383,133 @@ def test_structure_out_writes_the_model(tmp_path, capsys):
           "--baseline", str(tmp_path / "b.json")])
     capsys.readouterr()
     assert json.loads(out.read_text())["distribution"] == "demo"
+
+
+# ------------------------------- build-time imports and parallel packaging
+
+SETUP_PY = '''from setuptools import setup
+
+setup(
+    name="demo",
+    version="0.1.0",
+    description="{description}",
+    install_requires=["requests>=2"],
+    python_requires=">=3.11",
+)
+'''
+
+
+def _kinds(findings):
+    return {f.attributes["kind"] for f in findings}
+
+
+def _scan(root):
+    return derive_findings(build_model(root, _collect_files(root)))
+
+
+def test_setup_py_importing_setuptools_is_not_an_undeclared_dependency(tmp_path):
+    """The false positive this check shipped with. `[build-system].requires`
+    is the ONLY correct place to declare setuptools for a setup.py, because
+    a PEP 517 frontend installs that list into an isolated environment
+    before setup.py is imported. Reading only `[project]` made the right
+    answer look like the defect."""
+    pyproject = (
+        '[build-system]\nrequires = ["setuptools>=68"]\n\n' + PYPROJECT
+    )
+    root = _repo(tmp_path, pyproject=pyproject,
+                 files={"setup.py": SETUP_PY.format(description="demo")})
+    summaries = " ".join(f.summary for f in _scan(root))
+    assert "setuptools" not in summaries
+
+
+def test_a_runtime_module_importing_a_build_requirement_is_still_undeclared(tmp_path):
+    """The exemption is for build-time files only. Consent to install a
+    package before the build is not a declaration that it will be there at
+    import time, and treating it as one would hide a real ImportError."""
+    pyproject = (
+        '[build-system]\nrequires = ["setuptools>=68"]\n\n' + PYPROJECT
+    )
+    root = _repo(tmp_path, pyproject=pyproject,
+                 files={"demo/uses.py": "import setuptools\n"})
+    undeclared = [f for f in _scan(root)
+                  if f.attributes["kind"] == "undeclared dependency"]
+    assert [f for f in undeclared if f.attributes["package"] == "setuptools"]
+
+
+def test_setup_py_and_pyproject_disagreeing_is_major(tmp_path):
+    """fortress-kernel's actual defect: two files declaring one package,
+    with descriptions that had already drifted apart."""
+    pyproject = (
+        '[project]\nname = "demo"\nversion = "0.1.0"\n'
+        'description = "a governance kernel"\n'
+        'dependencies = ["requests>=2"]\n'
+    )
+    root = _repo(tmp_path, pyproject=pyproject, files={
+        "setup.py": SETUP_PY.format(description="something else entirely")})
+    hits = [f for f in _scan(root)
+            if f.attributes["kind"] == "parallel packaging metadata"]
+    assert len(hits) == 1
+    assert hits[0].severity is Severity.MAJOR
+    assert "description" in hits[0].attributes["drifted"]
+
+
+def test_setup_py_and_pyproject_agreeing_is_minor_not_silent(tmp_path):
+    """Agreement today is not a guarantee about tomorrow, and nothing in
+    the repository checks that it holds. That is worth a MINOR and is not
+    worth a MAJOR."""
+    pyproject = (
+        '[project]\nname = "demo"\nversion = "0.1.0"\n'
+        'description = "d"\nrequires-python = ">=3.11"\n'
+        'dependencies = ["requests>=2"]\n'
+    )
+    root = _repo(tmp_path, pyproject=pyproject,
+                 files={"setup.py": SETUP_PY.format(description="d")})
+    hits = [f for f in _scan(root)
+            if f.attributes["kind"] == "parallel packaging metadata"]
+    assert len(hits) == 1
+    assert hits[0].severity is Severity.MINOR
+
+
+def test_a_name_spelled_differently_is_not_drift(tmp_path):
+    """PEP 503 says `Fortress_Kernel` and `fortress-kernel` are one
+    package. Reporting that as disagreement would be reporting a spelling
+    as a defect."""
+    pyproject = '[project]\nname = "demo-pkg"\nversion = "0.1.0"\n'
+    setup = 'from setuptools import setup\n\nsetup(name="Demo_Pkg", version="0.1.0")\n'
+    root = _repo(tmp_path, pyproject=pyproject, files={"setup.py": setup})
+    hits = [f for f in _scan(root)
+            if f.attributes["kind"] == "parallel packaging metadata"]
+    assert len(hits) == 1
+    assert hits[0].severity is Severity.MINOR, hits[0].summary
+
+
+def test_a_computed_value_is_not_compared_because_it_is_not_a_declaration(tmp_path):
+    """A version read at import time is not something this scan can read.
+    Comparing it against anything would manufacture the disagreement."""
+    setup = ('from setuptools import setup\n\n'
+             'setup(name="demo", version=open("VERSION").read())\n')
+    root = _repo(tmp_path, files={"setup.py": setup})
+    hits = [f for f in _scan(root)
+            if f.attributes["kind"] == "parallel packaging metadata"]
+    assert len(hits) == 1
+    assert hits[0].attributes["fields"] == "name"
+
+
+def test_no_setup_py_means_nothing_to_compare(tmp_path):
+    root = _repo(tmp_path)
+    assert "parallel packaging metadata" not in _kinds(_scan(root))
+
+
+def test_packaging_drift_is_reported_even_when_no_module_was_scanned(tmp_path):
+    """The check reads two files, so it is knowable when nothing parsed.
+    Behind the no-modules guard it would be an unreported blind spot in a
+    repository whose every source file is unassessable."""
+    pyproject = (
+        '[project]\nname = "demo"\nversion = "0.1.0"\ndescription = "a"\n'
+    )
+    root = _repo(tmp_path, pyproject=pyproject, files={
+        "setup.py": SETUP_PY.format(description="b")})
+    model = build_model(root, [])
+    assert not model.modules
+    kinds = _kinds(derive_findings(model))
+    assert "parallel packaging metadata" in kinds

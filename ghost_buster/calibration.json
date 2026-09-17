@@ -1,1166 +1,1204 @@
 {
-  "schema": 1,
-  "about": "One record per detector and per repository-level check: the corpus it was measured on, the date, the counts before and after each calibration, the named exclusions, and where the prose account lives. `reproduce` says whether the number can be recomputed by somebody else: a command, the tool version that ran it, and a corpus manifest pinning each repository to a commit. Records written before 1.6.0 carry a null reproduce block with the reason, because a measurement whose corpus was never pinned cannot be pinned afterwards without inventing the commits.",
-  "records": [
-    {
-      "name": "boundary",
-      "kind": "check",
-      "date": "2026-09-10",
-      "corpus": "observe-perceive joined to the six repositories that feed it; ghost_tools self-scan",
-      "before": {
-        "critical_against_working_imports": 2,
-        "self_flag_on_importlib": 1
-      },
-      "after": {
-        "critical_against_working_imports": 0,
-        "self_flag_on_importlib": 0
-      },
-      "exclusions": [
-        "a guarded stdlib import",
-        "re-exports and src layouts resolved"
-      ],
-      "disclosed": [
-        "duck-typed contracts go to unresolved, named"
-      ],
-      "source": "README, the seam; CHANGELOG 0.16.0, 0.17.1, 0.17.5",
-      "reproduce": {
-        "command": null,
-        "tool_version": null,
-        "corpus_manifest": null,
-        "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
-      }
+ "schema": 1,
+ "about": "One record per detector and per repository-level check: the corpus it was measured on, the date, the counts before and after each calibration, the named exclusions, and where the prose account lives. `reproduce` says whether the number can be recomputed by somebody else: a command, the tool version that ran it, and a corpus manifest pinning each repository to a commit. Records written before 1.6.0 carry a null reproduce block with the reason, because a measurement whose corpus was never pinned cannot be pinned afterwards without inventing the commits.",
+ "records": [
+  {
+   "name": "boundary",
+   "kind": "check",
+   "date": "2026-09-10",
+   "corpus": "observe-perceive joined to the six repositories that feed it; ghost_tools self-scan",
+   "before": {
+    "critical_against_working_imports": 2,
+    "self_flag_on_importlib": 1
+   },
+   "after": {
+    "critical_against_working_imports": 0,
+    "self_flag_on_importlib": 0
+   },
+   "exclusions": [
+    "a guarded stdlib import",
+    "re-exports and src layouts resolved"
+   ],
+   "disclosed": [
+    "duck-typed contracts go to unresolved, named"
+   ],
+   "source": "README, the seam; CHANGELOG 0.16.0, 0.17.1, 0.17.5",
+   "reproduce": {
+    "command": null,
+    "tool_version": null,
+    "corpus_manifest": null,
+    "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
+   }
+  },
+  {
+   "name": "committed_secret",
+   "kind": "check",
+   "date": "2026-09-10",
+   "corpus": "33 repositories (31 scanned within budget), then 37",
+   "before": {
+    "repositories_with_findings": 6,
+    "generic_api_key": 31,
+    "private_key": 2
+   },
+   "after": {
+    "generic_api_key_false_positives_of_32": 32,
+    "curl_auth_header_placeholders": 4
+   },
+   "exclusions": [
+    "shape-only rules (generic-api-key, curl-auth-header) rate MAJOR, provider-prefix rules CRITICAL"
+   ],
+   "disclosed": [
+    "a fix scoped to the rules a measurement saw fire is scoped to the measurement"
+   ],
+   "source": "README, committed secrets; CHANGELOG 0.17.3, 0.17.6",
+   "reproduce": {
+    "command": null,
+    "tool_version": null,
+    "corpus_manifest": null,
+    "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
+   }
+  },
+  {
+   "name": "kernel",
+   "kind": "check",
+   "date": "2026-09-11",
+   "corpus": "a 24-class kernel against 37 repositories, three passes",
+   "before": {
+    "methods_only": {
+     "shadows": 64,
+     "drifted": 12,
+     "coincidences": 28
     },
-    {
-      "name": "committed_secret",
-      "kind": "check",
-      "date": "2026-09-10",
-      "corpus": "33 repositories (31 scanned within budget), then 37",
-      "before": {
-        "repositories_with_findings": 6,
-        "generic_api_key": 31,
-        "private_key": 2
-      },
-      "after": {
-        "generic_api_key_false_positives_of_32": 32,
-        "curl_auth_header_placeholders": 4
-      },
-      "exclusions": [
-        "shape-only rules (generic-api-key, curl-auth-header) rate MAJOR, provider-prefix rules CRITICAL"
-      ],
-      "disclosed": [
-        "a fix scoped to the rules a measurement saw fire is scoped to the measurement"
-      ],
-      "source": "README, committed secrets; CHANGELOG 0.17.3, 0.17.6",
-      "reproduce": {
-        "command": null,
-        "tool_version": null,
-        "corpus_manifest": null,
-        "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
-      }
-    },
-    {
-      "name": "kernel",
-      "kind": "check",
-      "date": "2026-09-11",
-      "corpus": "a 24-class kernel against 37 repositories, three passes",
-      "before": {
-        "methods_only": {
-          "shadows": 64,
-          "drifted": 12,
-          "coincidences": 28
-        },
-        "members_only": {
-          "shadows": 64,
-          "drifted": 23,
-          "coincidences": 17
-        }
-      },
-      "after": {
-        "shadows": 64,
-        "drifted": 30,
-        "coincidences": 10,
-        "coincidences_checked_by_hand": 10
-      },
-      "exclusions": [
-        "overlap gate 0.5 on methods when the kernel class has any, class-level members otherwise",
-        "the kernel's own files inside the tree",
-        "test files"
-      ],
-      "disclosed": [
-        "a member-less class with a different base has nothing to compare"
-      ],
-      "source": "README, the shared kernel; CHANGELOG 1.1.0",
-      "reproduce": {
-        "command": null,
-        "tool_version": null,
-        "corpus_manifest": null,
-        "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
-      }
-    },
-    {
-      "name": "no_ci_configuration",
-      "kind": "check",
-      "date": "2026-09-10",
-      "corpus": "three real repositories",
-      "before": null,
-      "after": {
-        "findings": 0
-      },
-      "exclusions": [
-        "a repository with neither tests nor a deploy artifact"
-      ],
-      "disclosed": [],
-      "source": "CHANGELOG 0.14.0",
-      "reproduce": {
-        "command": null,
-        "tool_version": null,
-        "corpus_manifest": null,
-        "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
-      }
-    },
-    {
-      "name": "structure",
-      "kind": "check",
-      "date": "2026-09-10",
-      "corpus": "ghost_tools (68 modules) and one real repository declaring every import",
-      "before": {
-        "packages_misreported_undeclared": 6,
-        "modules_importing_pathlib": 37
-      },
-      "after": {
-        "packages_misreported_undeclared": 0
-      },
-      "exclusions": [
-        "boundaries call-based where the import is noisy",
-        "an import that cannot be mapped to a distribution goes to unresolved"
-      ],
-      "disclosed": [
-        "never infers an architectural boundary from a directory name"
-      ],
-      "source": "README, the structural model; CHANGELOG 0.15.0",
-      "reproduce": {
-        "command": null,
-        "tool_version": null,
-        "corpus_manifest": null,
-        "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
-      }
-    },
-    {
-      "name": "test_status",
-      "kind": "check",
-      "date": "2026-09-09",
-      "corpus": "four real suites: gsa-815 (17 uncollectable modules), observe-perceive (47 skips naming an absent checkout), sentinel_os (18 setup errors on a missing system executable), and a fixture",
-      "before": null,
-      "after": null,
-      "exclusions": [
-        "failure text classified from its error lines only, never the walked source"
-      ],
-      "disclosed": [
-        "a bare assertion whose real cause is a missing service reads as failing",
-        "a named service is not probed",
-        "a skip condition is not parsed, only its reason"
-      ],
-      "source": "README, test status; CHANGELOG 0.10.0",
-      "reproduce": {
-        "command": null,
-        "tool_version": null,
-        "corpus_manifest": null,
-        "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
-      }
-    },
-    {
-      "name": "unmerged_branch",
-      "kind": "check",
-      "date": "2026-09-09",
-      "corpus": "ghost_tools' own history (four squash-merged branches), then 37 repositories",
-      "before": {
-        "false_positives_by_ancestry_alone": 4
-      },
-      "after": {
-        "false_positives": 0,
-        "defects_found_on_the_library_run": 2
-      },
-      "exclusions": [
-        "whole-branch patch-id comparison against a squash commit"
-      ],
-      "disclosed": [
-        "cannot see pull-request state",
-        "a remote ref deleted on GitHub reads as unmerged until pruned"
-      ],
-      "source": "README, unmerged branches; CHANGELOG 0.8.1",
-      "reproduce": {
-        "command": null,
-        "tool_version": null,
-        "corpus_manifest": null,
-        "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
-      }
-    },
-    {
-      "name": "dead_code",
-      "kind": "detector",
-      "date": "2026-09-08",
-      "corpus": "ANVIL, one previously unseen repository",
-      "before": null,
-      "after": null,
-      "exclusions": [
-        "Protocol and ABC interface classes",
-        "string-keyed dynamic dispatch (registry['Name'], exec() into a dict)",
-        "decorated definitions (a decorator hands the name to a registry, so the name is reached through that registry and never appears as an identifier again) -- added 1.7.5"
-      ],
-      "disclosed": [
-        "getattr-by-string is not traced",
-        "decorator-based registration was untraced until 1.7.5. Measured on SWIZZLE 70db473: 51 of 85 findings were this class, and every one of them was a live CLI command. Now excluded; the cost is false negatives on genuinely dead decorated code."
-      ],
-      "source": "README, ghost_buster: dead_code; CHANGELOG 0.1.1",
-      "reproduce": {
-        "command": null,
-        "tool_version": null,
-        "corpus_manifest": null,
-        "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
-      }
-    },
-    {
-      "name": "dead_end_call",
-      "kind": "detector",
-      "date": "2026-09-10",
-      "corpus": "24 live repositories, 1,562 files",
-      "before": {
-        "empty_bodied_callables": 162,
-        "no_override_in_repo": 31,
-        "called_by_live_code": 11
-      },
-      "after": {
-        "findings": 1
-      },
-      "exclusions": [
-        "Null*/NoOp*/Fake*/Stub*/Dummy*/Mock* on a word boundary",
-        "definitions and call sites in test files",
-        "empty __init__, __enter__, __exit__, __del__"
-      ],
-      "disclosed": [
-        "cannot say never: an implementation in a repository the scan was not pointed at would settle it",
-        "AST-only, no type resolution"
-      ],
-      "source": "README, dead_end_call; CHANGELOG 1.0.0",
-      "reproduce": {
-        "command": null,
-        "tool_version": null,
-        "corpus_manifest": null,
-        "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
-      }
-    },
-    {
-      "name": "destructive_sql",
-      "kind": "detector",
-      "date": "2026-09-10",
-      "corpus": "five real repositories",
-      "before": null,
-      "after": {
-        "findings": 0
-      },
-      "exclusions": [
-        "only an executed literal"
-      ],
-      "disclosed": [],
-      "source": "CHANGELOG 0.17.0",
-      "reproduce": {
-        "command": null,
-        "tool_version": null,
-        "corpus_manifest": null,
-        "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
-      }
-    },
-    {
-      "name": "doc_test_count_drift",
-      "kind": "detector",
-      "date": "2026-09-12",
-      "corpus": "2026-09-10: HERALD (135 claimed, 321 collected), the case this detector was built from, plus a ghost_tools self-scan where 3 of 3 findings were false and produced the claim-shape filters. 2026-09-12: the whole 38-repository library, at the commits in the manifest below.",
-      "before": "65 findings raised across the library, after every claim-shape filter including the named-owner rule added in 1.7.0",
-      "after": "0 of the 65 is a stale claim about the scanned repository's own current suite. Read individually: 24 name another project in a comparison table, 13 are scoped to a single test file or a single pytest command, 12 sit in a dated record or status report, and the remaining 16 are hedged, scoped or historical on reading ('Roughly 670 tests' in an investor deck, 'the repository's July 2026 governance status recorded 270 tests', '161/161 tests' as a phase pass ratio). Measured precision on this corpus: 0.",
-      "exclusions": [
-        "one-directional: only a documented count the real count has grown well past (min_growth_ratio and min_absolute_growth both required)",
-        "claims filtered as delta, transition, quotation, attribution or attributed-to-a-named-owner never become findings and are not in the 65"
-      ],
-      "disclosed": [
-        "the static test_* count is a lower bound; parametrize only pushes the true count higher",
-        "the classification of the 65 is a reading, not a mechanical rule. The counts per category are reproducible from the snippets the findings already carry; the category boundaries are a judgement",
-        "precision 0 is a measurement of THIS corpus, one person's library of design documents, status reports and investor material. A corpus of ordinary READMEs would likely score differently, and the one recorded true positive (HERALD) came from exactly such a case",
-        "the finding count was not the defect count. This detector's pool was recommended as the highest-value remedy target on the strength of 65 plus 64 findings, before anybody read them"
-      ],
-      "source": "README, ghost_buster: doc_test_count_drift; CHANGELOG 0.3, 0.10.1, 1.7.0",
-      "reproduce": {
-        "command": "python -m ghost_buster.cli <repo> --tests --json, once per repository, then filter findings to detector doc_test_count_drift and read each evidence.snippet",
-        "tool_version": "1.7.0",
-        "corpus_manifest": {
-          "ANVIL": {
-            "branch": "main",
-            "commit": "4a12274adb"
-          },
-          "ARCHIVE": {
-            "branch": "main",
-            "commit": "dcc6a5456a",
-            "pinned_from": "clone HEAD after the run"
-          },
-          "ATS": {
-            "branch": "main",
-            "commit": "48245a9da5"
-          },
-          "AUGUR": {
-            "branch": "main",
-            "commit": "fc0e5217e1"
-          },
-          "CCC": {
-            "branch": "main",
-            "commit": "d8020cf8a0"
-          },
-          "CITADEL": {
-            "branch": "main",
-            "commit": "3f1d1d5604"
-          },
-          "CNS": {
-            "branch": "main",
-            "commit": "4a2fd10d41"
-          },
-          "CODE": {
-            "branch": "main",
-            "commit": "0506d6c2f5"
-          },
-          "ChatGPT_History": {
-            "branch": "main",
-            "commit": "1414b896ea",
-            "pinned_from": "clone HEAD after the run"
-          },
-          "Claude_History": {
-            "branch": "main",
-            "commit": "5b1c42e06a",
-            "pinned_from": "clone HEAD after the run"
-          },
-          "CoPilot_History": {
-            "branch": "main",
-            "commit": "9f6fb93bf9",
-            "pinned_from": "clone HEAD after the run"
-          },
-          "Conservation_Kernel": {
-            "branch": "main",
-            "commit": "25145aa0a1"
-          },
-          "Data_files": {
-            "branch": "main",
-            "commit": "980e94e657",
-            "pinned_from": "clone HEAD after the run"
-          },
-          "EDDP": {
-            "branch": "main",
-            "commit": "14cef9f96c"
-          },
-          "Ecology": {
-            "branch": "main",
-            "commit": "060334faac"
-          },
-          "GEMS": {
-            "branch": "main",
-            "commit": "a0dc337652"
-          },
-          "GRAPH": {
-            "branch": "main",
-            "commit": "2c6dbbe6eb"
-          },
-          "GSA-815": {
-            "branch": "main",
-            "commit": "28c6de6f6c"
-          },
-          "GSA-Master-Kernel": {
-            "branch": "main",
-            "commit": "8030006bb6",
-            "pinned_from": "clone HEAD after the run"
-          },
-          "Gemini_Extraction": {
-            "branch": "main",
-            "commit": "a3f01feece"
-          },
-          "Gemini_History": {
-            "branch": "main",
-            "commit": "184fd5262f",
-            "pinned_from": "clone HEAD after the run"
-          },
-          "Governance_Gateway": {
-            "branch": "main",
-            "commit": "c507be7279"
-          },
-          "HERALD": {
-            "branch": "main",
-            "commit": "ae5501dbe3"
-          },
-          "KAGGLE": {
-            "branch": "main",
-            "commit": "82ce4e5b05"
-          },
-          "OBSERVE": {
-            "branch": "main",
-            "commit": "9138bedd1e"
-          },
-          "Resume_OS": {
-            "branch": "main",
-            "commit": "aaacc81c03"
-          },
-          "TBCA": {
-            "branch": "main",
-            "commit": "2fb37da434"
-          },
-          "TIE": {
-            "branch": "main",
-            "commit": "bc54b416c1"
-          },
-          "TOUCHSTONE": {
-            "branch": "main",
-            "commit": "0db5600670",
-            "pinned_from": "clone HEAD after the run"
-          },
-          "Triad-42": {
-            "branch": "main",
-            "commit": "19cf383e32"
-          },
-          "VANGUARD": {
-            "branch": "main",
-            "commit": "c0d47614d6",
-            "pinned_from": "clone HEAD after the run"
-          },
-          "content-polish-pipeline": {
-            "branch": "main",
-            "commit": "913c9b82d5"
-          },
-          "fortress-kernel": {
-            "branch": "master",
-            "commit": "2123782c40"
-          },
-          "ghost_tools": {
-            "branch": "main",
-            "commit": "bf37c6e250"
-          },
-          "innovation_os": {
-            "branch": "main",
-            "commit": "3bb189d867"
-          },
-          "observe-perceive": {
-            "branch": "main",
-            "commit": "c0a86516f6"
-          },
-          "sentinel_os": {
-            "branch": "main",
-            "commit": "bd1828012d"
-          },
-          "synapsis": {
-            "branch": "master",
-            "commit": "d0bac3b657"
-          }
-        },
-        "note": null
-      }
-    },
-    {
-      "name": "drifted_copy",
-      "kind": "detector",
-      "date": "2026-09-10",
-      "corpus": "24 live repositories",
-      "before": {
-        "groups_sharing_a_full_name_set": 111
-      },
-      "after": {
-        "drifted": 29
-      },
-      "exclusions": [
-        "byte-identical groups (duplicate_file's finding)",
-        "at least three shared top-level names, equality not overlap"
-      ],
-      "disclosed": [
-        "does not guess intent: a _v1.1 beside a _v1.2 may be a deliberate archive"
-      ],
-      "source": "README, drifted_copy; CHANGELOG 1.0.0",
-      "reproduce": {
-        "command": null,
-        "tool_version": null,
-        "corpus_manifest": null,
-        "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
-      }
-    },
-    {
-      "name": "duplicate_file",
-      "kind": "detector",
-      "date": "2026-09-09",
-      "corpus": "37 repositories, whole library",
-      "before": {
-        "empty_pairs_in_first_35": 4
-      },
-      "after": {
-        "findings": 31
-      },
-      "exclusions": [
-        "empty files are never a group"
-      ],
-      "disclosed": [],
-      "source": "CHANGELOG 0.9.0",
-      "reproduce": {
-        "command": null,
-        "tool_version": null,
-        "corpus_manifest": null,
-        "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
-      }
-    },
-    {
-      "name": "insecure_default",
-      "kind": "detector",
-      "date": "2026-09-10",
-      "corpus": "three real repositories",
-      "before": null,
-      "after": {
-        "findings": 0
-      },
-      "exclusions": [
-        "test files",
-        "wide-open CORS without credentials"
-      ],
-      "disclosed": [
-        "each rule is a construct with essentially one meaning"
-      ],
-      "source": "README, the founder checks; CHANGELOG 0.14.0",
-      "reproduce": {
-        "command": null,
-        "tool_version": null,
-        "corpus_manifest": null,
-        "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
-      }
-    },
-    {
-      "name": "intra_function_duplicate_block",
-      "kind": "detector",
-      "date": "2026-09-09",
-      "corpus": "37 repositories, whole library",
-      "before": {
-        "findings": 1300,
-        "major": 215,
-        "multi_statement_blocks": 30
-      },
-      "after": {
-        "findings": 221,
-        "major": 46,
-        "multi_statement_blocks": 30
-      },
-      "exclusions": [
-        "a single statement counts only across distinct statement lists",
-        "single-statement complexity floor 20 nodes (gate.py's four branch returns measured 41, 26, 33, 22)"
-      ],
-      "disclosed": [
-        "643 of 655 first-run findings were pairs of similar statements inside one block: how code is written, not a ghost"
-      ],
-      "source": "README, ghost_buster: intra_function_duplicate_block; CHANGELOG 0.9.0",
-      "reproduce": {
-        "command": null,
-        "tool_version": null,
-        "corpus_manifest": null,
-        "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
-      }
-    },
-    {
-      "name": "list_membership_in_loop",
-      "kind": "detector",
-      "date": "2026-09-11",
-      "corpus": "ghost_tools (first serum patient)",
-      "before": {
-        "reported": 3
-      },
-      "after": {
-        "reported": 0
-      },
-      "exclusions": [
-        "a literal of eight elements or fewer"
-      ],
-      "disclosed": [
-        "the tree cannot tell a list of four from a list of four million"
-      ],
-      "source": "CHANGELOG 1.0.4",
-      "reproduce": {
-        "command": null,
-        "tool_version": null,
-        "corpus_manifest": null,
-        "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
-      }
-    },
-    {
-      "name": "long_function",
-      "kind": "detector",
-      "date": null,
-      "corpus": null,
-      "before": null,
-      "after": null,
-      "exclusions": [],
-      "disclosed": [
-        "threshold of 80 lines set by convention, never calibrated on a corpus; a line-count proxy, not cyclomatic complexity"
-      ],
-      "source": "README, ghost_buster; the finding's own detail text",
-      "reproduce": {
-        "command": null,
-        "tool_version": null,
-        "corpus_manifest": null,
-        "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
-      }
-    },
-    {
-      "name": "loop_invariant_call",
-      "kind": "detector",
-      "date": "2026-09-11",
-      "corpus": "ghost_tools (first serum patient), then CNS",
-      "before": {
-        "pitstops_on_ghost_tools": 12,
-        "run_all_seconds": 2.76
-      },
-      "after": {
-        "pitstops_on_ghost_tools": 0,
-        "run_all_seconds_after_hoists": 2.85,
-        "pitstops_on_cns": 0
-      },
-      "exclusions": [
-        "another call receives the same name",
-        "a method is called on the argument",
-        "a store into the argument",
-        "a memo behind a None check",
-        "a fresh accumulator the loop fills"
-      ],
-      "disclosed": [
-        "a static pitstop is a hypothesis; only the profiler is evidence"
-      ],
-      "source": "CHANGELOG 1.0.4, 1.0.6",
-      "reproduce": {
-        "command": null,
-        "tool_version": null,
-        "corpus_manifest": null,
-        "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
-      }
-    },
-    {
-      "name": "merge_conflict_marker",
-      "kind": "detector",
-      "date": "2026-09-09",
-      "corpus": "its own module and tests, which discuss the marker strings in prose",
-      "before": null,
-      "after": {
-        "self_flags": 0
-      },
-      "exclusions": [
-        "the full <<<<<<< / ======= / >>>>>>> triplet in order, never a lone line (a Setext H1 underline is a run of =)"
-      ],
-      "disclosed": [],
-      "source": "README, ghost_buster: merge_conflict_marker; CHANGELOG 0.8.0",
-      "reproduce": {
-        "command": null,
-        "tool_version": null,
-        "corpus_manifest": null,
-        "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
-      }
-    },
-    {
-      "name": "name_disagreement",
-      "kind": "detector",
-      "date": "2026-09-10",
-      "corpus": "37 repositories, whole library",
-      "before": {
-        "pairs_unfiltered": 271
-      },
-      "after": {
-        "pairs": 63,
-        "spanning_repositories": 21
-      },
-      "exclusions": [
-        "only a bijection",
-        "a CONSTANT on either side",
-        "a leading underscore on one side only",
-        "camelCase in a snake_case library",
-        "a method only through self or cls; a library-wide name only if defined exactly once"
-      ],
-      "disclosed": [
-        "reports, never renames"
-      ],
-      "source": "README, --annotate-names; CHANGELOG 0.17.10",
-      "reproduce": {
-        "command": null,
-        "tool_version": null,
-        "corpus_manifest": null,
-        "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
-      }
-    },
-    {
-      "name": "near_duplicate_function",
-      "kind": "detector",
-      "date": "2026-09-09",
-      "corpus": "37 repositories, whole library",
-      "before": {
-        "findings": 625,
-        "major": 77
-      },
-      "after": {
-        "findings": 248,
-        "major": 27,
-        "duplicate_file_surfaced": 31
-      },
-      "exclusions": [
-        "byte-identical file groups fingerprinted once (duplicate_file's finding)",
-        "min_lines 10, not 6",
-        "test-only clusters INFORMATIONAL"
-      ],
-      "disclosed": [],
-      "source": "README, ghost_buster: near_duplicate_function; CHANGELOG 0.9.0",
-      "reproduce": {
-        "command": null,
-        "tool_version": null,
-        "corpus_manifest": null,
-        "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
-      }
-    },
-    {
-      "name": "placeholder_name",
-      "kind": "detector",
-      "date": "2026-09-10",
-      "corpus": "37 repositories, whole library",
-      "before": null,
-      "after": null,
-      "exclusions": [
-        "test files"
-      ],
-      "disclosed": [
-        "only where decidable from the code; never whether a name is good"
-      ],
-      "source": "CHANGELOG 0.17.9",
-      "reproduce": {
-        "command": null,
-        "tool_version": null,
-        "corpus_manifest": null,
-        "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
-      }
-    },
-    {
-      "name": "sql_injection",
-      "kind": "detector",
-      "date": "2026-09-10",
-      "corpus": "five real repositories",
-      "before": null,
-      "after": {
-        "findings": 0,
-        "canonical_fixture_fires": true
-      },
-      "exclusions": [
-        "the string has to open with a SQL statement keyword (a task runner's execute(f'step {n}') stays silent)"
-      ],
-      "disclosed": [],
-      "source": "README, what AI-written code gets wrong; CHANGELOG 0.17.0",
-      "reproduce": {
-        "command": null,
-        "tool_version": null,
-        "corpus_manifest": null,
-        "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
-      }
-    },
-    {
-      "name": "swallowed_exception",
-      "kind": "detector",
-      "date": "2026-09-10",
-      "corpus": "ANVIL, CCC, Ecology, AUGUR",
-      "before": {
-        "handlers_in_live_code": 32,
-        "bare_Exception": 13,
-        "in_tests": 22
-      },
-      "after": {
-        "reported": 32,
-        "test_handlers_reported": 0
-      },
-      "exclusions": [
-        "test files",
-        "contextlib.suppress"
-      ],
-      "disclosed": [
-        "only pass; continue, return None and a lone logger.debug each need their own measurement first"
-      ],
-      "source": "README, swallowed_exception; CHANGELOG 1.0.0",
-      "reproduce": {
-        "command": null,
-        "tool_version": null,
-        "corpus_manifest": null,
-        "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
-      }
-    },
-    {
-      "name": "unassessable_file",
-      "kind": "detector",
-      "date": "2026-09-09",
-      "corpus": "three files: one clean, one with conflict markers, one with a syntax typo",
-      "before": {
-        "findings_on_the_typo_file": 0
-      },
-      "after": {
-        "findings_on_the_typo_file": 1
-      },
-      "exclusions": [],
-      "disclosed": [
-        "borrowed from observe-perceive's BayesianFusion abstained=True"
-      ],
-      "source": "README, files that will not parse; CHANGELOG 0.13.0",
-      "reproduce": {
-        "command": null,
-        "tool_version": null,
-        "corpus_manifest": null,
-        "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
-      }
-    },
-    {
-      "name": "unauthenticated_route",
-      "kind": "detector",
-      "date": "2026-09-10",
-      "corpus": "three real repositories",
-      "before": null,
-      "after": {
-        "findings": 0
-      },
-      "exclusions": [
-        "a fully public module",
-        "a fully protected module",
-        "auth applied by middleware (drops below the majority threshold)",
-        "test files"
-      ],
-      "disclosed": [
-        "fails quiet, deliberately"
-      ],
-      "source": "README, the founder checks; CHANGELOG 0.14.0",
-      "reproduce": {
-        "command": null,
-        "tool_version": null,
-        "corpus_manifest": null,
-        "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
-      }
-    },
-    {
-      "name": "vestigial_domain_name",
-      "kind": "detector",
-      "date": "2026-09-10",
-      "corpus": "37 repositories, whole library",
-      "before": null,
-      "after": null,
-      "exclusions": [],
-      "disclosed": [
-        "a prose-shaped identifier check was prototyped on the same corpus: 1,108 hits, 1,099 of them deliberate test names; abandoned"
-      ],
-      "source": "CHANGELOG 0.17.9",
-      "reproduce": {
-        "command": null,
-        "tool_version": null,
-        "corpus_manifest": null,
-        "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
-      }
-    },
-    {
-      "name": "readiness",
-      "kind": "gate",
-      "date": "2026-09-11",
-      "corpus": "three operations on ghost_tools, then 38 repositories in the pre-flight sweep",
-      "before": {
-        "criteria_met_on_first_patient": "5 of 6"
-      },
-      "after": {
-        "first_candidate": "ghost_tools 1.0.3",
-        "candidates_in_the_fast_sweep": 0,
-        "repositories_failing_secrets_on_candidates_alone_before_1.2.2": 7
-      },
-      "exclusions": [],
-      "disclosed": [
-        "unknown counts against the patient",
-        "since 1.2.2 only an established credential (CRITICAL) fails the secrets criterion; a candidate is reported beside the verdict and retired by a false decision in the case file. Before that any committed_secret failed it: seven of 38 repositories in the pre-flight sweep, none a credential on the evidence"
-      ],
-      "source": "README, the surgeon; CHANGELOG 1.0.0 through 1.0.4, 1.2.2",
-      "reproduce": {
-        "command": null,
-        "tool_version": null,
-        "corpus_manifest": null,
-        "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
-      }
-    },
-    {
-      "name": "corpus",
-      "kind": "infrastructure",
-      "date": "2026-09-11",
-      "corpus": "ghost_tools, 112 files",
-      "before": {
-        "ast_parse_calls": 1064,
-        "seconds_in_parse": 2.14,
-        "run_all_seconds": 4.14
-      },
-      "after": {
-        "ast_parse_calls": 113,
-        "seconds_in_parse": 0.54,
-        "run_all_seconds": 2.49
-      },
-      "exclusions": [],
-      "disclosed": [
-        "six read policies collapsed to the interpreter's own"
-      ],
-      "source": "README, the corpus; CHANGELOG 0.18.0",
-      "reproduce": {
-        "command": null,
-        "tool_version": null,
-        "corpus_manifest": null,
-        "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
-      }
-    },
-    {
-      "name": "finding_identity",
-      "kind": "infrastructure",
-      "date": "2026-09-11",
-      "corpus": "38 repositories, whole library, pinned by commit in reproduce.corpus_manifest",
-      "before": {
-        "findings": 3292,
-        "findings_sharing_an_id_with_another": 16,
-        "colliding_pairs": 8,
-        "distinct_defects_hidden": 8
-      },
-      "after": {
-        "findings": 3358,
-        "findings_sharing_an_id_with_another": 0,
-        "note": "after the 1.5.0 place-derived suffix; the 1.2.4 run above is the before"
-      },
-      "exclusions": [
-        "a finding reported twice from one place is one finding, not a collision",
-        "detectors that record no line cannot be disambiguated and are counted as unresolved"
-      ],
-      "disclosed": [
-        "measured on one library of one author's repositories; the collision rate elsewhere is unknown",
-        "the before-run used 1.0.5 and the after-run 1.2.4, so the two totals are not a like-for-like delta of the same tool"
-      ],
-      "source": "README, finding ids; CHANGELOG 1.3.0 and 1.5.0",
-      "reproduce": {
-        "command": "python -m ghost_buster.cli <repo> --tests --tests-timeout 600 --tests-reruns 1 --secrets-timeout 900 --json --baseline <a path that does not exist>, once per repository, then count ids appearing more than once per repository's findings.json",
-        "tool_version": "1.2.4",
-        "corpus_manifest": {
-          "ANVIL": {
-            "branch": "main",
-            "commit": "4a12274adb"
-          },
-          "ARCHIVE": {
-            "branch": "main",
-            "commit": "dcc6a5456a",
-            "pinned_from": "clone HEAD after the run"
-          },
-          "ATS": {
-            "branch": "main",
-            "commit": "48245a9da5"
-          },
-          "AUGUR": {
-            "branch": "main",
-            "commit": "fc0e5217e1"
-          },
-          "CCC": {
-            "branch": "main",
-            "commit": "d8020cf8a0"
-          },
-          "CITADEL": {
-            "branch": "main",
-            "commit": "3f1d1d5604"
-          },
-          "CNS": {
-            "branch": "main",
-            "commit": "4a2fd10d41"
-          },
-          "CODE": {
-            "branch": "main",
-            "commit": "0506d6c2f5"
-          },
-          "ChatGPT_History": {
-            "branch": "main",
-            "commit": "1414b896ea",
-            "pinned_from": "clone HEAD after the run"
-          },
-          "Claude_History": {
-            "branch": "main",
-            "commit": "5b1c42e06a",
-            "pinned_from": "clone HEAD after the run"
-          },
-          "CoPilot_History": {
-            "branch": "main",
-            "commit": "9f6fb93bf9",
-            "pinned_from": "clone HEAD after the run"
-          },
-          "Conservation_Kernel": {
-            "branch": "main",
-            "commit": "25145aa0a1"
-          },
-          "Data_files": {
-            "branch": "main",
-            "commit": "980e94e657",
-            "pinned_from": "clone HEAD after the run"
-          },
-          "EDDP": {
-            "branch": "main",
-            "commit": "14cef9f96c"
-          },
-          "Ecology": {
-            "branch": "main",
-            "commit": "060334faac"
-          },
-          "GEMS": {
-            "branch": "main",
-            "commit": "a0dc337652"
-          },
-          "GRAPH": {
-            "branch": "main",
-            "commit": "2c6dbbe6eb"
-          },
-          "GSA-815": {
-            "branch": "main",
-            "commit": "28c6de6f6c"
-          },
-          "GSA-Master-Kernel": {
-            "branch": "main",
-            "commit": "8030006bb6",
-            "pinned_from": "clone HEAD after the run"
-          },
-          "Gemini_Extraction": {
-            "branch": "main",
-            "commit": "a3f01feece"
-          },
-          "Gemini_History": {
-            "branch": "main",
-            "commit": "184fd5262f",
-            "pinned_from": "clone HEAD after the run"
-          },
-          "Governance_Gateway": {
-            "branch": "main",
-            "commit": "c507be7279"
-          },
-          "HERALD": {
-            "branch": "main",
-            "commit": "ae5501dbe3"
-          },
-          "KAGGLE": {
-            "branch": "main",
-            "commit": "82ce4e5b05"
-          },
-          "OBSERVE": {
-            "branch": "main",
-            "commit": "9138bedd1e"
-          },
-          "Resume_OS": {
-            "branch": "main",
-            "commit": "aaacc81c03"
-          },
-          "TBCA": {
-            "branch": "main",
-            "commit": "2fb37da434"
-          },
-          "TIE": {
-            "branch": "main",
-            "commit": "bc54b416c1"
-          },
-          "TOUCHSTONE": {
-            "branch": "main",
-            "commit": "0db5600670",
-            "pinned_from": "clone HEAD after the run"
-          },
-          "Triad-42": {
-            "branch": "main",
-            "commit": "19cf383e32"
-          },
-          "VANGUARD": {
-            "branch": "main",
-            "commit": "c0d47614d6",
-            "pinned_from": "clone HEAD after the run"
-          },
-          "content-polish-pipeline": {
-            "branch": "main",
-            "commit": "913c9b82d5"
-          },
-          "fortress-kernel": {
-            "branch": "master",
-            "commit": "2123782c40"
-          },
-          "ghost_tools": {
-            "branch": "main",
-            "commit": "bf37c6e250"
-          },
-          "innovation_os": {
-            "branch": "main",
-            "commit": "3bb189d867"
-          },
-          "observe-perceive": {
-            "branch": "main",
-            "commit": "c0a86516f6"
-          },
-          "sentinel_os": {
-            "branch": "main",
-            "commit": "bd1828012d"
-          },
-          "synapsis": {
-            "branch": "master",
-            "commit": "d0bac3b657"
-          }
-        },
-        "note": "every repository pinned to the commit the run itself recorded in its operative report; the nine archives produce no report, so their commits are the clones' HEAD verified unmoved against the 29 that were pinned by the run"
-      }
-    },
-    {
-      "name": "ledger",
-      "kind": "memory",
-      "date": null,
-      "corpus": null,
-      "before": null,
-      "after": null,
-      "exclusions": [],
-      "disclosed": [
-        "thresholds (three returns, ten runs, five blind runs) set by design, not measured on a corpus; the trajectory filter is the constant-velocity Kalman filter from a pediatric deterioration engine"
-      ],
-      "source": "README, what it remembers; CHANGELOG 0.13.0, 0.17.4",
-      "reproduce": {
-        "command": null,
-        "tool_version": null,
-        "corpus_manifest": null,
-        "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
-      }
-    },
-    {
-      "name": "unreachable_declared_state",
-      "kind": "detector",
-      "date": "2026-09-12",
-      "corpus": "SWIZZLE 70db473 (105 files, 67 enum members across 13 enums) and ghost_tools 2285122 (6 enums)",
-      "before": null,
-      "after": null,
-      "exclusions": [
-        "enums where NO member is ever produced (reconstructed from data: an HTTP status, a wire protocol). Without this the detector's entire output would be such enums",
-        "classes that do not inherit an Enum base, so a settings class of upper-case constants is not treated as a state machine",
-        "lower-case class attributes, which are not enum members by convention",
-        "members named only inside a module-level upper-case constant holding a COLLECTION -- a lookup table is a comparison in disguise. A constant holding a single member is still a production. Added 1.7.6",
-        "nothing for a test production. A member produced ONLY by test code is reported at full weight. 1.7.7 discounted it to INFORMATIONAL; 1.7.8 removed the discount, because a test file is the cheapest artifact anyone can add to a repository and grading it measures willingness to type rather than intent. Against history the same observation ESCALATES: see relocated_to_tests",
-        "members reachable by building the enum from a runtime value -- `Status(payload['status'])`, `Status[name]`, `getattr(Status, name)`. These really are reachable, and reporting them was a false positive rather than a near miss: two of this repository's own findings were of exactly that kind. A LITERAL argument accounts only for the member it names. Added 1.7.8"
-      ],
-      "disclosed": [
-        "a member is matched by NAME, not by resolving the enum, so a member name shared by two enums is treated as produced for both. An AST-only tool; the cost is a lost finding rather than an invented one",
-        "it does not claim the state is unreachable. What is checked is syntactic, so a value read back from a stored record can still arrive by a path this tool cannot see -- which is worse, not better, and the finding says so",
-        "PROSE IS CHECKED, NEVER BELIEVED. A docstring saying a member arrives from stored data suppresses nothing on its own; the data path has to be there. The same claim with NO data path is CRITICAL, because an undocumented gap is a gap and a documented one is a gap plus an assurance that stops the next reader looking. Claims are free to write and so are only ever held against the writer. Added 1.7.8",
-        "git history is consulted, through forensics.py, to tell a state nobody wired up (MINOR) from one something stopped producing (MAJOR). This makes the detector no longer a pure function of the working tree, though still deterministic; `history=False` restores the narrower guarantee. Added 1.7.8",
-        "an unreadable history -- no repository, no git, a shallow clone, a walk that exceeds its budget -- yields UNKNOWN provenance, which grades at the weight of what was actually observed and NEVER escalates. Collapsing UNKNOWN into 'never produced' would report the end of the search as the end of the history. Added 1.7.8",
-        "RELOCATED_TO_TESTS is recognised only when the production leaves library code and appears in a test in the SAME commit. Splitting it across two commits, in either order, reports REMOVED_FROM_LIBRARY instead -- which carries the same severity, so the evasion loses the label and gains nothing. Asserted as a property in Tests/test_forensics.py, because a future version escalating only relocation would create the incentive that currently does not exist",
-        "history is searched for the text `Enum.MEMBER`, so a commit that renamed the ENUM hides everything before the rename and the answer degrades to NEVER_PRODUCED. The forensic layer is an escalation on top of a finding that stands without it, so a missed escalation loses precision rather than the finding"
-      ],
-      "source": "CHANGELOG 1.7.8; Tests/test_unreachable_declared_state.py; Tests/test_forensics.py",
-      "reproduce": {
-        "command": "python -m ghost_buster.cli <path> --single-repo --no-secrets --no-branches --no-structure --no-ledger --json",
-        "tool_version": "1.7.8",
-        "corpus_manifest": {
-          "wking53214/SWIZZLE": {
-            "commit": "70db473",
-            "files": 105
-          },
-          "wking53214/ghost_tools": {
-            "commit": "2285122",
-            "files": 0
-          }
-        },
-        "note": "Found 1 on each. On SWIZZLE: Phase.BETWEEN_RUNS, declared among four phases of which the world builder carries out three, so a case declaring it built a world without its mutation and was still judged as temporal. On ghost_tools itself: Status.REJECTED ('a human looked and said no'), which nothing produces and whose triage module does not exist. Both confirmed by hand. 1.7.6: counting lookup-table membership as production had made this detector miss a state of exactly the shape it was built to find -- it reported Status.REJECTED and stayed quiet about Status.CONFIRMED_BY_REVIEW, which is never assigned either. Findings on ghost_tools went 1 -> 5, and all five were confirmed by hand: two Status members superseded by `disposition`, and three EvidenceKind members in blackhole_extrapolator that appear only as keys in a confidence-weight table, so the table assigns confidence to evidence nothing can produce. 1.7.7: counting a TEST production as a production was the third blind spot of the same shape, and the worst -- the harness defect this detector was built for would have gone unreported if a single test had named the phase, which is the most likely thing in the world. Library and test corpora are now separated. The distinction added four true findings across the two repositories and none was actionable (states reached from stored data, or held unreachable on purpose), so test-only findings are INFORMATIONAL: weaker evidence, weaker claim. 1.7.8: the 1.7.7 discount was itself the defect. Grading a test production as weaker evidence of intent used a signal an adversary can manufacture for free, so the attack it was meant to close -- one test naming the state -- still worked, at the cost of one severity notch instead of total suppression. The discount is gone. Three things replace it. (1) Building the enum from a runtime value is now recognised as a production, which retired two FALSE POSITIVES on this repository: Status.CONFIRMED_BY_REVIEW and Status.REJECTED were reported at the top severity this detector emitted while Finding.from_dict built either from a stored record at schema.py:347. (2) A docstring claiming a member arrives from data is verified against the code: backed, it clears the finding; unbacked, it is CRITICAL. (3) Git history separates an oversight from a removal, and names the case where the last production MOVED from library code into a test -- the shape of quieting this detector rather than answering it. ghost_tools now reports 5 (4 EvidenceKind, 1 VoidKind, all never_produced, all confirmed by hand); the two Status findings are correctly silent."
-      }
+    "members_only": {
+     "shadows": 64,
+     "drifted": 23,
+     "coincidences": 17
     }
-  ]
+   },
+   "after": {
+    "shadows": 64,
+    "drifted": 30,
+    "coincidences": 10,
+    "coincidences_checked_by_hand": 10
+   },
+   "exclusions": [
+    "overlap gate 0.5 on methods when the kernel class has any, class-level members otherwise",
+    "the kernel's own files inside the tree",
+    "test files"
+   ],
+   "disclosed": [
+    "a member-less class with a different base has nothing to compare"
+   ],
+   "source": "README, the shared kernel; CHANGELOG 1.1.0",
+   "reproduce": {
+    "command": null,
+    "tool_version": null,
+    "corpus_manifest": null,
+    "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
+   }
+  },
+  {
+   "name": "no_ci_configuration",
+   "kind": "check",
+   "date": "2026-09-10",
+   "corpus": "three real repositories",
+   "before": null,
+   "after": {
+    "findings": 0
+   },
+   "exclusions": [
+    "a repository with neither tests nor a deploy artifact"
+   ],
+   "disclosed": [],
+   "source": "CHANGELOG 0.14.0",
+   "reproduce": {
+    "command": null,
+    "tool_version": null,
+    "corpus_manifest": null,
+    "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
+   }
+  },
+  {
+   "name": "structure",
+   "kind": "check",
+   "date": "2026-09-10",
+   "corpus": "ghost_tools (68 modules) and one real repository declaring every import",
+   "before": {
+    "packages_misreported_undeclared": 6,
+    "modules_importing_pathlib": 37
+   },
+   "after": {
+    "packages_misreported_undeclared": 0
+   },
+   "exclusions": [
+    "boundaries call-based where the import is noisy",
+    "an import that cannot be mapped to a distribution goes to unresolved"
+   ],
+   "disclosed": [
+    "never infers an architectural boundary from a directory name",
+    "The `parallel packaging metadata` kind was added at 1.8.0 and measured separately on the same three repositories as `test_config_collects_nothing`: one finding, on fortress-kernel, where setup.py and pyproject.toml declared five of the same fields and the descriptions had already drifted apart. The other two declare a package in one file each and were not reported. The pre-1.8.0 numbers in this record do not cover that kind.",
+    "Also at 1.8.0: `undeclared dependency` reads `[build-system].requires` for the imports of build-time files (setup.py). Before that, a setup.py importing setuptools was reported as an undeclared dependency on every repository that declares it in the one correct place. That was a false positive, found by this toolkit's own scan of fortress-kernel, and it is not reflected in the counts above."
+   ],
+   "source": "README, the structural model; CHANGELOG 0.15.0",
+   "reproduce": {
+    "command": null,
+    "tool_version": null,
+    "corpus_manifest": null,
+    "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
+   }
+  },
+  {
+   "name": "test_status",
+   "kind": "check",
+   "date": "2026-09-09",
+   "corpus": "four real suites: gsa-815 (17 uncollectable modules), observe-perceive (47 skips naming an absent checkout), sentinel_os (18 setup errors on a missing system executable), and a fixture",
+   "before": null,
+   "after": null,
+   "exclusions": [
+    "failure text classified from its error lines only, never the walked source"
+   ],
+   "disclosed": [
+    "a bare assertion whose real cause is a missing service reads as failing",
+    "a named service is not probed",
+    "a skip condition is not parsed, only its reason"
+   ],
+   "source": "README, test status; CHANGELOG 0.10.0",
+   "reproduce": {
+    "command": null,
+    "tool_version": null,
+    "corpus_manifest": null,
+    "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
+   }
+  },
+  {
+   "name": "unmerged_branch",
+   "kind": "check",
+   "date": "2026-09-09",
+   "corpus": "ghost_tools' own history (four squash-merged branches), then 37 repositories",
+   "before": {
+    "false_positives_by_ancestry_alone": 4
+   },
+   "after": {
+    "false_positives": 0,
+    "defects_found_on_the_library_run": 2
+   },
+   "exclusions": [
+    "whole-branch patch-id comparison against a squash commit"
+   ],
+   "disclosed": [
+    "cannot see pull-request state",
+    "a remote ref deleted on GitHub reads as unmerged until pruned"
+   ],
+   "source": "README, unmerged branches; CHANGELOG 0.8.1",
+   "reproduce": {
+    "command": null,
+    "tool_version": null,
+    "corpus_manifest": null,
+    "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
+   }
+  },
+  {
+   "name": "dead_code",
+   "kind": "detector",
+   "date": "2026-09-08",
+   "corpus": "ANVIL, one previously unseen repository",
+   "before": null,
+   "after": null,
+   "exclusions": [
+    "Protocol and ABC interface classes",
+    "string-keyed dynamic dispatch (registry['Name'], exec() into a dict)",
+    "decorated definitions (a decorator hands the name to a registry, so the name is reached through that registry and never appears as an identifier again) -- added 1.7.5"
+   ],
+   "disclosed": [
+    "getattr-by-string is not traced",
+    "decorator-based registration was untraced until 1.7.5. Measured on SWIZZLE 70db473: 51 of 85 findings were this class, and every one of them was a live CLI command. Now excluded; the cost is false negatives on genuinely dead decorated code."
+   ],
+   "source": "README, ghost_buster: dead_code; CHANGELOG 0.1.1",
+   "reproduce": {
+    "command": null,
+    "tool_version": null,
+    "corpus_manifest": null,
+    "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
+   }
+  },
+  {
+   "name": "dead_end_call",
+   "kind": "detector",
+   "date": "2026-09-10",
+   "corpus": "24 live repositories, 1,562 files",
+   "before": {
+    "empty_bodied_callables": 162,
+    "no_override_in_repo": 31,
+    "called_by_live_code": 11
+   },
+   "after": {
+    "findings": 1
+   },
+   "exclusions": [
+    "Null*/NoOp*/Fake*/Stub*/Dummy*/Mock* on a word boundary",
+    "definitions and call sites in test files",
+    "empty __init__, __enter__, __exit__, __del__"
+   ],
+   "disclosed": [
+    "cannot say never: an implementation in a repository the scan was not pointed at would settle it",
+    "AST-only, no type resolution"
+   ],
+   "source": "README, dead_end_call; CHANGELOG 1.0.0",
+   "reproduce": {
+    "command": null,
+    "tool_version": null,
+    "corpus_manifest": null,
+    "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
+   }
+  },
+  {
+   "name": "destructive_sql",
+   "kind": "detector",
+   "date": "2026-09-10",
+   "corpus": "five real repositories",
+   "before": null,
+   "after": {
+    "findings": 0
+   },
+   "exclusions": [
+    "only an executed literal"
+   ],
+   "disclosed": [],
+   "source": "CHANGELOG 0.17.0",
+   "reproduce": {
+    "command": null,
+    "tool_version": null,
+    "corpus_manifest": null,
+    "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
+   }
+  },
+  {
+   "name": "doc_test_count_drift",
+   "kind": "detector",
+   "date": "2026-09-12",
+   "corpus": "2026-09-10: HERALD (135 claimed, 321 collected), the case this detector was built from, plus a ghost_tools self-scan where 3 of 3 findings were false and produced the claim-shape filters. 2026-09-12: the whole 38-repository library, at the commits in the manifest below.",
+   "before": "65 findings raised across the library, after every claim-shape filter including the named-owner rule added in 1.7.0",
+   "after": "0 of the 65 is a stale claim about the scanned repository's own current suite. Read individually: 24 name another project in a comparison table, 13 are scoped to a single test file or a single pytest command, 12 sit in a dated record or status report, and the remaining 16 are hedged, scoped or historical on reading ('Roughly 670 tests' in an investor deck, 'the repository's July 2026 governance status recorded 270 tests', '161/161 tests' as a phase pass ratio). Measured precision on this corpus: 0.",
+   "exclusions": [
+    "one-directional: only a documented count the real count has grown well past (min_growth_ratio and min_absolute_growth both required)",
+    "claims filtered as delta, transition, quotation, attribution or attributed-to-a-named-owner never become findings and are not in the 65"
+   ],
+   "disclosed": [
+    "the static test_* count is a lower bound; parametrize only pushes the true count higher",
+    "the classification of the 65 is a reading, not a mechanical rule. The counts per category are reproducible from the snippets the findings already carry; the category boundaries are a judgement",
+    "precision 0 is a measurement of THIS corpus, one person's library of design documents, status reports and investor material. A corpus of ordinary READMEs would likely score differently, and the one recorded true positive (HERALD) came from exactly such a case",
+    "the finding count was not the defect count. This detector's pool was recommended as the highest-value remedy target on the strength of 65 plus 64 findings, before anybody read them"
+   ],
+   "source": "README, ghost_buster: doc_test_count_drift; CHANGELOG 0.3, 0.10.1, 1.7.0",
+   "reproduce": {
+    "command": "python -m ghost_buster.cli <repo> --tests --json, once per repository, then filter findings to detector doc_test_count_drift and read each evidence.snippet",
+    "tool_version": "1.7.0",
+    "corpus_manifest": {
+     "ANVIL": {
+      "branch": "main",
+      "commit": "4a12274adb"
+     },
+     "ARCHIVE": {
+      "branch": "main",
+      "commit": "dcc6a5456a",
+      "pinned_from": "clone HEAD after the run"
+     },
+     "ATS": {
+      "branch": "main",
+      "commit": "48245a9da5"
+     },
+     "AUGUR": {
+      "branch": "main",
+      "commit": "fc0e5217e1"
+     },
+     "CCC": {
+      "branch": "main",
+      "commit": "d8020cf8a0"
+     },
+     "CITADEL": {
+      "branch": "main",
+      "commit": "3f1d1d5604"
+     },
+     "CNS": {
+      "branch": "main",
+      "commit": "4a2fd10d41"
+     },
+     "CODE": {
+      "branch": "main",
+      "commit": "0506d6c2f5"
+     },
+     "ChatGPT_History": {
+      "branch": "main",
+      "commit": "1414b896ea",
+      "pinned_from": "clone HEAD after the run"
+     },
+     "Claude_History": {
+      "branch": "main",
+      "commit": "5b1c42e06a",
+      "pinned_from": "clone HEAD after the run"
+     },
+     "CoPilot_History": {
+      "branch": "main",
+      "commit": "9f6fb93bf9",
+      "pinned_from": "clone HEAD after the run"
+     },
+     "Conservation_Kernel": {
+      "branch": "main",
+      "commit": "25145aa0a1"
+     },
+     "Data_files": {
+      "branch": "main",
+      "commit": "980e94e657",
+      "pinned_from": "clone HEAD after the run"
+     },
+     "EDDP": {
+      "branch": "main",
+      "commit": "14cef9f96c"
+     },
+     "Ecology": {
+      "branch": "main",
+      "commit": "060334faac"
+     },
+     "GEMS": {
+      "branch": "main",
+      "commit": "a0dc337652"
+     },
+     "GRAPH": {
+      "branch": "main",
+      "commit": "2c6dbbe6eb"
+     },
+     "GSA-815": {
+      "branch": "main",
+      "commit": "28c6de6f6c"
+     },
+     "GSA-Master-Kernel": {
+      "branch": "main",
+      "commit": "8030006bb6",
+      "pinned_from": "clone HEAD after the run"
+     },
+     "Gemini_Extraction": {
+      "branch": "main",
+      "commit": "a3f01feece"
+     },
+     "Gemini_History": {
+      "branch": "main",
+      "commit": "184fd5262f",
+      "pinned_from": "clone HEAD after the run"
+     },
+     "Governance_Gateway": {
+      "branch": "main",
+      "commit": "c507be7279"
+     },
+     "HERALD": {
+      "branch": "main",
+      "commit": "ae5501dbe3"
+     },
+     "KAGGLE": {
+      "branch": "main",
+      "commit": "82ce4e5b05"
+     },
+     "OBSERVE": {
+      "branch": "main",
+      "commit": "9138bedd1e"
+     },
+     "Resume_OS": {
+      "branch": "main",
+      "commit": "aaacc81c03"
+     },
+     "TBCA": {
+      "branch": "main",
+      "commit": "2fb37da434"
+     },
+     "TIE": {
+      "branch": "main",
+      "commit": "bc54b416c1"
+     },
+     "TOUCHSTONE": {
+      "branch": "main",
+      "commit": "0db5600670",
+      "pinned_from": "clone HEAD after the run"
+     },
+     "Triad-42": {
+      "branch": "main",
+      "commit": "19cf383e32"
+     },
+     "VANGUARD": {
+      "branch": "main",
+      "commit": "c0d47614d6",
+      "pinned_from": "clone HEAD after the run"
+     },
+     "content-polish-pipeline": {
+      "branch": "main",
+      "commit": "913c9b82d5"
+     },
+     "fortress-kernel": {
+      "branch": "master",
+      "commit": "2123782c40"
+     },
+     "ghost_tools": {
+      "branch": "main",
+      "commit": "bf37c6e250"
+     },
+     "innovation_os": {
+      "branch": "main",
+      "commit": "3bb189d867"
+     },
+     "observe-perceive": {
+      "branch": "main",
+      "commit": "c0a86516f6"
+     },
+     "sentinel_os": {
+      "branch": "main",
+      "commit": "bd1828012d"
+     },
+     "synapsis": {
+      "branch": "master",
+      "commit": "d0bac3b657"
+     }
+    },
+    "note": null
+   }
+  },
+  {
+   "name": "drifted_copy",
+   "kind": "detector",
+   "date": "2026-09-10",
+   "corpus": "24 live repositories",
+   "before": {
+    "groups_sharing_a_full_name_set": 111
+   },
+   "after": {
+    "drifted": 29
+   },
+   "exclusions": [
+    "byte-identical groups (duplicate_file's finding)",
+    "at least three shared top-level names, equality not overlap"
+   ],
+   "disclosed": [
+    "does not guess intent: a _v1.1 beside a _v1.2 may be a deliberate archive"
+   ],
+   "source": "README, drifted_copy; CHANGELOG 1.0.0",
+   "reproduce": {
+    "command": null,
+    "tool_version": null,
+    "corpus_manifest": null,
+    "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
+   }
+  },
+  {
+   "name": "duplicate_file",
+   "kind": "detector",
+   "date": "2026-09-09",
+   "corpus": "37 repositories, whole library",
+   "before": {
+    "empty_pairs_in_first_35": 4
+   },
+   "after": {
+    "findings": 31
+   },
+   "exclusions": [
+    "empty files are never a group"
+   ],
+   "disclosed": [],
+   "source": "CHANGELOG 0.9.0",
+   "reproduce": {
+    "command": null,
+    "tool_version": null,
+    "corpus_manifest": null,
+    "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
+   }
+  },
+  {
+   "name": "insecure_default",
+   "kind": "detector",
+   "date": "2026-09-10",
+   "corpus": "three real repositories",
+   "before": null,
+   "after": {
+    "findings": 0
+   },
+   "exclusions": [
+    "test files",
+    "wide-open CORS without credentials"
+   ],
+   "disclosed": [
+    "each rule is a construct with essentially one meaning"
+   ],
+   "source": "README, the founder checks; CHANGELOG 0.14.0",
+   "reproduce": {
+    "command": null,
+    "tool_version": null,
+    "corpus_manifest": null,
+    "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
+   }
+  },
+  {
+   "name": "intra_function_duplicate_block",
+   "kind": "detector",
+   "date": "2026-09-09",
+   "corpus": "37 repositories, whole library",
+   "before": {
+    "findings": 1300,
+    "major": 215,
+    "multi_statement_blocks": 30
+   },
+   "after": {
+    "findings": 221,
+    "major": 46,
+    "multi_statement_blocks": 30
+   },
+   "exclusions": [
+    "a single statement counts only across distinct statement lists",
+    "single-statement complexity floor 20 nodes (gate.py's four branch returns measured 41, 26, 33, 22)"
+   ],
+   "disclosed": [
+    "643 of 655 first-run findings were pairs of similar statements inside one block: how code is written, not a ghost"
+   ],
+   "source": "README, ghost_buster: intra_function_duplicate_block; CHANGELOG 0.9.0",
+   "reproduce": {
+    "command": null,
+    "tool_version": null,
+    "corpus_manifest": null,
+    "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
+   }
+  },
+  {
+   "name": "list_membership_in_loop",
+   "kind": "detector",
+   "date": "2026-09-11",
+   "corpus": "ghost_tools (first serum patient)",
+   "before": {
+    "reported": 3
+   },
+   "after": {
+    "reported": 0
+   },
+   "exclusions": [
+    "a literal of eight elements or fewer"
+   ],
+   "disclosed": [
+    "the tree cannot tell a list of four from a list of four million"
+   ],
+   "source": "CHANGELOG 1.0.4",
+   "reproduce": {
+    "command": null,
+    "tool_version": null,
+    "corpus_manifest": null,
+    "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
+   }
+  },
+  {
+   "name": "long_function",
+   "kind": "detector",
+   "date": null,
+   "corpus": null,
+   "before": null,
+   "after": null,
+   "exclusions": [],
+   "disclosed": [
+    "threshold of 80 lines set by convention, never calibrated on a corpus; a line-count proxy, not cyclomatic complexity"
+   ],
+   "source": "README, ghost_buster; the finding's own detail text",
+   "reproduce": {
+    "command": null,
+    "tool_version": null,
+    "corpus_manifest": null,
+    "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
+   }
+  },
+  {
+   "name": "loop_invariant_call",
+   "kind": "detector",
+   "date": "2026-09-11",
+   "corpus": "ghost_tools (first serum patient), then CNS",
+   "before": {
+    "pitstops_on_ghost_tools": 12,
+    "run_all_seconds": 2.76
+   },
+   "after": {
+    "pitstops_on_ghost_tools": 0,
+    "run_all_seconds_after_hoists": 2.85,
+    "pitstops_on_cns": 0
+   },
+   "exclusions": [
+    "another call receives the same name",
+    "a method is called on the argument",
+    "a store into the argument",
+    "a memo behind a None check",
+    "a fresh accumulator the loop fills"
+   ],
+   "disclosed": [
+    "a static pitstop is a hypothesis; only the profiler is evidence"
+   ],
+   "source": "CHANGELOG 1.0.4, 1.0.6",
+   "reproduce": {
+    "command": null,
+    "tool_version": null,
+    "corpus_manifest": null,
+    "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
+   }
+  },
+  {
+   "name": "merge_conflict_marker",
+   "kind": "detector",
+   "date": "2026-09-09",
+   "corpus": "its own module and tests, which discuss the marker strings in prose",
+   "before": null,
+   "after": {
+    "self_flags": 0
+   },
+   "exclusions": [
+    "the full <<<<<<< / ======= / >>>>>>> triplet in order, never a lone line (a Setext H1 underline is a run of =)"
+   ],
+   "disclosed": [],
+   "source": "README, ghost_buster: merge_conflict_marker; CHANGELOG 0.8.0",
+   "reproduce": {
+    "command": null,
+    "tool_version": null,
+    "corpus_manifest": null,
+    "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
+   }
+  },
+  {
+   "name": "name_disagreement",
+   "kind": "detector",
+   "date": "2026-09-10",
+   "corpus": "37 repositories, whole library",
+   "before": {
+    "pairs_unfiltered": 271
+   },
+   "after": {
+    "pairs": 63,
+    "spanning_repositories": 21
+   },
+   "exclusions": [
+    "only a bijection",
+    "a CONSTANT on either side",
+    "a leading underscore on one side only",
+    "camelCase in a snake_case library",
+    "a method only through self or cls; a library-wide name only if defined exactly once"
+   ],
+   "disclosed": [
+    "reports, never renames"
+   ],
+   "source": "README, --annotate-names; CHANGELOG 0.17.10",
+   "reproduce": {
+    "command": null,
+    "tool_version": null,
+    "corpus_manifest": null,
+    "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
+   }
+  },
+  {
+   "name": "near_duplicate_function",
+   "kind": "detector",
+   "date": "2026-09-09",
+   "corpus": "37 repositories, whole library",
+   "before": {
+    "findings": 625,
+    "major": 77
+   },
+   "after": {
+    "findings": 248,
+    "major": 27,
+    "duplicate_file_surfaced": 31
+   },
+   "exclusions": [
+    "byte-identical file groups fingerprinted once (duplicate_file's finding)",
+    "min_lines 10, not 6",
+    "test-only clusters INFORMATIONAL"
+   ],
+   "disclosed": [],
+   "source": "README, ghost_buster: near_duplicate_function; CHANGELOG 0.9.0",
+   "reproduce": {
+    "command": null,
+    "tool_version": null,
+    "corpus_manifest": null,
+    "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
+   }
+  },
+  {
+   "name": "placeholder_name",
+   "kind": "detector",
+   "date": "2026-09-10",
+   "corpus": "37 repositories, whole library",
+   "before": null,
+   "after": null,
+   "exclusions": [
+    "test files"
+   ],
+   "disclosed": [
+    "only where decidable from the code; never whether a name is good"
+   ],
+   "source": "CHANGELOG 0.17.9",
+   "reproduce": {
+    "command": null,
+    "tool_version": null,
+    "corpus_manifest": null,
+    "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
+   }
+  },
+  {
+   "name": "sql_injection",
+   "kind": "detector",
+   "date": "2026-09-10",
+   "corpus": "five real repositories",
+   "before": null,
+   "after": {
+    "findings": 0,
+    "canonical_fixture_fires": true
+   },
+   "exclusions": [
+    "the string has to open with a SQL statement keyword (a task runner's execute(f'step {n}') stays silent)"
+   ],
+   "disclosed": [],
+   "source": "README, what AI-written code gets wrong; CHANGELOG 0.17.0",
+   "reproduce": {
+    "command": null,
+    "tool_version": null,
+    "corpus_manifest": null,
+    "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
+   }
+  },
+  {
+   "name": "swallowed_exception",
+   "kind": "detector",
+   "date": "2026-09-10",
+   "corpus": "ANVIL, CCC, Ecology, AUGUR",
+   "before": {
+    "handlers_in_live_code": 32,
+    "bare_Exception": 13,
+    "in_tests": 22
+   },
+   "after": {
+    "reported": 32,
+    "test_handlers_reported": 0
+   },
+   "exclusions": [
+    "test files",
+    "contextlib.suppress"
+   ],
+   "disclosed": [
+    "only pass; continue, return None and a lone logger.debug each need their own measurement first"
+   ],
+   "source": "README, swallowed_exception; CHANGELOG 1.0.0",
+   "reproduce": {
+    "command": null,
+    "tool_version": null,
+    "corpus_manifest": null,
+    "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
+   }
+  },
+  {
+   "name": "unassessable_file",
+   "kind": "detector",
+   "date": "2026-09-09",
+   "corpus": "three files: one clean, one with conflict markers, one with a syntax typo",
+   "before": {
+    "findings_on_the_typo_file": 0
+   },
+   "after": {
+    "findings_on_the_typo_file": 1
+   },
+   "exclusions": [],
+   "disclosed": [
+    "borrowed from observe-perceive's BayesianFusion abstained=True"
+   ],
+   "source": "README, files that will not parse; CHANGELOG 0.13.0",
+   "reproduce": {
+    "command": null,
+    "tool_version": null,
+    "corpus_manifest": null,
+    "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
+   }
+  },
+  {
+   "name": "unauthenticated_route",
+   "kind": "detector",
+   "date": "2026-09-10",
+   "corpus": "three real repositories",
+   "before": null,
+   "after": {
+    "findings": 0
+   },
+   "exclusions": [
+    "a fully public module",
+    "a fully protected module",
+    "auth applied by middleware (drops below the majority threshold)",
+    "test files"
+   ],
+   "disclosed": [
+    "fails quiet, deliberately"
+   ],
+   "source": "README, the founder checks; CHANGELOG 0.14.0",
+   "reproduce": {
+    "command": null,
+    "tool_version": null,
+    "corpus_manifest": null,
+    "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
+   }
+  },
+  {
+   "name": "vestigial_domain_name",
+   "kind": "detector",
+   "date": "2026-09-10",
+   "corpus": "37 repositories, whole library",
+   "before": null,
+   "after": null,
+   "exclusions": [],
+   "disclosed": [
+    "a prose-shaped identifier check was prototyped on the same corpus: 1,108 hits, 1,099 of them deliberate test names; abandoned"
+   ],
+   "source": "CHANGELOG 0.17.9",
+   "reproduce": {
+    "command": null,
+    "tool_version": null,
+    "corpus_manifest": null,
+    "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
+   }
+  },
+  {
+   "name": "readiness",
+   "kind": "gate",
+   "date": "2026-09-11",
+   "corpus": "three operations on ghost_tools, then 38 repositories in the pre-flight sweep",
+   "before": {
+    "criteria_met_on_first_patient": "5 of 6"
+   },
+   "after": {
+    "first_candidate": "ghost_tools 1.0.3",
+    "candidates_in_the_fast_sweep": 0,
+    "repositories_failing_secrets_on_candidates_alone_before_1.2.2": 7
+   },
+   "exclusions": [],
+   "disclosed": [
+    "unknown counts against the patient",
+    "since 1.2.2 only an established credential (CRITICAL) fails the secrets criterion; a candidate is reported beside the verdict and retired by a false decision in the case file. Before that any committed_secret failed it: seven of 38 repositories in the pre-flight sweep, none a credential on the evidence"
+   ],
+   "source": "README, the surgeon; CHANGELOG 1.0.0 through 1.0.4, 1.2.2",
+   "reproduce": {
+    "command": null,
+    "tool_version": null,
+    "corpus_manifest": null,
+    "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
+   }
+  },
+  {
+   "name": "corpus",
+   "kind": "infrastructure",
+   "date": "2026-09-11",
+   "corpus": "ghost_tools, 112 files",
+   "before": {
+    "ast_parse_calls": 1064,
+    "seconds_in_parse": 2.14,
+    "run_all_seconds": 4.14
+   },
+   "after": {
+    "ast_parse_calls": 113,
+    "seconds_in_parse": 0.54,
+    "run_all_seconds": 2.49
+   },
+   "exclusions": [],
+   "disclosed": [
+    "six read policies collapsed to the interpreter's own"
+   ],
+   "source": "README, the corpus; CHANGELOG 0.18.0",
+   "reproduce": {
+    "command": null,
+    "tool_version": null,
+    "corpus_manifest": null,
+    "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
+   }
+  },
+  {
+   "name": "finding_identity",
+   "kind": "infrastructure",
+   "date": "2026-09-11",
+   "corpus": "38 repositories, whole library, pinned by commit in reproduce.corpus_manifest",
+   "before": {
+    "findings": 3292,
+    "findings_sharing_an_id_with_another": 16,
+    "colliding_pairs": 8,
+    "distinct_defects_hidden": 8
+   },
+   "after": {
+    "findings": 3358,
+    "findings_sharing_an_id_with_another": 0,
+    "note": "after the 1.5.0 place-derived suffix; the 1.2.4 run above is the before"
+   },
+   "exclusions": [
+    "a finding reported twice from one place is one finding, not a collision",
+    "detectors that record no line cannot be disambiguated and are counted as unresolved"
+   ],
+   "disclosed": [
+    "measured on one library of one author's repositories; the collision rate elsewhere is unknown",
+    "the before-run used 1.0.5 and the after-run 1.2.4, so the two totals are not a like-for-like delta of the same tool"
+   ],
+   "source": "README, finding ids; CHANGELOG 1.3.0 and 1.5.0",
+   "reproduce": {
+    "command": "python -m ghost_buster.cli <repo> --tests --tests-timeout 600 --tests-reruns 1 --secrets-timeout 900 --json --baseline <a path that does not exist>, once per repository, then count ids appearing more than once per repository's findings.json",
+    "tool_version": "1.2.4",
+    "corpus_manifest": {
+     "ANVIL": {
+      "branch": "main",
+      "commit": "4a12274adb"
+     },
+     "ARCHIVE": {
+      "branch": "main",
+      "commit": "dcc6a5456a",
+      "pinned_from": "clone HEAD after the run"
+     },
+     "ATS": {
+      "branch": "main",
+      "commit": "48245a9da5"
+     },
+     "AUGUR": {
+      "branch": "main",
+      "commit": "fc0e5217e1"
+     },
+     "CCC": {
+      "branch": "main",
+      "commit": "d8020cf8a0"
+     },
+     "CITADEL": {
+      "branch": "main",
+      "commit": "3f1d1d5604"
+     },
+     "CNS": {
+      "branch": "main",
+      "commit": "4a2fd10d41"
+     },
+     "CODE": {
+      "branch": "main",
+      "commit": "0506d6c2f5"
+     },
+     "ChatGPT_History": {
+      "branch": "main",
+      "commit": "1414b896ea",
+      "pinned_from": "clone HEAD after the run"
+     },
+     "Claude_History": {
+      "branch": "main",
+      "commit": "5b1c42e06a",
+      "pinned_from": "clone HEAD after the run"
+     },
+     "CoPilot_History": {
+      "branch": "main",
+      "commit": "9f6fb93bf9",
+      "pinned_from": "clone HEAD after the run"
+     },
+     "Conservation_Kernel": {
+      "branch": "main",
+      "commit": "25145aa0a1"
+     },
+     "Data_files": {
+      "branch": "main",
+      "commit": "980e94e657",
+      "pinned_from": "clone HEAD after the run"
+     },
+     "EDDP": {
+      "branch": "main",
+      "commit": "14cef9f96c"
+     },
+     "Ecology": {
+      "branch": "main",
+      "commit": "060334faac"
+     },
+     "GEMS": {
+      "branch": "main",
+      "commit": "a0dc337652"
+     },
+     "GRAPH": {
+      "branch": "main",
+      "commit": "2c6dbbe6eb"
+     },
+     "GSA-815": {
+      "branch": "main",
+      "commit": "28c6de6f6c"
+     },
+     "GSA-Master-Kernel": {
+      "branch": "main",
+      "commit": "8030006bb6",
+      "pinned_from": "clone HEAD after the run"
+     },
+     "Gemini_Extraction": {
+      "branch": "main",
+      "commit": "a3f01feece"
+     },
+     "Gemini_History": {
+      "branch": "main",
+      "commit": "184fd5262f",
+      "pinned_from": "clone HEAD after the run"
+     },
+     "Governance_Gateway": {
+      "branch": "main",
+      "commit": "c507be7279"
+     },
+     "HERALD": {
+      "branch": "main",
+      "commit": "ae5501dbe3"
+     },
+     "KAGGLE": {
+      "branch": "main",
+      "commit": "82ce4e5b05"
+     },
+     "OBSERVE": {
+      "branch": "main",
+      "commit": "9138bedd1e"
+     },
+     "Resume_OS": {
+      "branch": "main",
+      "commit": "aaacc81c03"
+     },
+     "TBCA": {
+      "branch": "main",
+      "commit": "2fb37da434"
+     },
+     "TIE": {
+      "branch": "main",
+      "commit": "bc54b416c1"
+     },
+     "TOUCHSTONE": {
+      "branch": "main",
+      "commit": "0db5600670",
+      "pinned_from": "clone HEAD after the run"
+     },
+     "Triad-42": {
+      "branch": "main",
+      "commit": "19cf383e32"
+     },
+     "VANGUARD": {
+      "branch": "main",
+      "commit": "c0d47614d6",
+      "pinned_from": "clone HEAD after the run"
+     },
+     "content-polish-pipeline": {
+      "branch": "main",
+      "commit": "913c9b82d5"
+     },
+     "fortress-kernel": {
+      "branch": "master",
+      "commit": "2123782c40"
+     },
+     "ghost_tools": {
+      "branch": "main",
+      "commit": "bf37c6e250"
+     },
+     "innovation_os": {
+      "branch": "main",
+      "commit": "3bb189d867"
+     },
+     "observe-perceive": {
+      "branch": "main",
+      "commit": "c0a86516f6"
+     },
+     "sentinel_os": {
+      "branch": "main",
+      "commit": "bd1828012d"
+     },
+     "synapsis": {
+      "branch": "master",
+      "commit": "d0bac3b657"
+     }
+    },
+    "note": "every repository pinned to the commit the run itself recorded in its operative report; the nine archives produce no report, so their commits are the clones' HEAD verified unmoved against the 29 that were pinned by the run"
+   }
+  },
+  {
+   "name": "ledger",
+   "kind": "memory",
+   "date": null,
+   "corpus": null,
+   "before": null,
+   "after": null,
+   "exclusions": [],
+   "disclosed": [
+    "thresholds (three returns, ten runs, five blind runs) set by design, not measured on a corpus; the trajectory filter is the constant-velocity Kalman filter from a pediatric deterioration engine"
+   ],
+   "source": "README, what it remembers; CHANGELOG 0.13.0, 0.17.4",
+   "reproduce": {
+    "command": null,
+    "tool_version": null,
+    "corpus_manifest": null,
+    "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
+   }
+  },
+  {
+   "name": "unreachable_declared_state",
+   "kind": "detector",
+   "date": "2026-09-12",
+   "corpus": "SWIZZLE 70db473 (105 files, 67 enum members across 13 enums) and ghost_tools 2285122 (6 enums)",
+   "before": null,
+   "after": null,
+   "exclusions": [
+    "enums where NO member is ever produced (reconstructed from data: an HTTP status, a wire protocol). Without this the detector's entire output would be such enums",
+    "classes that do not inherit an Enum base, so a settings class of upper-case constants is not treated as a state machine",
+    "lower-case class attributes, which are not enum members by convention",
+    "members named only inside a module-level upper-case constant holding a COLLECTION -- a lookup table is a comparison in disguise. A constant holding a single member is still a production. Added 1.7.6",
+    "nothing for a test production. A member produced ONLY by test code is reported at full weight. 1.7.7 discounted it to INFORMATIONAL; 1.7.8 removed the discount, because a test file is the cheapest artifact anyone can add to a repository and grading it measures willingness to type rather than intent. Against history the same observation ESCALATES: see relocated_to_tests",
+    "members reachable by building the enum from a runtime value -- `Status(payload['status'])`, `Status[name]`, `getattr(Status, name)`. These really are reachable, and reporting them was a false positive rather than a near miss: two of this repository's own findings were of exactly that kind. A LITERAL argument accounts only for the member it names. Added 1.7.8"
+   ],
+   "disclosed": [
+    "a member is matched by NAME, not by resolving the enum, so a member name shared by two enums is treated as produced for both. An AST-only tool; the cost is a lost finding rather than an invented one",
+    "it does not claim the state is unreachable. What is checked is syntactic, so a value read back from a stored record can still arrive by a path this tool cannot see -- which is worse, not better, and the finding says so",
+    "PROSE IS CHECKED, NEVER BELIEVED. A docstring saying a member arrives from stored data suppresses nothing on its own; the data path has to be there. The same claim with NO data path is CRITICAL, because an undocumented gap is a gap and a documented one is a gap plus an assurance that stops the next reader looking. Claims are free to write and so are only ever held against the writer. Added 1.7.8",
+    "git history is consulted, through forensics.py, to tell a state nobody wired up (MINOR) from one something stopped producing (MAJOR). This makes the detector no longer a pure function of the working tree, though still deterministic; `history=False` restores the narrower guarantee. Added 1.7.8",
+    "an unreadable history -- no repository, no git, a shallow clone, a walk that exceeds its budget -- yields UNKNOWN provenance, which grades at the weight of what was actually observed and NEVER escalates. Collapsing UNKNOWN into 'never produced' would report the end of the search as the end of the history. Added 1.7.8",
+    "RELOCATED_TO_TESTS is recognised only when the production leaves library code and appears in a test in the SAME commit. Splitting it across two commits, in either order, reports REMOVED_FROM_LIBRARY instead -- which carries the same severity, so the evasion loses the label and gains nothing. Asserted as a property in Tests/test_forensics.py, because a future version escalating only relocation would create the incentive that currently does not exist",
+    "history is searched for the text `Enum.MEMBER`, so a commit that renamed the ENUM hides everything before the rename and the answer degrades to NEVER_PRODUCED. The forensic layer is an escalation on top of a finding that stands without it, so a missed escalation loses precision rather than the finding"
+   ],
+   "source": "CHANGELOG 1.7.8; Tests/test_unreachable_declared_state.py; Tests/test_forensics.py",
+   "reproduce": {
+    "command": "python -m ghost_buster.cli <path> --single-repo --no-secrets --no-branches --no-structure --no-ledger --json",
+    "tool_version": "1.7.8",
+    "corpus_manifest": {
+     "wking53214/SWIZZLE": {
+      "commit": "70db473",
+      "files": 105
+     },
+     "wking53214/ghost_tools": {
+      "commit": "2285122",
+      "files": 0
+     }
+    },
+    "note": "Found 1 on each. On SWIZZLE: Phase.BETWEEN_RUNS, declared among four phases of which the world builder carries out three, so a case declaring it built a world without its mutation and was still judged as temporal. On ghost_tools itself: Status.REJECTED ('a human looked and said no'), which nothing produces and whose triage module does not exist. Both confirmed by hand. 1.7.6: counting lookup-table membership as production had made this detector miss a state of exactly the shape it was built to find -- it reported Status.REJECTED and stayed quiet about Status.CONFIRMED_BY_REVIEW, which is never assigned either. Findings on ghost_tools went 1 -> 5, and all five were confirmed by hand: two Status members superseded by `disposition`, and three EvidenceKind members in blackhole_extrapolator that appear only as keys in a confidence-weight table, so the table assigns confidence to evidence nothing can produce. 1.7.7: counting a TEST production as a production was the third blind spot of the same shape, and the worst -- the harness defect this detector was built for would have gone unreported if a single test had named the phase, which is the most likely thing in the world. Library and test corpora are now separated. The distinction added four true findings across the two repositories and none was actionable (states reached from stored data, or held unreachable on purpose), so test-only findings are INFORMATIONAL: weaker evidence, weaker claim. 1.7.8: the 1.7.7 discount was itself the defect. Grading a test production as weaker evidence of intent used a signal an adversary can manufacture for free, so the attack it was meant to close -- one test naming the state -- still worked, at the cost of one severity notch instead of total suppression. The discount is gone. Three things replace it. (1) Building the enum from a runtime value is now recognised as a production, which retired two FALSE POSITIVES on this repository: Status.CONFIRMED_BY_REVIEW and Status.REJECTED were reported at the top severity this detector emitted while Finding.from_dict built either from a stored record at schema.py:347. (2) A docstring claiming a member arrives from data is verified against the code: backed, it clears the finding; unbacked, it is CRITICAL. (3) Git history separates an oversight from a removal, and names the case where the last production MOVED from library code into a test -- the shape of quieting this detector rather than answering it. ghost_tools now reports 5 (4 EvidenceKind, 1 VoidKind, all never_produced, all confirmed by hand); the two Status findings are correctly silent."
+   }
+  },
+  {
+   "name": "test_config_collects_nothing",
+   "kind": "check",
+   "date": "2026-09-17",
+   "corpus": "three repositories in this ecosystem, pinned below",
+   "before": null,
+   "after": {
+    "findings": 1,
+    "false_positives": 0
+   },
+   "exclusions": [
+    "a repository with no test files at all: testpaths naming a directory that does not exist yet is a plan, not a defect",
+    "a testpaths entry that exists, however little is under it: whether a directory holds any test is pytest's question, not a file listing's"
+   ],
+   "disclosed": [
+    "Three repositories is a small corpus and the number below is small because of it: one finding, on fortress-kernel, where testpaths named 'tests' and the suite sat at the repository root. The other two configure testpaths correctly and were reported on neither, which is the only evidence here about the false-positive rate.",
+    "The check reads configuration and asks whether a path exists. It does not ask whether pytest would collect anything from a path that does exist, so a testpaths entry pointing at an empty but present directory is not reported, and that is the same silent-green failure one step removed."
+   ],
+   "source": "CHANGELOG 1.8.0",
+   "reproduce": {
+    "command": "ghost-buster PATH --no-tests --no-secrets --no-branches",
+    "tool_version": "1.8.0",
+    "corpus_manifest": {
+     "wking53214/ghost_tools": {
+      "commit": "d1fd0944f1beff61a1140ee68dc62508d362f8f4"
+     },
+     "wking53214/SWIZZLE": {
+      "commit": "bb9079d5ffd16b43fa7ada0e710d9c6aa3a09db0"
+     },
+     "wking53214/fortress-kernel": {
+      "commit": "38b4c22abfec4e8fedb139516922a148bbef4f03"
+     }
+    },
+    "note": null
+   }
+  }
+ ]
 }
