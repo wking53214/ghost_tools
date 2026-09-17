@@ -46,6 +46,20 @@ one that might be, and says it is unmeasured.
 
 The README's `unreachable_declared_state` paragraph now points at it.
 
+**The lint gate was red on main.** Checked out d1fd094 -- the merge of #64 --
+in a clean worktree and ran the pinned ruff 0.15.22: nine errors, every one
+in a test file. Four unused `import pytest`, one unused `pathlib.Path`, two
+semicolon-joined statements, and a module-level import of
+`_remedy_doc_counts` that a function-local import inside the same file
+already shadowed. `ruff check .` is a step that workflow calls a hard gate,
+so it had been failing on every push since that merge.
+
+Fixed: seven by `ruff check . --fix`, the two semicolons by hand, and the
+blank lines the removed imports left behind. No behaviour changed and no
+assertion moved -- the 63 hand mutants over those four test files still
+die, which is the check that the imports really were unused rather than
+merely unreferenced by ruff's reading.
+
 ## 1.9.0 (2026-09-17)
 
 **The serum was a profile of the surgeon.**
