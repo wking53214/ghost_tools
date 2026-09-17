@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import subprocess
 
+
 from ghost_buster import forensics
 from ghost_buster.forensics import Provenance
 

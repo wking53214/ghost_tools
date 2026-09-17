@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import textwrap
 
+
 from ghost_buster.mechanical import detect_unreachable_declared_state
 from ghost_buster.schema import Severity
 

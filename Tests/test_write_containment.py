@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import subprocess
 
+
 from ghost_buster.annotate import (Disagreement, annotate_files, refuses,
                                    update_readme)
 from ghost_buster.operate import _remedy_doc_counts
