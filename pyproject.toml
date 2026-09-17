@@ -46,6 +46,12 @@ dev = ["pytest>=8", "pytest-xdist>=3"]
 
 [tool.pytest.ini_options]
 testpaths = ["Tests"]
+# Tests/fixtures holds repositories verbatim, as data for the tests that
+# scan them -- including a `wizzle` checkout whose own Tests/ directory
+# imports modules that only exist relative to ITS root. Collecting them
+# is collecting data as tests, and it fails at import before a single
+# real test runs. ruff excludes the same tree for the same reason.
+norecursedirs = ["fixtures"]
 # 743 mutants, each copying the project to a scratch directory, applying one
 # exact text substitution and running a whole test file in a fresh
 # interpreter. Measured 2026-09-10: the copy costs 0.03s and the interpreter

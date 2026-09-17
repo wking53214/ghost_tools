@@ -144,6 +144,19 @@ MUTANTS = [
     ("--structure-out writes nothing", _P,
      "                args.structure_out.write_text(model.to_json(), encoding=\"utf-8\")\n",
      "                pass\n"),
+    # --- the comment citation (1.8.0): a name parked in a comment is
+    # --- evidence about the name, and must neither clear the finding
+    # --- nor let prose answer for a package.
+    ("a commented-out dependency clears the finding instead of citing it", _S,
+     "        parked = model.commented_out.get(package)\n",
+     "        parked = None\n"),
+    ("every word of a comment answers for a package of that name", _S,
+     '            first = re.split(r"[\\s,\\[\\]\'\\"()]+", comment.strip(), maxsplit=1)[0]\n',
+     '            first = re.split(r"[\\s,\\[\\]\'\\"()]+", comment.strip())[-1]\n'),
+    ("a comment counts as a declaration", _S,
+     "    model.commented_out = commented_out_dependencies(root)\n",
+     "    model.commented_out = commented_out_dependencies(root)\n"
+     "    model.declared_dependencies = sorted(set(model.declared_dependencies) | set(model.commented_out))\n"),
 ]
 
 
