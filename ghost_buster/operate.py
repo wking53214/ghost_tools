@@ -61,6 +61,7 @@ nothing breaks. The breaking is what the checks are for.
 
 from __future__ import annotations
 
+import hashlib
 import re
 import subprocess
 import time
@@ -72,9 +73,15 @@ from typing import Callable, Dict, List, Optional, Sequence, Set
 
 from . import corpus, readiness
 from .annotate import annotate as annotate_names
+# One containment rule, shared, deliberately. It lives in annotate.py because
+# that is where the first hole was found and where its tests and mutants are;
+# importing it rather than restating it is what makes "every write into the
+# patient is contained" a single fact rather than three hopeful ones.
+from .annotate import refuses as outside_the_patient
 from .casefile import EXPOSED, HEALED, Casefile
-from .mechanical import (_TEST_COUNT_CLAIM_RE, claim_context, claim_shape,
-                        registered_detectors, run_all)
+from .mechanical import (_DATED_DOCUMENT, _TEST_COUNT_CLAIM_RE,
+                        _WRITABILITY_LOOKBACK, claim_context, claim_shape,
+                        registered_detectors, run_all, why_not_writable)
 from .schema import Finding
 from .speed import Profile
 
@@ -325,6 +332,29 @@ def _remedy_doc_counts(root: Path, files: Sequence[Path],
         if passed != collected:
             declined.append("a suite that is not green")
             continue
+        # WHAT NEVER RAN IS NOT IN EITHER NUMBER (v1.7.3).
+        #
+        # `passed == collected` is satisfied by a suite with a whole file
+        # missing from it. A module that cannot be imported contributes
+        # nothing to either side, so the subtraction says green and the
+        # sentence this remedy writes says "all passing".
+        #
+        # The tool knew. The same run reported the blocked module as a
+        # finding of its own, named the missing import, and then certified
+        # the suite anyway. That is the one failure a reader cannot catch
+        # by looking at the diff: every byte is in a permitted place and
+        # the document is now false.
+        #
+        # Absent attribute reads as zero, so a finding from an older run,
+        # or from a connector that does not publish it, behaves exactly as
+        # before rather than being declined on a number nobody supplied.
+        unexamined = finding.attributes.get("unexamined", "")
+        if unexamined.isdigit() and int(unexamined) > 0:
+            declined.append(
+                "a suite that did not finish running: %s test file(s) could "
+                "not be collected, so the measured total is not a total"
+                % unexamined)
+            continue
         path = _resolve(root, finding)
         line_no = finding.evidence.line_start
         if path is None or not line_no:
@@ -346,8 +376,47 @@ def _remedy_doc_counts(root: Path, files: Sequence[Path],
             continue
         match = here[0]
         start, end = offset + match.start(1), offset + match.end(1)
-        if claim_shape(claim_context(text, offset + match.start())) is not None:
+        claim_at = offset + match.start()
+        claim_ends = offset + match.end()
+        if claim_shape(claim_context(text, claim_at)) is not None:
             declined.append("a claim that is not about this suite")
+            continue
+
+        # THE WRITABILITY DECISION IS RE-DERIVED HERE, AND FROM THIS FILE.
+        #
+        # `finding.attributes["writable"]` was decided during the workup,
+        # about the text as it was then and about the path the scan walked.
+        # Two things can have changed by the time this runs, and both were
+        # found by pointing an adversary at it rather than by reading it.
+        #
+        # The text. A repository's own test suite runs during the workup --
+        # the tool starts it -- so a test that rewrites a document executes
+        # inside the window between the reading and the writing. Re-running
+        # `claim_shape` above is not enough: that predicate answers "is this
+        # a claim about the current suite at all", which is the REPORTING
+        # question. The one that authorises a write is this one, and it was
+        # never re-asked. A live sentence replaced mid-run by a dated one
+        # passes claim_shape and is exactly the sentence a machine must not
+        # edit.
+        #
+        # The path. `_resolve` follows symlinks, correctly, because the
+        # question is which file the bytes land in. But the name the
+        # workup judged was the one it walked, and `why_not_writable` opens
+        # by asking whether the FILENAME is a current-state document. Judge
+        # `README.md`, write through the link, and a file whose own name the
+        # same rule would have refused gets rewritten -- while the finding
+        # names a path whose history will show no change.
+        #
+        # So: the resolved file's real name, and the text as it is now.
+        stale = why_not_writable(
+            path.name,
+            text[max(0, claim_at - _WRITABILITY_LOOKBACK):claim_at],
+            text[claim_ends:claim_ends + _WRITABILITY_LOOKBACK],
+            # Re-derived from the file's own head at write time, like every
+            # other half of this verdict.
+            text)
+        if stale is not None:
+            declined.append(stale)
             continue
 
         meant = text[:start] + collected + text[end:]
@@ -415,10 +484,26 @@ def _remedy_count_block(root: Path, files: Sequence[Path],
     would then do is put markup into 38 repositories nobody asked to change.
     No block, no cut.
 
+    WHAT THE MARKERS HAND OVER (v1.7.1)
+
+    The COUNT, and nothing else. The first version replaced the whole region
+    between the markers, which is a different promise and a worse one: a
+    repository that wrote a sentence inside the block -- explaining why the
+    suite is split the way it is, say -- had that sentence deleted on the
+    next operation.
+
+    So the number is rewritten in place and every other byte in the block is
+    the author's. A block with no count in it and nothing else in it is a
+    repository asking for the sentence to be written, and gets it. A block
+    with something that is not a count in it is left alone and said so. A
+    block with two counts is left alone: there is no single span to name.
+
     THE VERIFICATION THAT CAN FAIL
 
-    After writing, the file is read back: the block must contain the
-    measured number, and every byte outside the block must be unchanged.
+    After writing, the file is read back: the block must hold the measured
+    number, and every byte outside THE DIGITS must be unchanged. The earlier
+    version checked the bytes outside the block, which was sound and could
+    not fail for the defect above -- the loss was inside.
     """
     measured = next((f.attributes.get("collected") for f in findings
                      if f.detector == "doc_count_contradicted_by_run"
@@ -428,6 +513,7 @@ def _remedy_count_block(root: Path, files: Sequence[Path],
         return 0, ""
 
     changed = 0
+    declined: List[str] = []
     for path in sorted(p for p in files if p.suffix.lower() == ".md"):
         try:
             text = path.read_text(encoding="utf-8")
@@ -436,25 +522,96 @@ def _remedy_count_block(root: Path, files: Sequence[Path],
         match = _COUNT_BLOCK.search(text)
         if match is None:
             continue
-        body = f"\n{measured} tests, all passing.\n"
-        if match.group(1) == body:
+        escapes = outside_the_patient(path, root)
+        if escapes is not None:
+            # THE HOLE THE FIRST FIX MISSED (v1.7.2)
+            #
+            # 1.7.1 put a containment guard on the annotation writer and on
+            # the path a finding resolves to, and left this one: the block
+            # remedy takes its paths straight from the corpus and writes to
+            # them. A README that is a symlink out of the repository, with a
+            # maintained block in it, still carried the write outside.
+            #
+            # The first fix was tested with the case that found it. The case
+            # had no block in it, so the case passed and the CLASS was still
+            # open -- which is why the test below runs every writer over one
+            # world rather than each writer over its own.
+            declined.append(escapes)
+            continue
+        if _DATED_DOCUMENT.search(path.name):
+            # The prose remedy refuses a dated or versioned document by name,
+            # on the reasoning that such a document records a moment and its
+            # numbers are correct as written. This remedy applied the same
+            # tool to every markdown file carrying the markers and performed
+            # no document check at all, so one repository could get two
+            # different answers to "may a machine update this number",
+            # decided by which mechanism happened to reach it. The markers
+            # are consent to maintain a count; they are not consent to
+            # falsify a record of a named day.
+            declined.append("a dated or versioned document")
+            continue
+
+        body = match.group(1)
+        claims = list(_TEST_COUNT_CLAIM_RE.finditer(body))
+
+        if not claims:
+            if body.strip():
+                # Something is in there that is not a count. Whatever it is,
+                # it is not this remedy's, and replacing the block would
+                # delete it.
+                declined.append("a block holding something other than a count")
+                continue
+            # An empty block is a repository saying "fill this in". Writing
+            # the sentence into it destroys nothing.
+            meant = text[:match.start(1)] + f"\n{measured} tests, all passing.\n" \
+                + text[match.end(1):]
+            start = end = None
+        elif len(claims) > 1:
+            declined.append("a block whose count is not unique")
+            continue
+        else:
+            claim = claims[0]
+            start = match.start(1) + claim.start(1)
+            end = match.start(1) + claim.end(1)
+            meant = text[:start] + measured + text[end:]
+
+        if meant == text:
             continue          # already current; not a cut
-        meant = text[:match.start(1)] + body + text[match.end(1):]
         path.write_text(meant, encoding="utf-8")
 
         written = path.read_text(encoding="utf-8")
         again = _COUNT_BLOCK.search(written)
         if again is None or measured not in again.group(1):
             raise RemedyFailed(f"{path}: the block does not hold {measured} after writing")
-        if written[:again.start(1)] != text[:match.start(1)] or \
-                written[again.end(1):] != text[match.end(1):]:
-            raise RemedyFailed(f"{path}: text outside the block changed")
+        if start is None:
+            # The block was empty and is now the canonical sentence. What has
+            # to hold is that nothing outside the block moved.
+            if written[:again.start(1)] != text[:match.start(1)] or \
+                    written[again.end(1):] != text[match.end(1):]:
+                raise RemedyFailed(f"{path}: text outside the block changed")
+        elif written[:start] != text[:start] or \
+                written[start + len(measured):] != text[end:]:
+            # EVERYTHING EXCEPT THE DIGITS, BYTE FOR BYTE.
+            #
+            # The check this replaces compared the bytes OUTSIDE the block and
+            # was sound, and it could not fail for the defect that mattered:
+            # the remedy replaced the whole block body, so a sentence the
+            # author had written inside the markers was deleted -- outside the
+            # block nothing had moved, the verification passed, and three
+            # lines of somebody's writing were gone. The verification was not
+            # weak. It was answering a different question from the one the
+            # invariant needed, which is the failure this comment exists to
+            # stop coming back.
+            raise RemedyFailed(f"{path}: text outside the count changed")
         changed += 1
 
     if not changed:
         return 0, ""
-    return changed, (f"{changed} maintained test-count block(s) set to {measured}, "
-                     "the number this run measured")
+    note = (f"{changed} maintained test-count block(s) set to {measured}, "
+            "the number this run measured")
+    if declined:
+        note += "; left alone: " + ", ".join(sorted(set(declined)))
+    return changed, note
 
 
 REMEDIES: Dict[str, Callable[[Path, Sequence[Path], Sequence[Finding]], tuple[int, str]]] = {
@@ -470,7 +627,60 @@ REMEDIES: Dict[str, Callable[[Path, Sequence[Path], Sequence[Finding]], tuple[in
 SURGEONS_NOTES = (".ghost_ledger.json", ".ghost_baseline.json", ".ghost_casefile.json")
 
 
-def _dirty_paths(root: Path) -> List[str]:
+def notes_on_arrival(root: Path) -> Dict[str, str]:
+    """Digest of each surgeon's note as it stood before this run touched it.
+
+    Called by the CLI before the workup, because "before" is a moment only
+    the entry point can identify. The scan writes the ledger into the
+    repository it is scanning, so by the time `operate` asks whether a
+    committed note is dirty, the answer is yes and the reason is us --
+    which is the whole deadlock `_dirty_paths` describes.
+
+    A note that is absent or unreadable gets no entry, which reads
+    downstream as "not clean on arrival" and is the safe direction: it
+    refuses rather than proceeding.
+    """
+    out: Dict[str, str] = {}
+    for name in SURGEONS_NOTES:
+        try:
+            out[name] = _note_digest((Path(root) / name).read_text(
+                encoding="utf-8", errors="replace"))
+        except OSError:
+            continue
+    return out
+
+
+def _note_digest(text: str) -> str:
+    """A note's content, normalised the same way on both sides.
+
+    Stripped before hashing because the other side of the comparison comes
+    back through `git show`, whose output this module strips. Hashing raw
+    bytes on one side and stripped text on the other never matches, which
+    made every committed note look edited and kept the deadlock in place --
+    found by the test below rather than by reading this function.
+
+    A trailing-newline difference in a JSON record is not somebody's edit,
+    so normalising it away is right on its own terms as well.
+    """
+    return hashlib.sha256(text.strip().encode("utf-8")).hexdigest()
+
+
+def _was_clean_on_arrival(root: Path, path: str, arrival: Dict[str, str]) -> bool:
+    """Did this note match its committed version when this run started?
+
+    Compared against HEAD rather than against the file now: the file now is
+    whatever the workup wrote, which is the thing being asked about.
+    """
+    if path not in arrival:
+        return False
+    try:
+        committed = _git(root, "show", f"HEAD:{path}")
+    except Refused:
+        return False
+    return _note_digest(committed) == arrival[path]
+
+
+def _dirty_paths(root: Path, arrival: Optional[Dict[str, str]] = None) -> List[str]:
     """Uncommitted paths that belong to the PATIENT.
 
     WHY THIS IS NOT JUST `git status --porcelain` (v1.6.1)
@@ -489,10 +699,35 @@ def _dirty_paths(root: Path) -> List[str]:
     `--no-ledger`, which nothing said was required.
 
     Untracked notes are ignored here. A TRACKED note that has been
-    modified is not: the repository committed that file, so a change to
-    it is a real edit somebody needs to decide about, and the tree is
-    dirty exactly as before.
+    modified is not, PROVIDED the modification is not this run's own
+    (v1.7.3).
+
+    THE SAME BUG, ONE LEVEL DOWN
+
+    "Tracked note, therefore somebody's real edit" is the wrong test, and
+    it reinstated the exact deadlock the paragraph above describes for any
+    repository that commits its ledger -- which this module's own
+    documentation recommends doing, on the grounds that a governance
+    record nobody keeps is worth nothing.
+
+    Measured on a clean checkout, single command, no harness: commit
+    `.ghost_ledger.json`, run `--operate`, and the workup writes the
+    ledger, the door check sees a modified tracked file, and the operation
+    refuses. Every time, forever. The tool dirties the tree and then
+    declines to work because the tree is dirty.
+
+    The distinction that matters was never tracked versus untracked. It is
+    WHOSE EDIT IT IS. `arrival` is the digest of each note as it stood
+    before this run touched anything, so a note that was clean when we
+    arrived and differs now differs because of us. A note that was ALREADY
+    modified on arrival is somebody's real uncommitted edit to a committed
+    record, and refusing that is the behaviour worth keeping: the workup
+    would otherwise overwrite it.
+
+    With no `arrival` recorded, a tracked note counts as dirt exactly as
+    before. Callers that do not snapshot lose nothing they had.
     """
+    arrival = dict(arrival or {})
     dirt = []
     for line in _git(root, "status", "--porcelain").splitlines():
         # Split on the status token rather than by column. Porcelain pads
@@ -507,8 +742,11 @@ def _dirty_paths(root: Path) -> List[str]:
         code, path = parts
         # Porcelain quotes a path containing unusual characters, and a
         # quoted path is never one of ours, so it counts as the patient's.
-        if code == "??" and path in SURGEONS_NOTES:
-            continue
+        if path in SURGEONS_NOTES:
+            if code == "??":
+                continue
+            if _was_clean_on_arrival(root, path, arrival):
+                continue
         dirt.append(path)
     return dirt
 
@@ -516,6 +754,7 @@ def _dirty_paths(root: Path) -> List[str]:
 def operate(root: Path, files: Sequence[Path], findings: Sequence[Finding],
             checks: Dict[str, str], *, casefile: Optional[Casefile] = None,
             branch: Optional[str] = None, dry_run: bool = False,
+            arrival: Optional[Dict[str, str]] = None,
             rescan: Callable[[Sequence[Path]], List[Finding]] = run_all) -> Operation:
     """Operate on `root`. Refuses rather than proceeding on a bad table."""
     root = Path(root)
@@ -526,7 +765,7 @@ def operate(root: Path, files: Sequence[Path], findings: Sequence[Finding],
     if not dry_run:
         # A dry run diagnoses and cuts nothing, so a dirty tree is fine to
         # examine. An operation needs a clean table.
-        dirt = _dirty_paths(root)
+        dirt = _dirty_paths(root, arrival)
         if dirt:
             raise Refused("working tree is dirty; commit or stash before operating "
                           f"({len(dirt)} path(s), first: {dirt[0]})")

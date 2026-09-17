@@ -24,19 +24,37 @@ MUTANTS = [
     ("a suite that is not green still supplies a number", _OP,
      '                     and f.attributes.get("collected") == f.attributes.get("passed")),',
      "                     ),"),
+    # v1.7.1: there used to be two guards here -- an explicit "the digits
+    # already read the measured number" test and this one. With the body no
+    # longer replaced whole they became exactly redundant, neither could be
+    # made to fail alone, and one of them was decoration. The explicit one
+    # went; this is the survivor and it is load-bearing.
     ("a block already current is rewritten and counted as a cut", _OP,
-     "        if match.group(1) == body:\n            continue          # already current; not a cut\n",
+     "        if meant == text:\n            continue          # already current; not a cut\n",
      ""),
     ("only the first block in the tree is maintained", _OP,
-     "        changed += 1\n\n    if not changed:\n        return 0, \"\"\n    return changed, (f\"{changed} maintained",
-     "        changed += 1\n        break\n\n    if not changed:\n        return 0, \"\"\n    return changed, (f\"{changed} maintained"),
+     "        changed += 1\n\n    if not changed:\n        return 0, \"\"\n    note = (f\"{changed} maintained",
+     "        changed += 1\n        break\n\n    if not changed:\n        return 0, \"\"\n    note = (f\"{changed} maintained"),
     ("the number is never checked after writing", _OP,
      "        if again is None or measured not in again.group(1):",
      "        if False:"),
-    ("the document outside the block is allowed to move", _OP,
-     "        if written[:again.start(1)] != text[:match.start(1)] or \\\n"
-     "                written[again.end(1):] != text[match.end(1):]:",
+    # v1.7.1: the block body is no longer replaced whole, so the guard that
+    # matters is the one around THE DIGITS. The old check -- bytes outside
+    # the block -- could not fail for the defect that mattered, because the
+    # loss was inside it.
+    ("the document outside the count is allowed to move", _OP,
+     "        elif written[:start] != text[:start] or \\\n"
+     "                written[start + len(measured):] != text[end:]:",
+     "        elif False:"),
+    ("a dated document has its count maintained anyway", _OP,
+     "        if _DATED_DOCUMENT.search(path.name):",
      "        if False:"),
+    ("prose in the block is replaced instead of left alone", _OP,
+     "            if body.strip():",
+     "            if False:"),
+    ("a block with two counts is written into anyway", _OP,
+     "        elif len(claims) > 1:",
+     "        elif False:"),
     ("a run that measured nothing still writes", _OP,
      "    if not measured:\n        return 0, \"\"\n",
      "    measured = measured or \"0\"\n"),

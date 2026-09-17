@@ -1,5 +1,557 @@
 # Changelog
 
+## 1.7.8 (2026-09-12)
+
+**Evidence that costs nothing to fake does not get to lower a severity.**
+
+1.7.7 discounted a test-only state to INFORMATIONAL, reasoning that somebody
+constructing a state deliberately is weak evidence it was meant to be
+unreachable. That reasoning was wrong, and wrong in a way worth writing down
+because it is the general mistake.
+
+A test file is the cheapest artifact anyone can add to a repository. Grading
+it does not measure intent; it measures willingness to type. The attack that
+1.7.7 was written to close -- one test naming the state -- therefore still
+worked, at a cost of one severity notch instead of total suppression, and a
+comment next to the discount explained exactly where the lever was. The
+harness that attacks this tool exists to find cheap edits that change its
+verdict, and 1.7.7 handed it one.
+
+The discount is gone. Three things replace it, ranked by what it costs to
+fake the evidence.
+
+**Structural: a member built from a runtime value is reachable.** `Status.X`
+is an attribute access and is what the detector looked for. `Status(row["s"])`
+is not, and is how most members of most enums actually come into existence
+in a program that reads its own output back. Subscript and `getattr` count
+too; a LITERAL argument accounts only for the member it names.
+
+This retired two FALSE POSITIVES in this repository. `Status.CONFIRMED_BY_REVIEW`
+and `Status.REJECTED` were reported at the top severity this detector emitted
+while `Finding.from_dict` built either of them from a stored record at
+`schema.py:347`. They had been hand-confirmed as true findings. They were not.
+
+Faking this evidence means writing a real deserialiser, at which point it is
+not fake -- but only in LIBRARY code, so that is the only place it counts. A
+`Phase(record["x"])` sitting in a test file is barely more typing than naming
+the member, and counting it would have restored the free lever in a stronger
+form: clearing the finding outright rather than merely discounting it.
+
+Reachable-from-data is not the same as fine, and is only silent when the
+enum SAYS so. A data path nobody documents stays MINOR, because the member
+then arrives from outside into code that never produces it: every branch
+handling it was written by somebody who never made one and is untested by
+construction, and if there is no branch the dispatch quietly does nothing.
+That is the mechanism of the defect this detector was built for. Pointed at
+SWIZZLE, `Phase.BETWEEN_RUNS` and `DocumentKind.CHANGELOG` land here --
+`genome.py` rebuilds both from a stored record, so a saved genome really can
+carry a phase the world builder never carries out.
+
+**Declared: prose is checked, never believed.** A docstring saying a member
+arrives from stored data suppresses nothing on its own -- the data path has
+to be there. The same claim with no data path is CRITICAL, which is this
+repository's own definition ("actively misleading or dangerous if acted on")
+applied rather than stretched: an undocumented gap is a gap, and a
+documented one is a gap plus an assurance that stops the next reader
+looking.
+
+The asymmetry is the design. A claim cannot buy a lower severity and can buy
+a higher one. Claims are free to write, so they are only ever held against
+the writer.
+
+**Historical: the timeline separates an oversight from an act.** New module
+`ghost_buster/forensics.py` walks git history to answer why a member is
+unproduced. Never wired up is MINOR. Library code produced it and a commit
+removed the production while leaving the declaration standing is MAJOR: that
+is a regression wearing an oversight's clothes.
+
+And the case the module was built for -- the last production MOVED out of
+library code and into a test in one commit. The state became no more
+reachable; the evidence that it is unreachable became quieter. That is the
+shape of quieting this detector rather than answering it.
+
+Note the inversion. "Only a test produces it" read as a snapshot is weak
+evidence of nothing much, which is what 1.7.7 tried and failed to act on.
+Read against history it is the strongest signal here, because the question
+was never whether a test produces the member but whether library code
+stopped. The same observation escalates instead of excusing, purely because
+the timeline is available.
+
+**Not knowing is said out loud.** No repository, no git, a shallow clone, a
+walk that exceeds its budget: all yield UNKNOWN, which grades at the weight
+of what was actually observed and never escalates. Collapsing UNKNOWN into
+"never produced" would report the end of the search as the end of the
+history, which is the exact failure this tool exists to find in other
+people's code.
+
+History is only asked about declarations that live in the repository being
+read. A scan can be handed files from more than one place -- `--join` reads
+two repositories at once -- and asking this repository about a member
+declared in another one returns a confident NEVER_PRODUCED off a search of
+the wrong history, which is the most misleading answer available.
+
+Relocation is recognised within a single commit, so splitting the move
+across two commits reports REMOVED_FROM_LIBRARY instead. That carries the
+same severity, which is the point: the evasion loses the label and gains
+nothing. It is asserted as a property, because a later version escalating
+only relocation would create the incentive that today does not exist.
+
+`history=False` makes the detector a pure function of the files on disk
+again, for callers that need one.
+
+**A claim this module made about itself, corrected.** `mechanical.py` opened
+by saying every detector here is "a pure function of the files on disk".
+One of them now reads a commit graph. The sentence was true when written and
+quietly stopped being true; it says what it does instead.
+
+On this repository the detector now reports 5, all `never_produced`, all
+confirmed by hand: four `EvidenceKind` members and `VoidKind.UNREALISED`,
+all in `blackhole_extrapolator`. The two `Status` findings are correctly
+silent.
+
+706 mutants across 53 files, including a new `test_forensics_mutants.py`
+whose mutants are mostly collapses -- every question the history layer asks
+can be answered "never produced", and a layer that degraded to its most
+common answer whenever it could not read the history would pass a suite that
+only checked the common case.
+1994 passed, 38 skipped.
+
+## 1.7.7 (2026-09-12)
+
+**A state only a test can create is still a state nothing reaches.**
+
+The third blind spot of the same shape in `unreachable_declared_state`, and
+the worst of the three. It counted a production in a TEST as a production.
+
+A test constructs a state artificially to prove it is *handled*. That is not
+something producing it. And the consequence is not a refinement: the harness
+defect this detector was built for -- a phase declared and never carried out
+-- would have gone completely unreported if one test had named the phase,
+which is the most likely thing in the world for a test to do.
+
+Library and test corpora are separated now, using the same path predicate
+the rest of this module already uses for "is this a test".
+
+**Weaker evidence, weaker claim.** A member nothing produces at all stays
+MINOR. A member only tests produce is INFORMATIONAL, because "deliberately
+not produced" and "accidentally not produced" look identical from here.
+
+Measured: the distinction added four true findings across the two
+repositories and not one was actionable. Every one was a state reached from
+stored data, or held unreachable on purpose -- among them SWIZZLE's
+`Phase.BETWEEN_RUNS`, which is now deliberately not carried out, and its
+`DocumentKind.CHANGELOG`. Reporting those at the same weight as a real gap
+is how a usable detector becomes a noisy one.
+
+Two more true findings surfaced here at INFORMATIONAL:
+`EvidenceKind.SHAPE_COMPLEMENTARITY` and `VoidKind.UNREALISED`, both in
+`blackhole_extrapolator`, both produced only by their tests.
+
+Also checked, and correct: three kinds that ARE produced have no entry in
+the confidence-weight table, so `_KIND_WEIGHT.get(k, 0.0)` gives them zero.
+Those three are exactly the kinds the enum documents as "never grouped into
+a void". The default is load-bearing and the omission is deliberate.
+
+676 mutants. 1932 passed, 38 skipped.
+
+## 1.7.6 (2026-09-12)
+
+**A lookup table is a comparison in disguise.**
+
+1.7.5's `unreachable_declared_state` had a blind spot the shape of its own
+subject. It counted a member named inside a constant set as produced:
+
+    AUTHORITATIVE = frozenset({Status.CONFIRMED, Status.CONFIRMED_BY_REVIEW,
+                               Status.SUPPRESSED})
+
+That set names three members and produces none of them. It exists to be
+tested against, exactly like the `in` it is written for, which is the same
+category error as counting a comparison.
+
+So on its own repository the detector reported `Status.REJECTED` and stayed
+quiet about `Status.CONFIRMED_BY_REVIEW`, which is never assigned either. A
+detector that misses a state of precisely the shape it was built to find is
+worth saying out loud.
+
+Members named only inside a module-level upper-case constant holding a
+COLLECTION are no longer counted as produced. A constant holding a single
+member -- `DEFAULT_PHASE = Phase.BUILD` -- still is, because something reads
+that name and uses the value.
+
+Findings on this repository went 1 to 5, all five confirmed by hand:
+
+- `Status.REJECTED` and `Status.CONFIRMED_BY_REVIEW`, superseded by
+  `disposition`;
+- three `EvidenceKind` members in `blackhole_extrapolator` that appear only
+  as keys in a confidence-weight table, so the table assigns confidence to
+  evidence nothing can produce.
+
+**And the Status declaration is now true.** Three of its five members are
+produced here; two only ever arrive from data. They are not dead and must
+not be deleted: `Finding.from_dict` reconstructs any member from a stored
+record, so a baseline, a casefile, a hand-edited FindingSet or another
+tool's output can carry them, and removing them would turn reading such a
+file into a crash.
+
+They are also not how a human triages. That is `disposition` -- "fix",
+"suppress", "document" -- in `ghost_writer/triage.py`, which closed the loop
+the README had drawn for a long time and nothing had walked. `REJECTED` is
+an older vocabulary for the same decision, kept readable rather than kept
+alive. `AUTHORITATIVE` handles both correctly when they do arrive, which is
+the point: a state this tool does not produce still has to be read, and read
+correctly, when somebody else produces it.
+
+The detector still reports both, and should. The finding is true. What
+changed is that the declaration no longer implies a state the code can reach
+on its own.
+
+The three `EvidenceKind` findings are reported and not repaired. Producing
+them, handling their arrival, or removing them and their weights are all
+defensible, and that is a decision about what that component is for.
+
+671 mutants. 1923 passed, 38 skipped.
+
+## 1.7.5 (2026-09-12)
+
+The alignment reversed: the harness that had been attacking this tool became
+the patient, and this tool was pointed at it. Two findings came out of the
+first scan and neither was about the harness's Python.
+
+**A decorator is a reference.** `@register("audit")` hands a function to
+something that keeps it; the name is reached through that registry and never
+appears as an identifier again, so `dead_code` called it dead.
+
+This was DISCLOSED, not hidden. The detector's docstring has named it, and
+named this tool's own `@register` as the example, since 0.1.1. Disclosure is
+enough for a report a human reads, and stops being enough the moment autonomy
+is contemplated: measured on the patient, **51 of 85 findings were this class,
+and every one was a live CLI command.** A remedy authorised to delete dead code
+would have removed every command that tool has.
+
+Decorated definitions count as referenced now. The cost is false negatives on
+genuinely dead decorated code, which is the direction this detector already
+chose everywhere else it had to choose. The calibration record moves the entry
+out of `disclosed`, because a disclosure that has been fixed and left standing
+tells a reader to distrust a result that is now sound.
+
+**A new detector: `unreachable_declared_state`.** An enum is a vocabulary of
+states, and a member nothing ever produces is a distinction the vocabulary
+claims and the behaviour does not have. Every branch written to handle it is
+unreachable, anything dispatching on the enum silently does nothing for it,
+and a reader believes the system can be in a state it cannot deliberately
+enter.
+
+Reported only when SOME members of the same enum are produced and others are
+not. An enum reconstructed entirely from data -- an HTTP status, a wire
+protocol -- is not a defect, and without that rule it would be the whole
+output.
+
+It found one on each repository, on the first run, both confirmed by hand:
+
+- on the patient, a phase declared among four of which the world builder
+  carries out three. A case declaring it built a world WITHOUT its mutation,
+  recorded an empty construction history, and was still judged by a check that
+  adjusted its verdict because the phase was declared. The experiment stopped
+  asking its question and produced an answer anyway.
+- here, `Status.REJECTED` -- "a human looked and said no" -- which nothing
+  produces, whose `triage.py` does not exist, and about which a test asserts a
+  property.
+
+Neither is repaired autonomously. The right fix for a state nothing produces
+is to produce it, to handle its arrival, or to remove it, and which of those
+is correct is not something an AST can decide.
+
+Two of its guards turned out to be unkillable by any test and were deleted
+rather than kept looking proven: one was subsumed by an empty set difference,
+the other by case-sensitive string comparison.
+
+666 mutants. 1914 passed, 38 skipped.
+
+## 1.7.4 (2026-09-12)
+
+**A document that says what it is, in its own words.**
+
+Writability was decided from two things, and neither can carry what a file
+says about itself: the NAME (`readme.md` is a current-state document,
+`STATUS_REPORT.md` is not) and the sentence beside the claim.
+
+Two worlds got through, both ordinary:
+
+    a README opening `<!-- generated: do not edit by hand -->`
+    a README opening "Recorded 2026-01-14. This document is a record of a
+      moment and is not updated afterwards."
+
+The first is what documentation tooling produces every day; whatever
+generates the file will overwrite the edit, so the edit is either pointless
+or a lie until it is overwritten. The second is what happens to a project
+nobody archived properly. Both had their claim rewritten.
+
+The second is instructive about why the existing checks could not do this
+job. `_DATED_SENTENCE` reads the seventy characters before the claim with
+no full stop in them; that declaration is a paragraph away with two full
+stops in between. It was never going to see it. And the existing historical
+test put the declaration in `STATUS_REPORT.md`, where the filename gate
+refuses it without the document ever being read -- so the case passed and
+the class stayed open, which is the same shape of miss as 1.7.1's.
+
+The document's own head is now read, bounded to `_HEAD` characters. A file
+that says what it is says so at the top; searching the whole document would
+let a phrase deep inside a long README, about some other file most likely,
+silence a real claim. Both directions have tests and mutants, because
+refusing too much is a real cost and an evaluator that cannot see
+over-caution cannot tell a safe tool from a blind one. Measured after the
+change: over-caution unchanged at one case in twenty-three.
+
+659 mutants. 1886 passed, 38 skipped.
+
+## 1.7.3 (2026-09-12)
+
+Three defects, on two surfaces nothing had ever tested: what the tool
+CERTIFIES, and how it decides that two findings are the same finding.
+
+**A suite that never finished running was certified as passing.** The
+green gate is `passed == collected`, and a module that cannot be imported
+contributes to neither side, so the subtraction says green. It is not
+green. A whole file of the suite did not execute and nobody knows what is
+in it.
+
+The tool knew. The same run reported the blocked module as a finding of
+its own, naming the missing import, and then its count remedy wrote "The
+test suite has 30 tests, all passing." into the README. That is the one
+failure a reader cannot catch by looking at the diff: every byte is in a
+permitted place and the document is now false. The mechanism is ordinary
+-- an optional dependency that is not installed in somebody's
+environment.
+
+The measurement now carries what it could not examine, the finding is
+MAJOR rather than MINOR when anything went unexamined, and the remedy
+declines and says which file did not run.
+
+**A repository that commits the ledger could never be operated on.** The
+workup writes `.ghost_ledger.json` into the repository it is scanning,
+that dirties the tracked file, and the door check refuses. Every time,
+forever. This module's own documentation recommends committing the record,
+on the grounds that a governance record nobody keeps is worth nothing.
+
+1.6.1 fixed this for an UNTRACKED ledger and wrote down the reasoning that
+reinstated it one level down: "a tracked note that changed is somebody's
+real edit". That was the wrong test. The distinction was never tracked
+versus untracked, it is whose edit it is. The notes are now digested on
+arrival, before the workup touches anything, so a note that was clean when
+we arrived and differs now differs because of us. A note that was ALREADY
+modified still refuses, which is the behaviour worth keeping: the workup
+would otherwise overwrite somebody's uncommitted edit to a committed
+record.
+
+**A measurement is not an identity.** A finding's id is a content hash of
+detector + path + summary, and several summaries carry a number the run
+just measured. Adding three tests to a suite, with the documented claim
+untouched at 12, gave three findings three new identities:
+
+    no_ci_configuration            "1 test file(s)" -> "2 test file(s)"
+    doc_count_contradicted_by_run  "collects 30"    -> "collects 33"
+    doc_test_count_drift           "at least 30"    -> "at least 33"
+
+A baseline suppresses by id, so accepting any of these silently meant
+accepting it until the next commit that changed a count. For these
+detectors the baseline was permanently inert.
+
+Stripping digits from every summary is not the fix: `'core_0' is defined
+but never referenced` and `'core_1' ...` differ only in a digit, and
+collapsing those means accepting one suppresses the other, which is the
+same failure in the worse direction. So a detector may now state what
+identifies its finding, because only the detector knows which part of its
+own sentence is the defect and which part is this morning's arithmetic.
+Detectors that say nothing are unchanged.
+
+One-time effect: existing baseline entries for those three detectors will
+not match and will be reported once as new.
+
+**A file that moved is not a defect that was fixed.** The same identity
+problem, through the path rather than the summary: a module renamed byte
+for byte produced one finding that vanished and one that was brand new. To
+the ledger that read as a defect resolved and a different defect opened,
+so the streak broke and the next sighting at the new path would have been
+counted as a RETURN.
+
+There is no content-derived identity that is both stable under a rename
+and distinct across files -- an id that ignored the path would give two
+identical defects in two files one identity, which is the worse direction
+and is now held by a test. So identity keeps the path and the MEMORY
+follows it, which is what the version control system is for: the ledger
+asks git what moved between the run it remembers and this one, and carries
+the history onto the new id, recording where it came from.
+
+Best effort throughout. No git, no previous run, an unreadable history: the
+answer is "no renames known" and the ledger behaves exactly as before. It
+refuses rather than guessing when a history already exists at the new id,
+or when several candidates sit at the destination and nothing tells them
+apart -- two unused functions in one module is the ordinary case, and they
+are told apart by their summaries, which name the symbol rather than the
+file and so survive a rename.
+
+STILL OPEN. A baseline is a set of identities and nothing else, so it
+cannot follow a move however good the ledger's history is. An accepted
+finding starts being reported again after a rename. Closing that means the
+baseline storing more than ids.
+
+All three were found by an adversarial harness aimed at the two empty rows
+of its own coverage matrix. The second was found while chasing what looked
+like a harness artefact, and reproduces in one command from a clean
+checkout with no harness at all.
+
+**The test suite no longer depends on whoever runs it.** Most of this suite
+builds real git repositories, and those `git init` calls inherited the
+global configuration of whatever machine the suite ran on. Measured: sixty
+tests failed at once, across branch scanning and operation recovery, with
+`git commit` exiting 128, because an external commit signer had run out of
+file descriptors. Nothing in the tool had changed.
+
+A test suite whose result depends on a developer's `~/.gitconfig` cannot be
+trusted either way. `Tests/conftest.py` now points `GIT_CONFIG_GLOBAL` at an
+empty file and turns off the system config, so a test repository sees only
+what the test sets on it -- signing, but also hooks, aliases, `diff.renames`,
+`autocrlf` and everything else that could change a result here without
+anybody noticing which.
+
+651 mutants. 1858 passed, 38 skipped.
+
+## 1.7.2 (2026-09-12)
+
+1.7.1 fixed containment in two of the three writers and reported the job
+done. It was not.
+
+The harness that found the original hole was pointed back at the fix and
+asked a different question: not "does this case still reproduce" but "does
+a case one dimension away". The answer was yes. The same world with a
+maintained count block in it walked straight back out of the repository,
+because the block remedy takes its paths from the corpus and writes to
+them, and nothing on that path was checked.
+
+The lesson is in how it was missed. The case that found the first hole had
+no block in it, so the fix was verified against a world that could not
+exercise the writer it left open -- the case passed and the class stayed
+open. `Tests/test_write_containment.py` now runs EVERY writer over ONE
+world for exactly that reason: a guard added to one path and not another
+fails there rather than in six weeks.
+
+There is one containment rule now, in one function, imported rather than
+restated, so "every write into the patient is contained" is a single fact
+instead of three hopeful ones.
+
+635 mutants. 1797 passed, 38 skipped.
+
+## 1.7.1 (2026-09-12)
+
+An adversarial harness was pointed at the operating mode, and the surgeon
+turned out to have three ways of writing somewhere he had not looked. All
+three are the same mistake wearing different clothes: a decision reached
+about one thing and applied to another.
+
+None of them were reachable by a scan. They are all in the write path,
+which is the half a scanner cannot exercise on itself, and every one was
+found by constructing a repository state rather than by reading the code.
+
+### A write could land outside the patient
+
+`--operate` composes `root / "README.md"` and writes to it. A README that
+is a symlink to a file outside the repository is an ordinary thing for a
+repository to contain, and the write followed it -- outside the branch the
+operation opened, so outside anything the operation can revert, and
+outside the commit it then tries to make, which fails with nothing to
+commit and reports a symptom after the damage.
+
+Every other write in the tool resolved its target and checked containment
+first. This one did not, because it takes its paths by construction rather
+than from a finding, and "by construction" was doing work it could not do.
+`annotate.refuses` now answers the question at the write, where both
+callers reach it, rather than at each caller, where a guard on one of them
+is a guard on neither.
+
+### A maintained block replaced a paragraph somebody wrote
+
+The markers hand over a COUNT. The remedy replaced the whole region
+between them, so a repository that had written a sentence inside the block
+lost it on the next operation.
+
+The verification could not fail for this. It checked that every byte
+OUTSIDE the block was unchanged, which was true, and which was answering a
+different question from the one the invariant needed. That distinction --
+a verification that is sound and does not establish the property it exists
+for -- is the most useful thing this release learned.
+
+The number is now rewritten in place and every other byte in the block is
+the author's. A block with nothing but whitespace in it is a repository
+asking for the sentence and gets it; a block holding something that is not
+a count is left alone and said so; a block with two counts is left alone,
+because there is no single span to name. The verification is now that
+everything except the digits is unchanged, byte for byte.
+
+The same remedy also applied itself to any markdown file with the markers
+in it, with no document check at all, while the prose remedy one function
+away refuses a dated or versioned document by name. One repository could
+get two different answers to "may a machine update this number", decided
+by which mechanism happened to reach it. It refuses dated documents now.
+
+### A writability verdict was trusted after the world moved
+
+`writable: yes` is decided during the workup. Two things can have changed
+by the time a remedy acts on it.
+
+The text: the tool runs the repository's own test suite as part of the
+workup, so a test that rewrites a document executes inside the window
+between the reading and the writing. A live sentence replaced mid-run by a
+dated one still carried a verdict reached about the sentence that was
+there before. Re-running `claim_shape` was not enough -- that answers the
+REPORTING question, and a dated sentence passes it.
+
+The path: `_resolve` follows symlinks, correctly, because the question is
+which file the bytes land in. But `why_not_writable` opens by asking
+whether the FILENAME is a current-state document, and the name it had been
+given was the one the scan walked. Judge `README.md`, write through the
+link, and a file whose own name the same rule would have refused gets
+rewritten.
+
+The verdict is now re-derived at the write, from the resolved file's real
+name and its text as it stands.
+
+### A finding named the link instead of the file
+
+The corpus lists each real file once, which is right, and kept whichever
+of two names sorted first, which is arbitrary. When a symlink sorted
+first, every finding in that file named the link -- so a reader who
+followed the reported path and looked at its history saw a symlink that
+had never changed, and concluded nothing had happened. The bytes were in
+the other file, which no finding mentioned. The file wins now, never the
+link to it.
+
+### The name-disagreement section is no longer written uninvited
+
+The block remedy states the principle and declines to write its own
+markers for it: a scanner that inserts its own markup into somebody's
+README uninvited has decided something that was not its to decide. The
+annotation writer was doing exactly that on every operation, including
+when it had nothing to report, appending a section whose table read
+`_none_`. A section recording nothing is no longer created. An existing
+block is still maintained, because a repository carrying one opted in.
+
+### What this cost, and one guard that went
+
+634 mutants, up from 625, with a new suite for the containment guards:
+each of the three fixes above has a mutant that deletes it and a test that
+notices.
+
+Two of the existing mutants survived the fixes and both were the same
+lesson twice. The containment check in `_resolve` and the ambiguous-line
+check had each become undetectable, not because they stopped mattering but
+because the new writability re-derivation refused those particular test
+cases first. The tests were rewritten so each guard can be made to fail
+alone -- one of them for the second time, its own docstring having warned
+about this exact failure. A third pair really was redundant: with the
+block body no longer replaced whole, the explicit "already current" check
+and the `meant == text` check could not each be made to fail alone, so one
+of them was decoration and it went.
+
 ## 1.7.0 (2026-09-12)
 
 The surgeon learns to treat something, and learns two things about

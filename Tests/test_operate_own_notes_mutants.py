@@ -20,20 +20,41 @@ NOTES = "Tests/test_operate_own_notes.py"
 
 MUTANTS = [
     # (label, file, exact text to replace, replacement)
+    # Re-pointed in 1.7.3: the exclusion learned to ask whose edit it is.
     ("the door counts the tool's own ledger as the patient's dirt", _OP,
-     '        if code == "??" and path in SURGEONS_NOTES:\n            continue\n',
+     '        if path in SURGEONS_NOTES:\n'
+     '            if code == "??":\n'
+     '                continue\n'
+     '            if _was_clean_on_arrival(root, path, arrival):\n'
+     '                continue\n',
      ""),
+    # v1.7.3. Without this, a committed note counts as dirt however it got
+    # that way, and the tool refuses every repository that keeps the record
+    # it tells people to keep.
+    ("a committed note this run wrote is still counted as the patient's", _OP,
+     "            if _was_clean_on_arrival(root, path, arrival):",
+     "            if False:"),
+    # The other side. Without it, anything a repository committed can be
+    # overwritten by the workup and nothing stops the operation.
+    ("somebody's real edit to a committed note is treated as ours", _OP,
+     "            if _was_clean_on_arrival(root, path, arrival):",
+     "            if True:"),
+    ("the snapshot is never taken, so nothing can be told apart", _OP,
+     "    arrival = dict(arrival or {})",
+     "    arrival = {}"),
     ("the cut sweeps the surgeon's notes into the patient's history", _OP,
      '        _git(root, "add", "-A", "--", ".", *(f":(exclude){note_file}" for note_file in SURGEONS_NOTES))',
      '        _git(root, "add", "-A")'),
     ("only the ledger is recognised as a note", _OP,
      'SURGEONS_NOTES = (".ghost_ledger.json", ".ghost_baseline.json", ".ghost_casefile.json")',
      'SURGEONS_NOTES = (".ghost_ledger.json",)'),
-    ("a tracked note that changed is waved through too", _OP,
-     '        if code == "??" and path in SURGEONS_NOTES:',
-     "        if path in SURGEONS_NOTES:"),
+    # "a tracked note that changed is waved through too" lived here until
+    # 1.7.3. Its claim is unchanged and is now made by "somebody's real edit
+    # to a committed note is treated as ours" above, which points at the
+    # guard that decides it. Two names for one mutation would report the
+    # suite as proving one more thing than it does.
     ("the door stops looking at the tree at all", _OP,
-     "        dirt = _dirty_paths(root)\n",
+     "        dirt = _dirty_paths(root, arrival)\n",
      "        dirt = []\n"),
     ("porcelain is parsed by column again", _OP,
      "        parts = line.split(None, 1)",

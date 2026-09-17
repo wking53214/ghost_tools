@@ -110,6 +110,65 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def renames_between(root: Path, before: str, after: str) -> Dict[str, str]:
+    """Files git says moved between two commits: old path -> new path.
+
+    WHY A MEMORY HAS TO ASK THIS (v1.7.3)
+
+    A finding's id is derived from where the finding is, so a file renamed
+    byte for byte produces one finding that vanished and one that is brand
+    new. To this ledger that reads as a defect resolved and a different
+    defect opened, and both halves are false: the baseline carrying the old
+    id stops matching, and the history shows a recovery nobody performed.
+
+    Measured against 1.7.2 by an adversarial harness. Renaming a module is
+    the most ordinary thing a repository does.
+
+    There is no content-derived identity that is both stable under a rename
+    and distinct across files -- an id that ignored the path would give two
+    identical defects in two files one identity, and accepting one would
+    suppress the other. So identity keeps the path and the MEMORY learns to
+    follow it, which is what the version control system is for.
+
+    Best effort throughout. No git, no commits, an unreadable history: the
+    answer is "no renames known", and the ledger behaves exactly as it did
+    before rather than guessing.
+    """
+    if not before or not after or before == after:
+        return {}
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(root), "diff", "--name-status", "-M",
+             before, after],
+            capture_output=True, text=True, timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    if out.returncode != 0:
+        return {}
+    return parse_name_status(out.stdout)
+
+
+def parse_name_status(output: str) -> Dict[str, str]:
+    """The renames in `git diff --name-status` output.
+
+    Its own function so the status codes can be tested against lines git
+    really emits, rather than only against whatever a fixture repository
+    happens to produce. A copy (`C100`) has the same three-field shape as a
+    rename and is NOT one: the old file is still there, so treating it as a
+    move would take a live finding's history away from a file that still
+    has the defect in it.
+    """
+    moved: Dict[str, str] = {}
+    for line in output.splitlines():
+        parts = line.split("\t")
+        # `R100\told\tnew`. An add, a delete or a modification has two
+        # fields; a copy has three and is not a move.
+        if len(parts) == 3 and parts[0].startswith("R"):
+            moved[parts[1]] = parts[2]
+    return moved
+
+
 def _head_commit(root: Path) -> str:
     """Best effort. A repository is not required to use this tool, so a
     missing commit is recorded as empty rather than raising."""
@@ -182,11 +241,16 @@ class FindingHistory:
     #: True when the most recent run did not find it. Kept explicitly so a
     #: return is detectable without replaying the whole run list.
     absent_last_run: bool = False
+    #: Where this finding used to live, when its history was carried across
+    #: a rename. Recorded rather than silently dropped: a streak that spans
+    #: two paths is a claim a reader is entitled to check.
+    renamed_from: str = ""
     dispositions: List[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
             "detector": self.detector, "file": self.file, "summary": self.summary,
+            "renamed_from": self.renamed_from,
             "severity": self.severity, "first_seen": self.first_seen,
             "first_commit": self.first_commit, "last_seen": self.last_seen,
             "last_commit": self.last_commit, "runs_seen": self.runs_seen,
@@ -201,6 +265,7 @@ class FindingHistory:
             finding_id=fid,
             detector=str(d.get("detector", "")), file=str(d.get("file", "")),
             summary=str(d.get("summary", "")), severity=str(d.get("severity", "")),
+            renamed_from=str(d.get("renamed_from", "")),
             first_seen=str(d.get("first_seen", "")), first_commit=str(d.get("first_commit", "")),
             last_seen=str(d.get("last_seen", "")), last_commit=str(d.get("last_commit", "")),
             runs_seen=int(d.get("runs_seen", 0)), consecutive=int(d.get("consecutive", 0)),
@@ -286,12 +351,87 @@ class Ledger:
                 pass
             raise
 
+    def _follow_renames(self, findings: Sequence[Finding], seen_now: set,
+                        commit: str, root: Optional[Path]) -> None:
+        """Move a finding's history onto its new id when its file moved.
+
+        The history is re-keyed, not copied: the old id is deleted and the
+        new one is in `seen_now`, so the caller's absence loop passes over
+        it without needing to be told. An explicit "these were carried" set
+        lived here and was dead the moment the deletion was written -- kept
+        only long enough for a mutant to survive removing it.
+
+        Refusals, each of which is the safe direction:
+
+            no git, no commits, no previous run    nothing is carried
+            the new id already has a history       nothing is overwritten;
+                                                   two histories merging is
+                                                   a worse lie than one
+                                                   history restarting
+            nothing at the new path from the
+            same detector                          not carried
+
+            several candidates and no way to
+            tell them apart                        not carried. A memory
+                                                   that guesses which
+                                                   finding this used to be
+                                                   is inventing continuity
+
+        Several candidates is the ordinary case, not the exception: two
+        unused functions in one module are two findings, and moving the
+        module moves both. They are told apart by their summaries, which
+        name the symbol rather than the file and are therefore unchanged by
+        a rename. Only when that fails, and only when the destination holds
+        exactly one candidate, is position used instead.
+        """
+        previous = self.runs[-1].commit if self.runs else ""
+        if root is None or not previous or not commit:
+            return set()
+        moved = renames_between(Path(root), previous, commit)
+        if not moved:
+            return set()
+
+        # Where each finding seen this run lives, by detector.
+        here: Dict[tuple, List[Finding]] = {}
+        for finding in findings:
+            here.setdefault((finding.detector, finding.evidence.file),
+                            []).append(finding)
+
+        for fid, hist in list(self.findings.items()):
+            if fid in seen_now:
+                continue
+            destination = moved.get(hist.file)
+            if destination is None:
+                continue
+            candidates = here.get((hist.detector, destination), [])
+            if not candidates:
+                continue
+            named = [f for f in candidates if f.summary == hist.summary]
+            if len(named) == 1:
+                new_id = named[0].id
+            elif len(candidates) == 1:
+                new_id = candidates[0].id
+            else:
+                continue
+            if new_id == fid or new_id in self.findings:
+                continue
+            hist.finding_id = new_id
+            hist.renamed_from = hist.renamed_from or hist.file
+            # `hist.file` is deliberately NOT set here. The caller's main
+            # loop writes it from the finding seen this run, which is the
+            # same value, and a second assignment is a line no test can
+            # fail on -- a mutant survived deleting it, which is how it was
+            # found.
+            self.findings[new_id] = hist
+            del self.findings[fid]
+
     # ---------------------------------------------------------------- record
 
     def record(
         self, findings: Sequence[Finding], *, checks: Dict[str, str],
         commit: str, tool_version: str, at: Optional[str] = None,
         scanned: Optional[int] = None, records: Optional[Dict[str, str]] = None,
+        root: Optional[Path] = None,
     ) -> RunRecord:
         """Fold one run into memory. `findings` is everything FOUND, before
         the baseline diff -- see the module docstring on why.
@@ -332,6 +472,12 @@ class Ledger:
 
         seen_now = {f.id for f in findings}
         by_id = {f.id: f for f in findings}
+
+        # A file that moved is not a defect that was fixed. Run BEFORE the
+        # absence loop below: it re-keys a carried history onto the id the
+        # finding has now, which is in `seen_now`, so the loop passes over
+        # it and the streak is never broken.
+        self._follow_renames(findings, seen_now, commit, root)
 
         for fid, hist in self.findings.items():
             if fid in seen_now:
