@@ -1,5 +1,85 @@
 # Changelog
 
+## 1.9.0 (2026-09-17)
+
+**The serum was a profile of the surgeon.**
+
+Run against fortress-kernel, a patient that met all six health criteria,
+the entire enhancement pass was this:
+
+    serum (measured, not applied):
+      measured redundancy (same input, done again):
+        read        17 calls, 4 distinct, 13 repeated  0.00s (0% of the run)
+        ast.parse    4 calls, 4 distinct,  0 repeated  0.01s (6% of the run)
+        subprocess   1 calls, 1 distinct,  0 repeated  0.00s (2% of the run)
+
+`speed.Profile` wraps `ast.parse`, `Path.read_*` and `subprocess.run`.
+Every call it counts is one ghost_buster makes. So the thirteen repeated
+reads are the scanner re-reading the patient, they cost 0.00s, and they
+were printed under the patient's name as the reward for passing the
+readiness gate. Those counters earned their place exactly once, when this
+toolkit was the patient and the run showed 9.5 parses per file.
+
+The static half was better aimed and barely there: a count of pitstop
+findings, appended ONLY when there were some. A sweep that ran and found
+nothing printed nothing, in the flagship feature of a project whose first
+principle is that silence is the defect.
+
+**The serum now has three parts and each says whose facts it reports.**
+
+*The surface* is every enhancement site in the patient, always reported,
+with a count when it is zero.
+
+*The dose* is the new thing, and it is the ladder the README had promised
+and never built. The check for an enhancement is the patient's own test
+suite; candidacy established that the suite passes and then nothing used
+that fact. A passing suite is not a suite that would notice. So each site
+is now graded by this toolkit's own standard for whether a test means
+anything: empty the function that holds the site, run the patient's suite,
+and see whether anything fails. The suite fails, the site can be verified.
+The suite passes, it cannot, and no dose is offered there. The run does not
+finish, it is unknown, which counts against the patient like every other
+criterion this tool could not assess.
+
+*The scan's own work* is the old profiler output, kept, labelled as
+ghost_buster's rather than the patient's, and printed only when something
+was repeated enough to act on. On fortress-kernel it now collapses to one
+line saying so.
+
+It costs one whole-suite run per site plus a baseline, so `--serum-budget
+SECONDS` bounds it (default 120). A site the budget did not reach is
+reported as not assessed, never dropped. A baseline that is not green in
+the scratch copy retires every verdict below it rather than producing
+verdicts nobody should believe.
+
+**What is still not rewritten, and the one that looks safe.**
+
+`x in [1, 2, 3]` inside a loop is O(n) per pass where `x in {1, 2, 3}` is
+O(1), every element is a hashable constant, and it looks like the obvious
+first automatic dose. It is not safe:
+
+    >>> [1] in [1, 2, 3]
+    False
+    >>> [1] in {1, 2, 3}
+    TypeError: unhashable type: 'list'
+
+List membership compares; set membership hashes the left operand first. The
+rewrite turns a `False` into a TypeError for every unhashable value that
+reaches it, nothing in the tree says what reaches it, and a suite that
+never passes an unhashable value goes green either way. It gets the same
+answer as the invariant-call hoist: reported, ranked, never rewritten. "The
+suite is green" is not a verification for a rewrite whose failure mode the
+suite does not exercise. The analysis is in `serum.py` rather than in a
+commit message, because the next person to look at that rewrite will read
+the module.
+
+**Two decisions became named functions so they could be tested directly.**
+`over_budget` and `verdict_for` were branches inside a loop that only fired
+on a timing or on a crashed subprocess; three hand mutants survived against
+them, which is the mutation suite doing its job on the module that exists
+to grade other people's suites. Extracted, tested, and the mutants re-aimed
+at the functions: 19 new mutants, all killed.
+
 ## 1.8.0 (2026-09-17)
 
 **Three defects this toolkit walked past on a repository it was scanning.**

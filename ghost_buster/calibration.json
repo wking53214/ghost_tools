@@ -1199,6 +1199,42 @@
     },
     "note": null
    }
+  },
+  {
+   "name": "serum",
+   "kind": "check",
+   "date": "2026-09-17",
+   "corpus": "one healthy candidate (fortress-kernel) and one constructed patient",
+   "before": {
+    "findings": 0,
+    "note": "the pre-1.9.0 serum emitted no finding at all: three lines of the scanner's own call counts"
+   },
+   "after": {
+    "sites": 2,
+    "verifiable": 1,
+    "unverifiable": 1
+   },
+   "exclusions": [
+    "a site at module scope: there is no function body to empty, so the check does not apply",
+    "a patient whose suite is not green in a scratch copy: every verdict below it would be meaningless",
+    "scan-redundancy numbers below 10% of the run: they are the scanner's, and at 0% they are not a finding about anything"
+   ],
+   "disclosed": [
+    "The 'after' numbers are from a two-function patient built to have one covered site and one blind one, because fortress-kernel -- the real candidate that prompted this -- has no enhancement site at all. What fortress-kernel established is the DEFECT: three lines of ghost_buster's own read and parse counts, presented as the enhancement pass.",
+    "Verifiability is graded by emptying the whole function. A site in a function the suite exercises for an unrelated reason grades as covered, which is weaker than 'the suite covers this line'. It is an upper bound on what the suite can see, not a coverage measurement.",
+    "One whole-suite run per site means the grading is bounded by --serum-budget rather than by the evidence. A large patient will report most of its sites as not assessed at the default 120s, and that is a budget statement, not a fact about the patient."
+   ],
+   "source": "CHANGELOG 1.9.0",
+   "reproduce": {
+    "command": "ghost-buster PATH --operate --operate-dry-run",
+    "tool_version": "1.9.0",
+    "corpus_manifest": {
+     "wking53214/fortress-kernel": {
+      "commit": "ef372b310d80d10cdf73921143e1326d1c337da2"
+     }
+    },
+    "note": "The constructed patient is Tests/test_serum.py's APP fixture, in the repository, not a pinned checkout."
+   }
   }
  ]
 }

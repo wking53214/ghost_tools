@@ -184,13 +184,19 @@ def test_a_cut_that_exposes_is_recorded_too(patient, tmp_path):
 # ------------------------------------------------------------ candidacy
 
 def test_the_serum_is_offered_only_to_a_candidate(patient):
+    """And what a candidate gets is about the PATIENT. Until 1.8.1 the
+    assertion here was `"measured redundancy" in op.serum`, which is the
+    profiler's count of ghost_buster's own parses and reads -- a serum that
+    passed this test while telling the patient nothing about itself."""
     files, findings, checks = _workup(patient)
     op = operate(patient, files, findings, checks, branch="ghost/op")
     assert op.readiness_after is not None
     if op.readiness_after.candidate:
-        assert any("measured redundancy" in s for s in op.serum)
+        assert any("enhancement surface" in s for s in op.serum)
+        assert op.serum_report is not None and op.serum_report.ran
     else:
         assert op.serum == []
+        assert op.serum_report is None
 
 
 def test_an_unexamined_patient_is_not_a_candidate(patient):

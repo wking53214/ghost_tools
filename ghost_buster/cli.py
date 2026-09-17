@@ -27,6 +27,7 @@ from .ledger import (
     Ledger,
 )
 from . import readiness
+from . import serum
 from .casefile import Casefile, Prior
 from .operate import Refused, notes_on_arrival, operate
 from .mutation import render_run
@@ -119,6 +120,14 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--operate-dry-run", action="store_true",
         help="with --operate: diagnose and assess candidacy, write nothing",
+    )
+    parser.add_argument(
+        "--serum-budget", type=float, default=serum.DEFAULT_BUDGET, metavar="SECONDS",
+        help="with --operate: whole seconds the serum may spend establishing, per "
+             "enhancement site, whether this patient's own test suite would catch a "
+             "mistake made there. It runs the suite once per site, so this is a real "
+             "cost; a site the budget did not reach is reported as not assessed, never "
+             "dropped. (default: %(default)ss)",
     )
     parser.add_argument(
         "--profile", action="store_true",
@@ -344,7 +353,8 @@ def _operate(args, evidence, casefile_path, archive, arrival=None) -> int:
     try:
         op = operate(args.path, evidence.files, evidence.findings, evidence.checks,
                      casefile=Casefile(casefile_path), branch=args.operate_branch,
-                     dry_run=args.operate_dry_run, arrival=arrival)
+                     dry_run=args.operate_dry_run, arrival=arrival,
+                     serum_budget=args.serum_budget)
     except Refused as e:
         print(f"refused: {e}", file=sys.stderr)
         return 2

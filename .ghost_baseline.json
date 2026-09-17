@@ -10,16 +10,16 @@
     "evidence": {
       "absolute_file": null,
       "file": "ghost_buster/cli.py",
-      "line_end": 384,
-      "line_start": 143,
+      "line_end": 322,
+      "line_start": 73,
       "related_files": [],
       "snippet": null
     },
-    "first_seen": "2026-09-11T18:33:32.578993+00:00",
-    "id": "ghost-4095fbe7bf72",
+    "first_seen": "2026-09-17T20:48:51.212322+00:00",
+    "id": "ghost-1fa563a0f934",
     "layer": "mechanical",
     "severity": "major",
     "status": "suppressed",
-    "summary": "'_build_parser' spans 241 lines (threshold 80)"
+    "summary": "'_build_parser' spans 249 lines (threshold 80)"
   }
 ]

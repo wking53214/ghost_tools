@@ -92,13 +92,21 @@ across the library. `--priors` is the view over that file: per kind of
 finding, what this team has decided, how often the decision was "false",
 and how often it held against what the ledger saw afterwards.
 
-**The serum.** A candidate gets the enhancement pass: `--profile` counts the
-work the scan did more than once (that is how the 9.5-parses-per-file
-redundancy in this toolkit was found), and the pitstop detectors report
-what the tree can see. Enhancement applied to an unhealthy patient
-amplifies the rot, which is why candidacy is gated on health. No ceiling
-for a candidate, so long as nothing breaks -- and the breaking is what the
-checks are for.
+**The serum.** A candidate gets the enhancement pass, in three parts, each
+labelled with whose facts it reports. **The surface**: every enhancement
+site in the patient, always reported, with a count when it is zero. **The
+dose**: per site, whether the patient's own test suite would catch a
+mistake made there, established by emptying the function that holds the
+site and running the suite. **The scan's own work**: the profiler numbers,
+which are ghost_buster's parses and reads rather than the patient's, kept
+and named as such and printed only when something was repeated enough to
+act on. Enhancement applied to an unhealthy patient amplifies the rot,
+which is why candidacy is gated on health. No ceiling for a candidate, so
+long as nothing breaks -- and the breaking is what the checks are for.
+
+Until 1.9.0 the serum was the profiler and nothing else, so a healthy
+candidate was handed a count of the surgeon's own work under its own name.
+See "What a candidate actually gets" below.
 
 ## What runs by default
 
@@ -463,6 +471,82 @@ Measured 2026-09-17 on three repositories in this ecosystem: one finding,
 on fortress-kernel, where five fields were declared twice and the
 descriptions had drifted apart. The other two declare a package in one
 file each and were reported on neither.
+
+## What a candidate actually gets: the serum
+
+Measured 2026-09-17 on fortress-kernel, a patient that met all six health
+criteria. This was the entire enhancement pass:
+
+```
+serum (measured, not applied):
+  measured redundancy (same input, done again):
+    read        17 calls, 4 distinct, 13 repeated  0.00s (0% of the run)
+    ast.parse    4 calls, 4 distinct,  0 repeated  0.01s (6% of the run)
+    subprocess   1 calls, 1 distinct,  0 repeated  0.00s (2% of the run)
+```
+
+Every number there is ghost_buster's. `speed.Profile` wraps `ast.parse`,
+`Path.read_*` and `subprocess.run`, so the thirteen repeated reads are the
+scanner re-reading the patient, costing 0.00s, printed under the patient's
+name as the reward for being healthy. Those counters were worth having
+exactly once, when this toolkit was the patient and the run showed 9.5
+parses per file. The static half was better aimed and barely present: a
+count of pitstop findings, appended only when there were some, so a sweep
+that found nothing printed nothing.
+
+### The dose ladder is verifiability
+
+"No ceiling: a candidate gets every dose the evidence supports, so long as
+nothing breaks -- and the breaking is what the checks are for." The check
+for an enhancement is the patient's own test suite. Candidacy established
+that the suite passes and then nothing used the fact.
+
+A passing suite is not a suite that would notice. So each site is graded by
+this toolkit's own standard for whether a test means anything: empty the
+function holding the site, run the suite, see whether anything fails.
+
+| verdict | what happened | what it means |
+|---|---|---|
+| can verify | the suite failed with that function emptied | a mistake made here would be caught |
+| cannot | the suite passed with that function emptied | "the tests still pass" would prove nothing |
+| unknown | the mutation would not apply, the run did not finish, or the budget ran out | counts against the patient, like every unassessed criterion |
+
+```
+serum (measured, not applied):
+  enhancement surface: 2 site(s) in 2 file(s) swept
+    list_membership_in_loop    app.py:8 covered()  `in ALLOWED`, a module-level list
+    list_membership_in_loop    app.py:17 blind()  `in ALLOWED`, a module-level list
+  dose: 1 verifiable, 1 unverifiable, 0 not assessed (the check is this patient's own suite)
+    can verify  app.py:8   the suite fails with covered() emptied, so a mistake made here would be caught
+    cannot      app.py:17  the suite passes with blind() emptied, so it cannot tell whether an enhancement here changed anything
+  the scan's own work over this patient: nothing repeated enough to act on (ghost_buster's numbers, not the patient's)
+```
+
+It costs one whole-suite run per site plus one baseline, so `--serum-budget
+SECONDS` bounds it (default 120). A site the budget did not reach is
+reported as not assessed, never dropped.
+
+### Why nothing is rewritten, including the one that looks safe
+
+`x in [1, 2, 3]` inside a loop is O(n) per pass where `x in {1, 2, 3}` is
+O(1), every element is a hashable constant, and it looks like the obvious
+first automatic dose. It is not safe:
+
+```python
+>>> [1] in [1, 2, 3]
+False
+>>> [1] in {1, 2, 3}
+TypeError: unhashable type: 'list'
+```
+
+List membership compares; set membership hashes the LEFT operand first. The
+rewrite turns a `False` into a TypeError for every unhashable value that
+ever reaches it. Nothing in the tree says what reaches it, and a suite that
+never passes an unhashable value goes green either way. So it gets the same
+answer as the invariant-call hoist: reported, ranked, never rewritten. "The
+suite is green" is not a verification for a rewrite whose failure mode the
+suite does not exercise -- and saying, per site, whether your suite would
+have caught it is the honest thing the serum can do instead.
 
 ## The seam between two repositories: `--join`
 
@@ -1662,7 +1746,7 @@ package uses for its model-client tests. `test_branches.py`,
 repositories and pytest projects in `tmp_path` instead, the only honest way
 to test a ref-graph, git-history or suite-execution check (the secrets
 suite against a real gitleaks binary, skipped if one is not on PATH).
-`test_mutation.py` and the 53 `Tests/*_mutants.py` files run pytest in
+`test_mutation.py` and the 54 `Tests/*_mutants.py` files run pytest in
 subprocesses against scratch copies of the project, each mutant file
 breaking one component a named number of ways and requiring every mutant
 to fail a test; they account for most of the suite's wall-clock time. A

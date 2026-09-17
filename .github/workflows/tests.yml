@@ -22,7 +22,7 @@ jobs:
           python -m pip install --upgrade pip
           # pytest-xdist is not optional: pyproject sets `addopts = "-n auto"`,
           # so pytest exits with `unrecognized arguments: -n` without it. It also
-          # cuts this job from ~16 minutes to a few, because the suite is 724
+          # cuts this job from ~16 minutes to a few, because the suite is 743
           # mutants each running a whole test file in a fresh interpreter.
           python -m pip install pytest pytest-xdist ruff==0.15.22
       - name: Install gitleaks
@@ -31,7 +31,7 @@ jobs:
         # actually exercises the real thing instead of skipping forever.
         run: |
           curl -sSL -o /tmp/gitleaks.tar.gz \
-            https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz
+            https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_x64.tar.gz
           tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
           sudo mv /tmp/gitleaks /usr/local/bin/gitleaks
           gitleaks version
@@ -56,7 +56,7 @@ jobs:
       - name: Install gitleaks
         run: |
           curl -sSL -o /tmp/gitleaks.tar.gz \
-            https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz
+            https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_x64.tar.gz
           tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
           sudo mv /tmp/gitleaks /usr/local/bin/gitleaks
       - name: ghost-buster on ghost_tools
