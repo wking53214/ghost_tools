@@ -792,7 +792,33 @@ def _reachable_from_data(parsed, declared) -> Dict[str, Set[str]]:
     resolved by value for a call and by name for a subscript, so
     `Status("confirmed")` and `Status["CONFIRMED"]` each account for exactly
     the member they produce and no more.
+
+    `__members__` COUNTS TOO (v1.8.1). `Status.__members__[name]` and
+    `Status.__members__.get(name)` look up a member by name out of the
+    enum's own mapping, which is the same act as `Status[name]` and is
+    what a caller writes when an absent name must not raise. Missing it
+    was measured: ATS replaced `Verdict[name]` with
+    `Verdict.__members__.get(name)` to stop a KeyError aborting a decision
+    before it reached the ledger -- a strictly safer deserialiser -- and
+    the data path went invisible to this detector, which then reported the
+    member as produced only by test code. The tool had told that
+    repository to document the path in the enum docstring, and the
+    documenting was done, and the structure the claim is checked against
+    had vanished from under it.
+
+    Iterating the mapping is not this. `Status.__members__.values()` in a
+    loop yields every member because that is what iterating an enum does,
+    and reading no argument out of a record reconstructs nothing, so only
+    a subscript or a `.get` with an argument is counted here.
     """
+    def members_mapping_of(node) -> Optional[str]:
+        """`<Enum>.__members__` -> the enum name, else None."""
+        if (isinstance(node, ast.Attribute) and node.attr == "__members__"
+                and isinstance(node.value, ast.Name)
+                and node.value.id in declared):
+            return node.value.id
+        return None
+
     values: Dict[str, Dict[object, str]] = {}
     for enum, members in declared.items():
         values[enum] = {v: m for m, (_p, _l, v) in members.items()
@@ -814,6 +840,15 @@ def _reachable_from_data(parsed, declared) -> Dict[str, Set[str]]:
                   and isinstance(node.args[0], ast.Name)
                   and node.args[0].id in declared):
                 enum, arg = node.args[0].id, node.args[1]
+            elif (isinstance(node, ast.Subscript)
+                  and members_mapping_of(node.value) is not None):
+                enum, arg = members_mapping_of(node.value), node.slice
+            elif (isinstance(node, ast.Call)
+                  and isinstance(node.func, ast.Attribute)
+                  and node.func.attr == "get"
+                  and members_mapping_of(node.func.value) is not None
+                  and node.args):
+                enum, arg = members_mapping_of(node.func.value), node.args[0]
             if enum is None:
                 continue
             if isinstance(arg, ast.Constant):
