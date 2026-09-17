@@ -407,33 +407,48 @@ def _scan(root):
     return derive_findings(build_model(root, _collect_files(root)))
 
 
+BUILD_SYSTEM = '[build-system]\nrequires = ["setuptools>=68"]\n\n'
+
+
+def _reaches_for(root):
+    """What the repository reaches for and does not provide, after the
+    build-time exemption has been applied.
+
+    Asserted here rather than on the emitted finding because
+    `undeclared dependency` needs to map an import name to a distribution
+    through installed metadata, and whether setuptools IS installed varies:
+    Python 3.12 stopped putting it in new virtualenvs. Measured 2026-09-17
+    -- the first version of these two tests passed on 3.11 and failed on
+    3.12 in CI, because with no setuptools to map, the scan correctly
+    recorded the import as undecidable instead of undeclared, and the test
+    read that silence as agreement. The exemption is the thing these tests
+    are about, and it is a pure function of the two files.
+    """
+    from ghost_buster.structure import _external_imports, _stdlib_names
+    return _external_imports(build_model(root, _collect_files(root)), _stdlib_names())
+
+
 def test_setup_py_importing_setuptools_is_not_an_undeclared_dependency(tmp_path):
     """The false positive this check shipped with. `[build-system].requires`
     is the ONLY correct place to declare setuptools for a setup.py, because
     a PEP 517 frontend installs that list into an isolated environment
     before setup.py is imported. Reading only `[project]` made the right
     answer look like the defect."""
-    pyproject = (
-        '[build-system]\nrequires = ["setuptools>=68"]\n\n' + PYPROJECT
-    )
-    root = _repo(tmp_path, pyproject=pyproject,
+    root = _repo(tmp_path, pyproject=BUILD_SYSTEM + PYPROJECT,
                  files={"setup.py": SETUP_PY.format(description="demo")})
-    summaries = " ".join(f.summary for f in _scan(root))
-    assert "setuptools" not in summaries
+    assert "setuptools" not in _reaches_for(root)
+    assert "setuptools" not in " ".join(f.summary for f in _scan(root))
 
 
 def test_a_runtime_module_importing_a_build_requirement_is_still_undeclared(tmp_path):
     """The exemption is for build-time files only. Consent to install a
     package before the build is not a declaration that it will be there at
     import time, and treating it as one would hide a real ImportError."""
-    pyproject = (
-        '[build-system]\nrequires = ["setuptools>=68"]\n\n' + PYPROJECT
-    )
-    root = _repo(tmp_path, pyproject=pyproject,
+    root = _repo(tmp_path, pyproject=BUILD_SYSTEM + PYPROJECT,
                  files={"demo/uses.py": "import setuptools\n"})
-    undeclared = [f for f in _scan(root)
-                  if f.attributes["kind"] == "undeclared dependency"]
-    assert [f for f in undeclared if f.attributes["package"] == "setuptools"]
+    reached = _reaches_for(root)
+    assert "setuptools" in reached
+    assert reached["setuptools"] == ["demo.uses"]
 
 
 def test_setup_py_and_pyproject_disagreeing_is_major(tmp_path):

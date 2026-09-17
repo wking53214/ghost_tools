@@ -60,6 +60,19 @@ assertion moved -- the 63 hand mutants over those four test files still
 die, which is the check that the imports really were unused rather than
 merely unreferenced by ruff's reading.
 
+**Two of 1.8.0's own tests were environment-dependent**, and the CI matrix
+caught what no local run could. They asserted on the emitted
+`undeclared dependency` finding, which needs to map an import name to a
+distribution through installed metadata. Python 3.12 stopped putting
+setuptools in new virtualenvs, so on 3.12 there was nothing to map to, the
+scan correctly recorded the import as undecidable rather than undeclared,
+and the test that expected a finding got none while the test that expected
+silence got it for the wrong reason. Both now assert on the build-time
+exemption itself, which is a pure function of pyproject.toml and the file
+list. The 39 hand mutants over that module still die, including the two
+that invert the exemption, so the new assertions are strictly stronger than
+what they replaced.
+
 ## 1.9.0 (2026-09-17)
 
 **The serum was a profile of the surgeon.**
