@@ -1,5 +1,51 @@
 # Changelog
 
+## 1.9.1 (2026-09-17)
+
+**A corpus that could not demonstrate what it documented.**
+
+`Tests/fixtures/wizzle` was added in the 1.7.1-1.7.8 merge as a forensics
+edge-case repository: an enum member produced in library code, removed, and
+still named by a test, to show where a git-history-based provenance model
+produces findings that are technically correct and semantically
+misleading.
+
+It was a standalone repository copied into this tree as static files, and
+the scenarios it documented were defined by commits from its own history --
+`16e9923`, `3e2ddc3`, `ce544ad`, `a1a1356` -- none of which exist here. The
+forensics layer grades a removed member by what git says happened to it.
+This corpus had no git to say anything, so it could not produce a single
+one of the findings it was written to illustrate.
+
+Meanwhile it was doing three jobs nobody asked for:
+
+- `testpaths = ["Tests"]` reaches the whole tree, so pytest collected
+  `Tests/fixtures/wizzle/Tests/test_status.py` as a real test and errored
+  on `from enums import Status`. A green suite exited non-zero, which is
+  how an exit code stops being read.
+- The self-scan reported `unresolvable dependency: 'enums'` at MAJOR,
+  permanently, against this repository.
+- Three MINOR `dead_code` findings for functions in a fake library.
+
+Nothing referenced it. No test, no tool, no line of the README or this
+changelog. Deleted, and the self-scan drops from 89 findings to 85 -- the
+four above, and nothing else changed.
+
+**The argument survived; the files did not.** `docs/forensics-limits.md`
+carries the durable half: a security fix, a deliberate refactor and a
+regression leave the same trace in git history, the detector escalates
+anyway because the one that matters is indistinguishable from the one that
+does not, and the case file rather than a suppression is what stops the
+second reader re-deriving a decision the first already made. The invented
+commit SHAs, the `/tmp/wizzle` run instructions and the "future versions
+could" roadmap did not survive, the last of those because a list of
+unmeasured improvements is the kind of claim this project spends its time
+finding in other people's repositories. What is left names the two ideas
+that are not signal (commit-message prefixes, changelog absence) and the
+one that might be, and says it is unmeasured.
+
+The README's `unreachable_declared_state` paragraph now points at it.
+
 ## 1.9.0 (2026-09-17)
 
 **The serum was a profile of the surgeon.**

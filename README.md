@@ -211,7 +211,10 @@ separates a state nobody wired up (MINOR) from one a commit stopped
 producing (MAJOR), including the case where the last production moved out of
 library code and into a test. An unreadable history grades at the weight of
 what was actually observed and never escalates; `history=False` makes the
-detector a pure function of the files on disk.
+detector a pure function of the files on disk. What that history cannot
+tell apart -- a security fix, a deliberate refactor and a regression leave
+the same trace -- is in `docs/forensics-limits.md`, with the reason it
+escalates anyway.
 
 Beside the detectors, six repository-level checks and two passes over
 everything, each with its own section below: unmerged branches, test
