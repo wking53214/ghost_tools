@@ -72,6 +72,7 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Set
 
 from . import corpus, readiness
+from . import serum as serum_mod
 from .annotate import annotate as annotate_names
 # One containment rule, shared, deliberately. It lives in annotate.py because
 # that is where the first hole was found and where its tests and mutants are;
@@ -182,9 +183,18 @@ class Operation:
     readiness_after: Optional[readiness.Readiness] = None
     cuts: List[Cut] = field(default_factory=list)
     on_the_table: List[Finding] = field(default_factory=list)
+    #: The rendered serum, and the record it was rendered from. Both,
+    #: because the report prints text and the ledger needs the facts.
     serum: List[str] = field(default_factory=list)
+    serum_report: Optional["serum_mod.SerumReport"] = None
     head_after: Optional[str] = None
     dry_run: bool = False
+    #: Seconds the serum may spend grading enhancement sites. It rides on
+    #: the Operation rather than through `_cut`'s signature: the two call
+    #: sites became byte-identical two-line blocks when it was a parameter,
+    #: which this toolkit's own intra_function_duplicate_block detector
+    #: rated MINOR on the function that runs the surgeon.
+    serum_budget: float = serum_mod.DEFAULT_BUDGET
 
     @property
     def came_in_untouched(self) -> bool:
@@ -221,7 +231,7 @@ class Operation:
                 lines.append(f"  (+{len(self.on_the_table) - 12} more)")
             lines.append("")
         if self.serum:
-            lines += ["serum (measured, not applied):", *("  " + s for s in self.serum), ""]
+            lines += [*self.serum, ""]
         return "\n".join(lines)
 
 
@@ -755,6 +765,7 @@ def operate(root: Path, files: Sequence[Path], findings: Sequence[Finding],
             checks: Dict[str, str], *, casefile: Optional[Casefile] = None,
             branch: Optional[str] = None, dry_run: bool = False,
             arrival: Optional[Dict[str, str]] = None,
+            serum_budget: float = serum_mod.DEFAULT_BUDGET,
             rescan: Callable[[Sequence[Path]], List[Finding]] = run_all) -> Operation:
     """Operate on `root`. Refuses rather than proceeding on a bad table."""
     root = Path(root)
@@ -780,7 +791,8 @@ def operate(root: Path, files: Sequence[Path], findings: Sequence[Finding],
     branch = branch or f"ghost/operate-{datetime.now(timezone.utc):%Y%m%d-%H%M%S}"
 
     op = Operation(root=root, branch=branch, came_in_on=came_in_on, head_before=head_before,
-                   readiness_before=readiness.assess(findings, checks, _retired(casefile)), dry_run=dry_run)
+                   readiness_before=readiness.assess(findings, checks, _retired(casefile)),
+                   dry_run=dry_run, serum_budget=serum_budget)
     if dry_run:
         # Nothing is written and no branch is opened, so there is nothing to
         # put back; the table below runs unguarded.
@@ -845,14 +857,21 @@ def _cut(op: "Operation", root: Path, files: Sequence[Path], findings: Sequence[
     op.on_the_table = [f for f in current if f.detector not in ("name_disagreement",)]
 
     if op.readiness_after.candidate:
+        # The profiler's counters wrap ast.parse, Path.read_* and
+        # subprocess.run, which are ghost_buster's calls, not the
+        # patient's. They are still measured -- they found the
+        # 9.5-parses-per-file redundancy in this toolkit -- but they are
+        # handed to the serum as the SCAN's work and labelled that way,
+        # rather than printed under the patient's name as if they were a
+        # finding about the patient. See serum.py.
         started = time.perf_counter()
         corpus.reset()
         with Profile() as prof:
             rescan(files)
-        op.serum = prof.render(time.perf_counter() - started).splitlines()
-        pitstops = [f for f in current if f.detector in ("list_membership_in_loop", "loop_invariant_call")]
-        if pitstops:
-            op.serum.append(f"{len(pitstops)} static pitstop(s) in the report above")
+        scan_work = prof.render(time.perf_counter() - started).splitlines()
+        op.serum_report = serum_mod.assess(
+            op.root, files, scan_work=scan_work, budget=op.serum_budget)
+        op.serum = serum_mod.render(op.serum_report)
 
     if casefile is not None and not dry_run:
         casefile.save()

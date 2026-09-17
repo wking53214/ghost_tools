@@ -25,6 +25,26 @@ What is worth saying is narrower and lands harder:
 
 A repository with neither tests nor a deploy artifact gets nothing said
 about it, which is the correct amount.
+
+THE SECOND CHECK: A TEST RUNNER POINTED AT NOTHING
+
+`test_config_collects_nothing` is the same shape of defect one level in.
+A suite that nobody runs is bad; a suite that a runner is configured to
+run, and silently does not, is worse, because the configuration is the
+receipt that somebody thought about it.
+
+pytest's `testpaths` names where to look when no path is given on the
+command line. When every entry names something that is not there, pytest
+does not fail -- it warns once and falls back to searching the working
+directory, or, depending on version and invocation, collects nothing and
+exits green. Both readings are bad and one of them is silent: a CI job
+whose whole purpose is to run the tests passes in four seconds having run
+none of them, and the badge is the same colour either way.
+
+This is a static check: it reads configuration and asks whether the paths
+exist. It never runs pytest, so it holds for an untrusted repository where
+the test scan is declined, which is exactly where nobody is going to
+notice by watching the output.
 """
 from __future__ import annotations
 
@@ -35,6 +55,7 @@ from typing import List, Optional, Tuple
 from .schema import Category, Evidence, Finding, Layer, Severity, Status
 
 DETECTOR = "no_ci_configuration"
+TEST_CONFIG_DETECTOR = "test_config_collects_nothing"
 
 #: Single files whose presence is a CI configuration.
 _CI_FILES = (
@@ -75,6 +96,28 @@ _SKIP_PARTS = frozenset({
 })
 
 
+#: Where pytest reads `testpaths` from, and how to get at it. pytest
+#: itself reads the FIRST of these that exists and contains a `[pytest]`
+#: section (or the tool table, for pyproject.toml), so the order matters
+#: and is pytest's, not ours.
+_PYTEST_CONFIG_FILES = ("pytest.ini", "pyproject.toml", "tox.ini", "setup.cfg")
+
+
+@dataclass
+class TestConfig:
+    """`testpaths` as configured, and which of them exist on disk."""
+    source: str = ""                                    # the file it came from
+    paths: List[str] = field(default_factory=list)      # as written
+    missing: List[str] = field(default_factory=list)    # of those, not on disk
+
+    @property
+    def collects_nothing(self) -> bool:
+        """Every configured path is absent, so the configuration points at
+        no test at all. A partially missing path is a different, smaller
+        problem and is reported at a lower severity, not here."""
+        return bool(self.paths) and len(self.missing) == len(self.paths)
+
+
 @dataclass
 class ProjectReport:
     ran: bool = False
@@ -82,6 +125,7 @@ class ProjectReport:
     ci_config: Optional[str] = None     # the file/dir that counts as CI, if any
     deploy_artifacts: List[str] = field(default_factory=list)
     test_files: int = 0
+    test_config: Optional[TestConfig] = None
 
     @property
     def has_ci(self) -> bool:
@@ -126,10 +170,64 @@ def count_test_files(root: Path) -> int:
     return len(seen)
 
 
+def _testpaths_from_ini(text: str, section: str) -> Optional[List[str]]:
+    """`testpaths` out of an ini-style file, or None when the section is
+    absent. None and [] are different answers: no section means pytest
+    reads no testpaths from this file at all, an empty value means it was
+    configured to look nowhere."""
+    import configparser
+
+    parser = configparser.ConfigParser()
+    try:
+        parser.read_string(text)
+    except configparser.Error:
+        return None
+    if not parser.has_option(section, "testpaths"):
+        return None
+    return parser.get(section, "testpaths").split()
+
+
+def read_test_config(root: Path) -> Optional[TestConfig]:
+    """pytest's `testpaths`, from the first file that declares it.
+
+    Returns None when no file configures testpaths, which is the common
+    and correct case: pytest then searches from the invocation directory
+    and there is nothing to be wrong about.
+    """
+    for name in _PYTEST_CONFIG_FILES:
+        path = root / name
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        paths: Optional[List[str]] = None
+        if name == "pyproject.toml":
+            import tomllib
+            try:
+                data = tomllib.loads(text)
+            except (tomllib.TOMLDecodeError, ValueError):
+                continue
+            table = ((data.get("tool") or {}).get("pytest") or {}).get("ini_options")
+            if isinstance(table, dict) and "testpaths" in table:
+                value = table["testpaths"]
+                paths = [str(v) for v in value] if isinstance(value, list) \
+                    else str(value).split()
+        else:
+            paths = _testpaths_from_ini(
+                text, "tool:pytest" if name == "setup.cfg" else "pytest")
+        if paths is None:
+            continue
+        missing = [entry for entry in paths if not (root / entry).exists()]
+        return TestConfig(source=name, paths=paths, missing=missing)
+    return None
+
+
 def _finding(root: Path, kind: str, severity: Severity, summary: str, detail: str,
-             attributes: dict) -> Finding:
+             attributes: dict, detector: str = DETECTOR) -> Finding:
     return Finding(
-        detector=DETECTOR, category=Category.ARCHITECTURE, layer=Layer.MECHANICAL,
+        detector=detector, category=Category.ARCHITECTURE, layer=Layer.MECHANICAL,
         severity=severity, status=Status.CONFIRMED,
         summary=f"{kind}: {summary}",
         evidence=Evidence(file=str(root)),
@@ -144,6 +242,59 @@ def _finding(root: Path, kind: str, severity: Severity, summary: str, detail: st
     )
 
 
+def _test_config_findings(root: Path, report: ProjectReport) -> List[Finding]:
+    config = report.test_config
+    if config is None or not config.missing:
+        return []
+    if not report.test_files:
+        # No tests anywhere, so `testpaths` naming a directory that does
+        # not exist yet is a plan, not a defect. Reporting it would be
+        # reporting an empty repository for being empty.
+        return []
+    written = ", ".join(config.paths)
+    absent = ", ".join(config.missing)
+    if config.collects_nothing:
+        return [_finding(
+            root, "tests nobody can collect", Severity.MAJOR,
+            f"{config.source} sets testpaths to {written}, none of which "
+            f"exists, while {report.test_files} test file(s) are in the tree",
+            "A bare `pytest` in this repository does not run these tests. "
+            "pytest reads `testpaths` when no path is given on the command "
+            "line, finds nothing at any of them, and -- depending on version "
+            "and invocation -- either warns once and falls back to searching "
+            "the working directory, or collects nothing and exits 0.\n\n"
+            "The second outcome is the one that costs money. A CI job whose "
+            "whole purpose is to run the suite passes in seconds having run "
+            "none of it, and a green check for zero tests is indistinguishable "
+            "from a green check for all of them. The fallback is not a "
+            "safety net either: it makes the suite pass locally, where "
+            "somebody is watching, and not in CI, where nobody is.\n\n"
+            "The fix is to point `testpaths` at where the tests actually "
+            "are, or to delete the setting, which restores the search pytest "
+            "does by default.",
+            {"source": config.source, "testpaths": written, "missing": absent,
+             "test_files": str(report.test_files)},
+            detector=TEST_CONFIG_DETECTOR,
+        )]
+    return [_finding(
+        root, "a configured test path is missing", Severity.MINOR,
+        f"{config.source} sets testpaths to {written}, and {absent} "
+        f"does not exist",
+        "The suite still runs: the remaining paths exist and pytest "
+        "collects from them. What is gone is whatever used to be at the "
+        "missing entry -- either it moved and nobody updated the "
+        "configuration, in which case those tests are now running only by "
+        "the accident of living under another entry, or it was deleted and "
+        "the configuration still claims it.\n\nThis is MINOR because "
+        "nothing silently passes. It is reported because a stale path is "
+        "how a configuration ends up naming nothing at all, one rename at "
+        "a time.",
+        {"source": config.source, "testpaths": written, "missing": absent,
+         "test_files": str(report.test_files)},
+        detector=TEST_CONFIG_DETECTOR,
+    )]
+
+
 def scan(root) -> Tuple[List[Finding], ProjectReport]:
     root = Path(root).resolve()
     report = ProjectReport()
@@ -155,13 +306,19 @@ def scan(root) -> Tuple[List[Finding], ProjectReport]:
     report.ci_config = find_ci_config(root)
     report.deploy_artifacts = find_deploy_artifacts(root)
     report.test_files = count_test_files(root)
+    report.test_config = read_test_config(root)
+
+    findings: List[Finding] = _test_config_findings(root, report)
 
     if report.has_ci:
         # Whether the pipeline is any good is a different question and not
         # one a file listing can answer. Configured is configured.
-        return [], report
-
-    findings: List[Finding] = []
+        #
+        # The test-configuration finding above is NOT subject to this: a
+        # runner pointed at nothing is worse with CI than without, because
+        # CI is what turns "collected no tests" into a green badge nobody
+        # reads twice.
+        return findings, report
 
     if report.deploy_artifacts:
         named = ", ".join(report.deploy_artifacts)
@@ -199,16 +356,38 @@ def scan(root) -> Tuple[List[Finding], ProjectReport]:
     return findings, report
 
 
+def _render_test_config(report: ProjectReport) -> str:
+    """The test-configuration check's own line. It prints on every run,
+    including the runs where it found nothing: a reader cannot tell a
+    configuration that was checked and is fine from one that was never
+    looked at, and only one of those is information."""
+    config = report.test_config
+    if config is None:
+        return ("ghost_buster: test configuration: no testpaths configured "
+                "(pytest searches from where it is invoked)")
+    written = ", ".join(config.paths) or "nothing"
+    if not config.missing:
+        return (f"ghost_buster: test configuration: {config.source} testpaths "
+                f"({written}) all exist")
+    absent = ", ".join(config.missing)
+    return (f"ghost_buster: test configuration: {config.source} testpaths "
+            f"({written}) -- {absent} does not exist")
+
+
 def render_report(report: ProjectReport) -> str:
     if not report.ran:
         return f"ghost_buster: project scan did not run: {report.reason}"
+    test_config = "\n" + _render_test_config(report)
     if report.has_ci:
-        return f"ghost_buster: project scan found CI configured ({report.ci_config})"
+        return (f"ghost_buster: project scan found CI configured "
+                f"({report.ci_config}){test_config}")
     bits = []
     if report.deploy_artifacts:
         bits.append(f"{len(report.deploy_artifacts)} deploy artifact(s)")
     if report.test_files:
         bits.append(f"{report.test_files} test file(s)")
     if not bits:
-        return "ghost_buster: project scan found no CI, and nothing that needs it"
-    return f"ghost_buster: project scan found no CI configuration, with {' and '.join(bits)}"
+        return ("ghost_buster: project scan found no CI, and nothing that "
+                "needs it" + test_config)
+    return (f"ghost_buster: project scan found no CI configuration, with "
+            f"{' and '.join(bits)}{test_config}")

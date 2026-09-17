@@ -31,8 +31,6 @@ from __future__ import annotations
 
 import subprocess
 
-import pytest
-
 from ghost_buster import forensics
 from ghost_buster.forensics import Provenance
 
@@ -150,7 +148,8 @@ def test_relocation_is_distinguished_from_plain_removal(tmp_path):
     production somewhere quieter, and collapsing the two would lose exactly
     the signal this is for."""
     a, b = tmp_path / "a", tmp_path / "b"
-    a.mkdir(); b.mkdir()
+    a.mkdir()
+    b.mkdir()
     moved, gone = _repo(a), _repo(b)
     for root in (moved, gone):
         _commit(root, "one", enums__py=ENUMS, lib__py=LIB_BOTH)
@@ -262,7 +261,8 @@ def test_history_raises_the_severity_of_a_removal(tmp_path):
     history, and the history is what separates them."""
     from ghost_buster.schema import Severity
     a, b = tmp_path / "a", tmp_path / "b"
-    a.mkdir(); b.mkdir()
+    a.mkdir()
+    b.mkdir()
     never, removed = _repo(a), _repo(b)
     _commit(never, "one", enums__py=ENUMS, lib__py=LIB_ONE)
     _commit(removed, "one", enums__py=ENUMS, lib__py=LIB_BOTH)
@@ -306,7 +306,6 @@ def test_history_off_asks_git_nothing(tmp_path, monkeypatch):
     monkeypatch.setattr(forensics, "repo_root", explode)
     monkeypatch.setattr(forensics, "provenance", explode)
 
-    from pathlib import Path
     from ghost_buster.mechanical import detect_unreachable_declared_state
     files = sorted(p for p in root.rglob("*.py") if ".git" not in p.parts)
     found = detect_unreachable_declared_state(files, history=False)

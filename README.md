@@ -92,13 +92,21 @@ across the library. `--priors` is the view over that file: per kind of
 finding, what this team has decided, how often the decision was "false",
 and how often it held against what the ledger saw afterwards.
 
-**The serum.** A candidate gets the enhancement pass: `--profile` counts the
-work the scan did more than once (that is how the 9.5-parses-per-file
-redundancy in this toolkit was found), and the pitstop detectors report
-what the tree can see. Enhancement applied to an unhealthy patient
-amplifies the rot, which is why candidacy is gated on health. No ceiling
-for a candidate, so long as nothing breaks -- and the breaking is what the
-checks are for.
+**The serum.** A candidate gets the enhancement pass, in three parts, each
+labelled with whose facts it reports. **The surface**: every enhancement
+site in the patient, always reported, with a count when it is zero. **The
+dose**: per site, whether the patient's own test suite would catch a
+mistake made there, established by emptying the function that holds the
+site and running the suite. **The scan's own work**: the profiler numbers,
+which are ghost_buster's parses and reads rather than the patient's, kept
+and named as such and printed only when something was repeated enough to
+act on. Enhancement applied to an unhealthy patient amplifies the rot,
+which is why candidacy is gated on health. No ceiling for a candidate, so
+long as nothing breaks -- and the breaking is what the checks are for.
+
+Until 1.9.0 the serum was the profiler and nothing else, so a healthy
+candidate was handed a count of the surgeon's own work under its own name.
+See "What a candidate actually gets" below.
 
 ## What runs by default
 
@@ -111,7 +119,7 @@ state on every run** -- performed, impossible, or declined.
 | unmerged branches | on | `--no-branches` |
 | test status | on, for a trusted repository (`--trust`, once) | `--no-tests` |
 | committed secrets | on | `--no-secrets` |
-| project checks (CI, deploy artifacts) | on | `--no-project` |
+| project checks (CI, deploy artifacts, test configuration) | on | `--no-project` |
 | structural model | on | `--no-structure` |
 | correlation | on | `--no-correlate` |
 | ledger (memory) | on | `--no-ledger` |
@@ -203,12 +211,16 @@ separates a state nobody wired up (MINOR) from one a commit stopped
 producing (MAJOR), including the case where the last production moved out of
 library code and into a test. An unreadable history grades at the weight of
 what was actually observed and never escalates; `history=False` makes the
-detector a pure function of the files on disk.
+detector a pure function of the files on disk. What that history cannot
+tell apart -- a security fix, a deliberate refactor and a regression leave
+the same trace -- is in `docs/forensics-limits.md`, with the reason it
+escalates anyway.
 
 Beside the detectors, six repository-level checks and two passes over
 everything, each with its own section below: unmerged branches, test
-status, committed secrets, the project checks (`no_ci_configuration`), the
-structural model (`entry point target missing`, `undeclared dependency`),
+status, committed secrets, the project checks (`no_ci_configuration`,
+`test_config_collects_nothing`), the structural model (`entry point target
+missing`, `undeclared dependency`, `parallel packaging metadata`),
 the seam between repositories (`--join`), the shared kernel (`--kernel`:
 `kernel_shadow`, `drifted_contract`), the ledger (`regressed_finding`,
 `flapping_finding`, `persistent_finding`, `blind_spot`, trajectory), and
@@ -323,6 +335,8 @@ because a security check people learn to skim is worth less than none.
 |---|---|---|
 | `no_ci_configuration` | a deploy artifact ships this code and no CI runs first | MAJOR |
 | | test files exist and no CI runs them | MINOR |
+| `test_config_collects_nothing` | `testpaths` names only paths that do not exist, and tests are in the tree | MAJOR |
+| | one `testpaths` entry of several does not exist | MINOR |
 | `insecure_default` | `DEBUG = True`, `run(debug=True)` | CRITICAL |
 | | CORS allows every origin **and** credentials | CRITICAL |
 | | `ALLOWED_HOSTS = ["*"]`, `verify=False` | MAJOR |
@@ -339,6 +353,11 @@ because a security check people learn to skim is worth less than none.
   permissive is usually the point. Wide-open CORS *without* credentials is
   a normal public API and is not reported. Measured across three real
   repositories: zero findings.
+- **Not "your test configuration is unusual".** The claim is that a
+  runner is pointed at nothing and the tests are somewhere else, which is
+  decidable from a file listing. A repository with no tests at all is
+  silent -- `testpaths` naming a directory nobody has created yet is a
+  plan. A path that exists is silent, whatever is or is not under it.
 - **Not "routes with no auth".** That version is unusable: a login
   endpoint has no auth by definition, and so do signup, health probes,
   webhooks, OAuth callbacks, and every endpoint of every public API. What
@@ -348,6 +367,33 @@ because a security check people learn to skim is worth less than none.
   silent; a fully protected module is silent; auth applied by middleware
   makes every route look unprotected, which drops the module below the
   threshold and reports nothing. It fails quiet, deliberately.
+
+### `test_config_collects_nothing`: a runner pointed at nothing
+
+The `no_ci_configuration` check says nobody runs your tests. This one says
+something worse: somebody configured a runner to run them, and it does
+not.
+
+pytest reads `testpaths` when no path is given on the command line. When
+every entry names something that is not there, pytest does not fail. It
+warns once and falls back to searching the working directory, or -- version
+and invocation depending -- collects nothing and exits 0. The second
+outcome is what it costs: a CI job whose whole purpose is to run the suite
+passes in seconds having run none of it, and a green check for zero tests
+looks exactly like a green check for all of them. The fallback is not a
+safety net either, because it fires where somebody is watching (a local
+run) and not where nobody is (CI, invoked with an explicit path).
+
+Read from the first of `pytest.ini`, `pyproject.toml`, `tox.ini`,
+`setup.cfg` that declares `testpaths`, which is pytest's own order. This
+is a static check: it never runs pytest, so unlike `--tests` it holds for
+an untrusted repository, which is exactly where nobody is going to notice
+by watching the output.
+
+Found on fortress-kernel 2026-09-17: `testpaths = ["tests"]`, no `tests/`
+directory, 48 tests at the repository root, and a suite that passed
+locally on the fallback while the repository had no CI to expose the other
+half of the behaviour.
 
 ## The structural model: `--structure`
 
@@ -366,6 +412,7 @@ observed facts rather than a judgement:
 |---|---|
 | `entry point target missing` | a console script points at a module or symbol that does not exist |
 | `undeclared dependency` | a package is imported, resolvable to a distribution, and declared nowhere |
+| `parallel packaging metadata` | `setup.py` and `pyproject.toml` declare the same field, and disagree (MAJOR) or agree (MINOR) |
 
 ### What it refuses to say
 
@@ -392,6 +439,117 @@ undeclared on a real repository that declares every one of them. Imports
 are now mapped through installed distribution metadata, and an import that
 cannot be mapped goes to `unresolved` rather than becoming a finding --
 because a missing declaration and an ordinary alias look identical.
+
+**A build-time import is declared somewhere else.** `setup.py` imports
+`setuptools`, and the only correct place to declare that is
+`[build-system].requires` -- a PEP 517 frontend installs that list into an
+isolated environment before `setup.py` is ever imported. Reading only
+`[project]` reported the right answer as the defect, on this toolkit's own
+scan of fortress-kernel in 1.7.8. Since 1.8.0 a build-time file's imports
+are satisfied by `[build-system].requires`; a runtime module importing the
+same package is still undeclared, because consent to install something
+before the build is not a promise that it will be importable after it.
+
+### Two files that declare one package
+
+`parallel packaging metadata` is the packaging case of `drifted_copy`.
+When `setup.py` and `pyproject.toml` both name the package, its version,
+its description, its Python floor or its dependencies, there are two
+answers to one question, and which one an installer believes depends on
+how it was invoked: a PEP 517 frontend (`pip install .`, `build`) reads
+`pyproject.toml` and never executes `setup.py`'s arguments, while a direct
+`python setup.py ...` reads `setup.py` and never opens `pyproject.toml`.
+
+The grading is the point. Disagreeing is MAJOR: one of the two answers is
+already wrong and the package installs differently depending on the route.
+Agreeing is MINOR -- nothing is broken today, and the defect is that
+keeping it that way is an obligation nobody agreed to and nothing checks.
+
+Only literal values are compared. `version=read_version()` is not a
+declaration this scan can read, so it is counted on neither side; a name
+is compared the way an index compares it (PEP 503), so `Fortress_Kernel`
+and `fortress-kernel` are not drift.
+
+Measured 2026-09-17 on three repositories in this ecosystem: one finding,
+on fortress-kernel, where five fields were declared twice and the
+descriptions had drifted apart. The other two declare a package in one
+file each and were reported on neither.
+
+## What a candidate actually gets: the serum
+
+Measured 2026-09-17 on fortress-kernel, a patient that met all six health
+criteria. This was the entire enhancement pass:
+
+```
+serum (measured, not applied):
+  measured redundancy (same input, done again):
+    read        17 calls, 4 distinct, 13 repeated  0.00s (0% of the run)
+    ast.parse    4 calls, 4 distinct,  0 repeated  0.01s (6% of the run)
+    subprocess   1 calls, 1 distinct,  0 repeated  0.00s (2% of the run)
+```
+
+Every number there is ghost_buster's. `speed.Profile` wraps `ast.parse`,
+`Path.read_*` and `subprocess.run`, so the thirteen repeated reads are the
+scanner re-reading the patient, costing 0.00s, printed under the patient's
+name as the reward for being healthy. Those counters were worth having
+exactly once, when this toolkit was the patient and the run showed 9.5
+parses per file. The static half was better aimed and barely present: a
+count of pitstop findings, appended only when there were some, so a sweep
+that found nothing printed nothing.
+
+### The dose ladder is verifiability
+
+"No ceiling: a candidate gets every dose the evidence supports, so long as
+nothing breaks -- and the breaking is what the checks are for." The check
+for an enhancement is the patient's own test suite. Candidacy established
+that the suite passes and then nothing used the fact.
+
+A passing suite is not a suite that would notice. So each site is graded by
+this toolkit's own standard for whether a test means anything: empty the
+function holding the site, run the suite, see whether anything fails.
+
+| verdict | what happened | what it means |
+|---|---|---|
+| can verify | the suite failed with that function emptied | a mistake made here would be caught |
+| cannot | the suite passed with that function emptied | "the tests still pass" would prove nothing |
+| unknown | the mutation would not apply, the run did not finish, or the budget ran out | counts against the patient, like every unassessed criterion |
+
+```
+serum (measured, not applied):
+  enhancement surface: 2 site(s) in 2 file(s) swept
+    list_membership_in_loop    app.py:8 covered()  `in ALLOWED`, a module-level list
+    list_membership_in_loop    app.py:17 blind()  `in ALLOWED`, a module-level list
+  dose: 1 verifiable, 1 unverifiable, 0 not assessed (the check is this patient's own suite)
+    can verify  app.py:8   the suite fails with covered() emptied, so a mistake made here would be caught
+    cannot      app.py:17  the suite passes with blind() emptied, so it cannot tell whether an enhancement here changed anything
+  the scan's own work over this patient: nothing repeated enough to act on (ghost_buster's numbers, not the patient's)
+```
+
+It costs one whole-suite run per site plus one baseline, so `--serum-budget
+SECONDS` bounds it (default 120). A site the budget did not reach is
+reported as not assessed, never dropped.
+
+### Why nothing is rewritten, including the one that looks safe
+
+`x in [1, 2, 3]` inside a loop is O(n) per pass where `x in {1, 2, 3}` is
+O(1), every element is a hashable constant, and it looks like the obvious
+first automatic dose. It is not safe:
+
+```python
+>>> [1] in [1, 2, 3]
+False
+>>> [1] in {1, 2, 3}
+TypeError: unhashable type: 'list'
+```
+
+List membership compares; set membership hashes the LEFT operand first. The
+rewrite turns a `False` into a TypeError for every unhashable value that
+ever reaches it. Nothing in the tree says what reaches it, and a suite that
+never passes an unhashable value goes green either way. So it gets the same
+answer as the invariant-call hoist: reported, ranked, never rewritten. "The
+suite is green" is not a verification for a rewrite whose failure mode the
+suite does not exercise -- and saying, per site, whether your suite would
+have caught it is the honest thing the serum can do instead.
 
 ## The seam between two repositories: `--join`
 
@@ -1591,7 +1749,7 @@ package uses for its model-client tests. `test_branches.py`,
 repositories and pytest projects in `tmp_path` instead, the only honest way
 to test a ref-graph, git-history or suite-execution check (the secrets
 suite against a real gitleaks binary, skipped if one is not on PATH).
-`test_mutation.py` and the 53 `Tests/*_mutants.py` files run pytest in
+`test_mutation.py` and the 54 `Tests/*_mutants.py` files run pytest in
 subprocesses against scratch copies of the project, each mutant file
 breaking one component a named number of ways and requiring every mutant
 to fail a test; they account for most of the suite's wall-clock time. A
