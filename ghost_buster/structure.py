@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import ast
 import json
+import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
@@ -141,6 +142,10 @@ class StructuralModel:
     boundaries: Dict[str, List[str]] = field(default_factory=dict)
     test_modules: List[str] = field(default_factory=list)
     unresolved: List[str] = field(default_factory=list)
+    #: package name -> "file:line" for names parked in a comment in a
+    #: dependency file. Evidence about an unresolvable name, never a
+    #: declaration: see commented_out_dependencies.
+    commented_out: Dict[str, str] = field(default_factory=dict)
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=2, sort_keys=False) + "\n"
@@ -294,6 +299,68 @@ def _read_requirements(paths: List[Path]) -> List[str]:
                     out.append(line)
         except OSError:
             continue
+    return out
+
+
+def commented_out_dependencies(root: Path) -> Dict[str, str]:
+    """Package name -> "file:line", for names parked in a COMMENT in a
+    dependency file. Never a declaration; evidence about a name.
+
+    WHY A SCANNER READS THE COMMENTS (v1.8.0)
+
+    `unresolvable dependency` below asks whether an imported name refers
+    to anything at all, and it is the slopsquat check: a name a model
+    invented, which an attacker can register because the invented names
+    are predictable. It is a MAJOR finding with a paragraph about package
+    fabrication attached, and it is right to be loud.
+
+    A dependency somebody deliberately commented out produces exactly the
+    same evidence. Measured on ATS 2026-09-17: `openai`,
+    `sentence-transformers` and `voyageai`, each imported lazily by the
+    one backend that uses it, each sitting commented out in
+    requirements.txt directly above the code importing it, each reported
+    as a name referring to nothing. Correct on the evidence the scan had
+    -- and the evidence that separates the two cases was in the same file
+    it had already read and thrown away at the `#`.
+
+    The distinction is worth drawing because a hallucinated name never
+    appears in a dependency file. Somebody typed this one there.
+
+    IT DOES NOT CLEAR THE FINDING, and must not. A commented-out
+    dependency is not installed by anything, so the import still fails at
+    the first call; the reader is told where to look rather than told to
+    stop looking. Severity is unchanged for the same reason: what changes
+    is what the reader does next, not how bad it is.
+
+    ONLY THE FIRST TOKEN of a comment is read, because that is where a
+    commented-out requirement puts the name -- `# openai>=1.0`,
+    `# sentence-transformers   # which backend`. Reading every token
+    instead swept up the prose: a line reading `# Optional - only needed
+    if you inject one` contributed `optional`, `only`, `needed`, `if`,
+    `you` and `inject`, each of which would then answer for an import of
+    that name. Substring matching is wrong for the same reason in the
+    other direction: `ai` must not match `openai`, so the token is
+    normalised the way `requirement_name` normalises a declaration and
+    compared whole.
+    """
+    out: Dict[str, str] = {}
+    for path in _requirements_files(root) + [root / "pyproject.toml"]:
+        if not path.is_file():
+            continue
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+        for number, line in enumerate(lines, start=1):
+            _, hash_, comment = line.partition("#")
+            if not hash_:
+                continue
+            first = re.split(r"[\s,\[\]'\"()]+", comment.strip(), maxsplit=1)[0]
+            name = requirement_name(first)
+            # One character is not a package anybody parked on purpose, and
+            # a bare number is a version fragment.
+            if len(name) > 1 and not name.replace("-", "").isdigit():
+                out.setdefault(name, f"{path.name}:{number}")
     return out
 
 
@@ -543,6 +610,7 @@ def build_model(root, files) -> StructuralModel:
     if req_deps:
         model.dependency_sources.extend(str(p.relative_to(root)) for p in req_files)
     model.declared_dependencies = sorted({requirement_name(d) for d in deps + req_deps} - {""})
+    model.commented_out = commented_out_dependencies(root)
 
     roots = _package_roots(root)
     model.packages = sorted(roots)
@@ -780,11 +848,27 @@ def derive_findings(model: StructuralModel) -> List[Finding]:
         and pkg.replace("-", "_") not in local
     )
     for package in unresolvable:
+        # A name somebody parked in a comment in a dependency file is still
+        # undeclared -- nothing installs a comment -- but it is not the
+        # invented name this finding's detail is mostly about, and the
+        # reader's next move is different. Severity is untouched: what
+        # changes is where to look, not how bad it is.
+        parked = model.commented_out.get(package)
+        parked_note = (
+            f"\n\nSOMEBODY TYPED THIS NAME ON PURPOSE: it appears commented "
+            f"out at {parked}. A commented-out dependency is not a "
+            f"declaration -- nothing installs a comment, so the import still "
+            f"fails at the first call -- but a name a model invented does not "
+            f"appear in a dependency file at all. Read this as the first "
+            f"case: declare it (an extra, or a second requirements file) if "
+            f"the import is meant to work, or delete the import if it is not."
+        ) if parked else ""
         out.append(_finding(
             model, "unresolvable dependency", Severity.MAJOR,
             str(Path(model.root)),
             f"'{package}' is imported but is not standard library, not installed "
-            f"here, not provided by this repository, and declared nowhere",
+            f"here, not provided by this repository, and declared nowhere"
+            + (f" (though commented out at {parked})" if parked else ""),
             "This name refers to nothing that can be found. Two readings, and "
             "the tool cannot tell them apart, which is exactly why it says so "
             "rather than choosing:\n\n"
@@ -802,8 +886,10 @@ def derive_findings(model: StructuralModel) -> List[Finding]:
             "30,000 times in three months.\n\n"
             "Both readings are cheap to resolve and expensive to ignore. Look "
             "the name up in the registry before the next `pip install` does it "
-            "for you.",
-            {"package": package, "imported_by": ", ".join(sorted(imported[package])[:5])},
+            "for you." + parked_note,
+            dict({"package": package,
+                  "imported_by": ", ".join(sorted(imported[package])[:5])},
+                 **({"commented_out_at": parked} if parked else {})),
         ))
 
     if model.dependency_sources:

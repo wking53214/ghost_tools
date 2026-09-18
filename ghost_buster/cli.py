@@ -386,6 +386,25 @@ def _present(args, evidence, new, known, priors, archive, casefile_path) -> None
         print(render_run(evidence.mutation_run, verbose=args.mutate_verbose))
 
 
+def _note_stale_baseline(baseline, findings) -> List[Finding]:
+    """The receipt line and the finding, for baseline entries that matched
+    nothing. Both, because they reach different readers: the line is on the
+    same channel as every other check's receipt, and the finding is what a
+    caller reading --json actually gets. Until 1.8.0 there was only the
+    line. See Baseline.derive_findings for why the rot is worth reporting.
+
+    What it returns belongs in the run's NEW list and never in the set the
+    baseline diffs: the baseline does not get to suppress the report of its
+    own rot.
+    """
+    stale = baseline.stale(findings)
+    if stale:
+        print(f"ghost_buster: {len(stale)} of {baseline.size} baseline entries matched nothing scanned "
+              f"(fixed, renamed detector, or a baseline written from another checkout); "
+              f"first: {stale[0].id} {stale[0].evidence.file}", file=sys.stderr)
+    return baseline.derive_findings(findings)
+
+
 def main(argv: List[str] = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -439,11 +458,7 @@ def main(argv: List[str] = None) -> int:
         return 0
 
     new, known = baseline.diff(findings)
-    stale = baseline.stale(findings)
-    if stale:
-        print(f"ghost_buster: {len(stale)} of {baseline.size} baseline entries matched nothing scanned "
-              f"(fixed, renamed detector, or a baseline written from another checkout); "
-              f"first: {stale[0].id} {stale[0].evidence.file}", file=sys.stderr)
+    new.extend(_note_stale_baseline(baseline, findings))
 
     casefile_path = args.casefile or (args.path / ".ghost_casefile.json")
     priors = None

@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import textwrap
 
+
 from ghost_buster.mechanical import detect_unreachable_declared_state
 from ghost_buster.schema import Severity
 
@@ -698,3 +699,147 @@ def test_a_data_path_written_in_a_test_does_not_clear_the_finding(tmp_path):
     assert [f.attributes["member"] for f in found] == ["BETWEEN"]
     assert found[0].attributes["reachable_from_data"] == "no"
     assert found[0].severity is Severity.MINOR
+
+
+# ---------------------------------------------------------------------------
+# `__members__` is a data path too (1.8.1)
+#
+# Measured on ATS 2026-09-17. `Verdict[name]` raised KeyError on a name
+# outside the enum, and it raised it before the ledger commit, so a decision
+# that went wrong left no record at all. The repository replaced it with
+# `Verdict.__members__.get(name)` -- a strictly safer deserialiser -- and the
+# data path went invisible to this detector, which then reported the member
+# as produced only by test code. This tool had told that repository to
+# document the path in the enum docstring; the documenting was done, and the
+# structure the claim is checked against had vanished from under it.
+# ---------------------------------------------------------------------------
+
+_MEMBERS_GET = '''
+    from enum import Enum
+
+    class Verdict(Enum):
+        ALLOW = "allow"
+        HALT = "halt"
+
+    def allow():
+        return Verdict.ALLOW
+
+    def parse(name):
+        return Verdict.__members__.get(name)
+'''
+
+_MEMBERS_SUBSCRIPT = _MEMBERS_GET.replace(
+    "Verdict.__members__.get(name)", "Verdict.__members__[name]")
+
+
+def test_a_members_get_is_a_data_path(tmp_path):
+    """The same act as `Verdict[name]`, written by a caller for whom an
+    absent name must not raise."""
+    found = _scan(tmp_path, m=_MEMBERS_GET)
+    assert [f.attributes["member"] for f in found] == ["HALT"]
+    assert found[0].attributes["reachable_from_data"] == "yes"
+
+
+def test_a_members_subscript_is_a_data_path(tmp_path):
+    found = _scan(tmp_path, m=_MEMBERS_SUBSCRIPT)
+    assert found[0].attributes["reachable_from_data"] == "yes"
+
+
+def test_a_documented_members_path_is_silent(tmp_path):
+    """The end of the ATS case: structure present and the enum says so."""
+    documented = _MEMBERS_GET.replace(
+        'class Verdict(Enum):',
+        'class Verdict(Enum):\n        """HALT arrives from a stored record."""\n')
+    assert _scan(tmp_path, m=documented) == []
+
+
+def test_a_literal_members_lookup_only_accounts_for_its_own_member(tmp_path):
+    """`Verdict.__members__["ALLOW"]` names one member, exactly as
+    `Verdict["ALLOW"]` does. A blanket reading would suppress a real finding
+    wherever anyone wrote one literal lookup."""
+    found = _scan(tmp_path, m='''
+        from enum import Enum
+
+        class Verdict(Enum):
+            ALLOW = "allow"
+            THROTTLE = "throttle"
+            HALT = "halt"
+
+        def allow():
+            return Verdict.ALLOW
+
+        def throttle():
+            return Verdict.__members__["THROTTLE"]
+    ''')
+    reach = {f.attributes["member"]: f.attributes["reachable_from_data"]
+             for f in found}
+    assert reach == {"THROTTLE": "yes", "HALT": "no"}
+
+
+def test_iterating_the_mapping_is_not_a_data_path(tmp_path):
+    """Reading no name out of a record reconstructs nothing. Iterating an
+    enum yields every member because that is what iterating an enum does,
+    and counting it would clear this detector's output wherever anybody
+    looped over one."""
+    found = _scan(tmp_path, m='''
+        from enum import Enum
+
+        class Verdict(Enum):
+            ALLOW = "allow"
+            HALT = "halt"
+
+        def allow():
+            return Verdict.ALLOW
+
+        def names():
+            return [m.name for m in Verdict.__members__.values()]
+    ''')
+    assert found[0].attributes["reachable_from_data"] == "no"
+
+
+def test_a_members_path_on_another_enum_says_nothing_about_this_one(tmp_path):
+    """The mapping is reached through the enum's own name, so the lookup must
+    not answer for a different enum that happens to be in scope."""
+    found = _scan(tmp_path, m='''
+        from enum import Enum
+
+        class Verdict(Enum):
+            ALLOW = "allow"
+            HALT = "halt"
+
+        class Other(Enum):
+            ONE = "one"
+
+        def allow():
+            return Verdict.ALLOW
+
+        def parse(name):
+            return Other.__members__.get(name)
+    ''')
+    assert [f.attributes["member"] for f in found] == ["HALT"]
+    assert found[0].attributes["reachable_from_data"] == "no"
+
+
+def test_a_members_mapping_on_something_that_is_not_an_enum_is_not_a_path(tmp_path):
+    """`__members__` is an ordinary attribute name that anything may define.
+    The lookup counts only when the mapping belongs to an enum this scan
+    declared, or every class exposing a mapping under that name would answer
+    for every enum in the file."""
+    found = _scan(tmp_path, m='''
+        from enum import Enum
+
+        class Verdict(Enum):
+            ALLOW = "allow"
+            HALT = "halt"
+
+        class Registry:
+            __members__ = {"anything": 1}
+
+        def allow():
+            return Verdict.ALLOW
+
+        def parse(name):
+            return Registry.__members__.get(name)
+    ''')
+    assert [f.attributes["member"] for f in found] == ["HALT"]
+    assert found[0].attributes["reachable_from_data"] == "no"

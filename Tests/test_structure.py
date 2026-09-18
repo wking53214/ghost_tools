@@ -528,3 +528,76 @@ def test_packaging_drift_is_reported_even_when_no_module_was_scanned(tmp_path):
     assert not model.modules
     kinds = _kinds(derive_findings(model))
     assert "parallel packaging metadata" in kinds
+
+
+# ---------------------------------------------------------------------------
+# A dependency somebody parked in a comment (1.8.0)
+#
+# `unresolvable dependency` is the slopsquat check and it is right to be loud.
+# A deliberately commented-out dependency produces exactly the same evidence,
+# and the evidence separating the two was in a file the scan had already read
+# and thrown away at the `#`. Measured on ATS 2026-09-17: three optional
+# embedding backends, each imported lazily by the one class that uses it, each
+# commented out in requirements.txt directly above the code importing it.
+# ---------------------------------------------------------------------------
+
+def _repo_with_parked_dependency(tmp_path, requirements):
+    root = tmp_path / "proj"
+    (root / "pkg").mkdir(parents=True)
+    (root / ".git").mkdir()
+    (root / "pkg" / "__init__.py").write_text("")
+    (root / "pkg" / "backend.py").write_text(
+        "def load():\n    import voyageai\n    return voyageai.Client()\n")
+    (root / "requirements.txt").write_text(requirements)
+    return root
+
+
+def _unresolvable(root):
+    model = build_model(root, _collect_files(root, []))
+    return {f.attributes["package"]: f for f in derive_findings(model)
+            if f.attributes.get("kind") == "unresolvable dependency"}
+
+
+def test_a_commented_out_dependency_is_cited_in_the_finding(tmp_path):
+    root = _repo_with_parked_dependency(tmp_path, "numpy\n# voyageai   # the backend\n")
+    finding = _unresolvable(root)["voyageai"]
+    assert finding.attributes["commented_out_at"] == "requirements.txt:2"
+    assert "requirements.txt:2" in finding.summary
+    assert "TYPED THIS NAME ON PURPOSE" in finding.detail
+
+
+def test_a_commented_out_dependency_does_not_clear_the_finding(tmp_path):
+    """It must not. Nothing installs a comment, so the import still fails at
+    the first call -- the reader is told where to look, not to stop looking."""
+    root = _repo_with_parked_dependency(tmp_path, "numpy\n# voyageai\n")
+    finding = _unresolvable(root)["voyageai"]
+    assert finding.severity is Severity.MAJOR
+
+
+def test_a_name_nobody_typed_anywhere_is_reported_as_before(tmp_path):
+    """The control, and the case the detector exists for: a name that appears
+    in no dependency file at all gets no citation and no softening."""
+    root = _repo_with_parked_dependency(tmp_path, "numpy\n")
+    finding = _unresolvable(root)["voyageai"]
+    assert "commented_out_at" not in finding.attributes
+    assert "TYPED THIS NAME ON PURPOSE" not in finding.detail
+
+
+def test_prose_in_a_comment_does_not_answer_for_a_package(tmp_path):
+    """Only the first token of a comment is read. Reading every token swept
+    up the prose: `# Optional - only needed if you inject one` contributed
+    six words, each of which would then answer for an import of that name."""
+    from ghost_buster.structure import commented_out_dependencies
+    root = _repo_with_parked_dependency(
+        tmp_path, "numpy\n# Optional - needed only if you inject voyageai\n")
+    parked = commented_out_dependencies(root)
+    assert "voyageai" not in parked
+    assert "needed" not in parked
+
+
+def test_a_declared_dependency_is_not_reported_at_all(tmp_path):
+    """The fix the finding asks for: moving the name out of the comment and
+    into a requirements file the scan reads clears it."""
+    root = _repo_with_parked_dependency(tmp_path, "numpy\n")
+    (root / "requirements-optional.txt").write_text("voyageai   # the backend\n")
+    assert "voyageai" not in _unresolvable(root)
