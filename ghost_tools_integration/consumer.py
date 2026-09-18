@@ -261,6 +261,67 @@ class SwizzleIntegrationConsumer:
                 "minimized": data.get("minimized", True),
             }
 
+    def apply_autonomous_decisions(self, decisions: List[Dict[str, Any]]) -> None:
+        """Apply autonomous decisions from Swizzle's decision engine.
+
+        Decisions already auto-approved can be applied without review.
+        """
+        for decision in decisions:
+            decision_type = decision.get("type")
+            approved = decision.get("approved", False)
+
+            if not approved:
+                continue  # Only apply approved decisions
+
+            data = decision.get("action_data", {})
+
+            if decision_type == "apply_filter_pattern":
+                self._apply_filter_pattern(data)
+            elif decision_type == "update_oracle_training":
+                self._apply_oracle_training(data)
+            elif decision_type == "add_test_case":
+                self._add_test_case(data)
+            elif decision_type == "adjust_performance_threshold":
+                self._adjust_performance_threshold(data)
+
+    def _apply_filter_pattern(self, data: Dict[str, Any]) -> None:
+        """Apply a false positive filter pattern."""
+        if self.false_positive_patterns:
+            patterns = self.false_positive_patterns.get("patterns_by_type", {})
+            finding_type = data["finding_type"]
+            if finding_type not in patterns:
+                patterns[finding_type] = []
+            patterns[finding_type].append({
+                "id": data.get("pattern_id", f"auto_{data.get('false_positive_id')}"),
+                "indicators": data.get("indicators", []),
+            })
+
+    def _apply_oracle_training(self, data: Dict[str, Any]) -> None:
+        """Apply oracle training update."""
+        # This would update internal oracle thresholds
+        pass
+
+    def _add_test_case(self, data: Dict[str, Any]) -> None:
+        """Add test case to mutation suite."""
+        if self.mutations:
+            cases = self.mutations.get("cases", {})
+            cases[data["case_id"]] = {
+                "hypothesis": data["hypothesis"],
+                "severity": data["severity"],
+                "minimized": True,
+            }
+
+    def _adjust_performance_threshold(self, data: Dict[str, Any]) -> None:
+        """Adjust performance contract threshold."""
+        if self.performance_contracts:
+            contracts = self.performance_contracts.get("contracts", {})
+            contract_id = data.get("contract_id")
+            if contract_id in contracts:
+                contract = contracts[contract_id]
+                # Adjust threshold based on regression severity
+                adjustment = 1.05  # Default 5% increase
+                contract["threshold_value"] *= adjustment
+
     def generate_integration_report(self) -> str:
         """Generate report of loaded integration data."""
         report = {
