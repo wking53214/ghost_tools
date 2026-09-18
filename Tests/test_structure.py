@@ -383,3 +383,221 @@ def test_structure_out_writes_the_model(tmp_path, capsys):
           "--baseline", str(tmp_path / "b.json")])
     capsys.readouterr()
     assert json.loads(out.read_text())["distribution"] == "demo"
+
+
+# ------------------------------- build-time imports and parallel packaging
+
+SETUP_PY = '''from setuptools import setup
+
+setup(
+    name="demo",
+    version="0.1.0",
+    description="{description}",
+    install_requires=["requests>=2"],
+    python_requires=">=3.11",
+)
+'''
+
+
+def _kinds(findings):
+    return {f.attributes["kind"] for f in findings}
+
+
+def _scan(root):
+    return derive_findings(build_model(root, _collect_files(root)))
+
+
+BUILD_SYSTEM = '[build-system]\nrequires = ["setuptools>=68"]\n\n'
+
+
+def _reaches_for(root):
+    """What the repository reaches for and does not provide, after the
+    build-time exemption has been applied.
+
+    Asserted here rather than on the emitted finding because
+    `undeclared dependency` needs to map an import name to a distribution
+    through installed metadata, and whether setuptools IS installed varies:
+    Python 3.12 stopped putting it in new virtualenvs. Measured 2026-09-17
+    -- the first version of these two tests passed on 3.11 and failed on
+    3.12 in CI, because with no setuptools to map, the scan correctly
+    recorded the import as undecidable instead of undeclared, and the test
+    read that silence as agreement. The exemption is the thing these tests
+    are about, and it is a pure function of the two files.
+    """
+    from ghost_buster.structure import _external_imports, _stdlib_names
+    return _external_imports(build_model(root, _collect_files(root)), _stdlib_names())
+
+
+def test_setup_py_importing_setuptools_is_not_an_undeclared_dependency(tmp_path):
+    """The false positive this check shipped with. `[build-system].requires`
+    is the ONLY correct place to declare setuptools for a setup.py, because
+    a PEP 517 frontend installs that list into an isolated environment
+    before setup.py is imported. Reading only `[project]` made the right
+    answer look like the defect."""
+    root = _repo(tmp_path, pyproject=BUILD_SYSTEM + PYPROJECT,
+                 files={"setup.py": SETUP_PY.format(description="demo")})
+    assert "setuptools" not in _reaches_for(root)
+    assert "setuptools" not in " ".join(f.summary for f in _scan(root))
+
+
+def test_a_runtime_module_importing_a_build_requirement_is_still_undeclared(tmp_path):
+    """The exemption is for build-time files only. Consent to install a
+    package before the build is not a declaration that it will be there at
+    import time, and treating it as one would hide a real ImportError."""
+    root = _repo(tmp_path, pyproject=BUILD_SYSTEM + PYPROJECT,
+                 files={"demo/uses.py": "import setuptools\n"})
+    reached = _reaches_for(root)
+    assert "setuptools" in reached
+    assert reached["setuptools"] == ["demo.uses"]
+
+
+def test_setup_py_and_pyproject_disagreeing_is_major(tmp_path):
+    """fortress-kernel's actual defect: two files declaring one package,
+    with descriptions that had already drifted apart."""
+    pyproject = (
+        '[project]\nname = "demo"\nversion = "0.1.0"\n'
+        'description = "a governance kernel"\n'
+        'dependencies = ["requests>=2"]\n'
+    )
+    root = _repo(tmp_path, pyproject=pyproject, files={
+        "setup.py": SETUP_PY.format(description="something else entirely")})
+    hits = [f for f in _scan(root)
+            if f.attributes["kind"] == "parallel packaging metadata"]
+    assert len(hits) == 1
+    assert hits[0].severity is Severity.MAJOR
+    assert "description" in hits[0].attributes["drifted"]
+
+
+def test_setup_py_and_pyproject_agreeing_is_minor_not_silent(tmp_path):
+    """Agreement today is not a guarantee about tomorrow, and nothing in
+    the repository checks that it holds. That is worth a MINOR and is not
+    worth a MAJOR."""
+    pyproject = (
+        '[project]\nname = "demo"\nversion = "0.1.0"\n'
+        'description = "d"\nrequires-python = ">=3.11"\n'
+        'dependencies = ["requests>=2"]\n'
+    )
+    root = _repo(tmp_path, pyproject=pyproject,
+                 files={"setup.py": SETUP_PY.format(description="d")})
+    hits = [f for f in _scan(root)
+            if f.attributes["kind"] == "parallel packaging metadata"]
+    assert len(hits) == 1
+    assert hits[0].severity is Severity.MINOR
+
+
+def test_a_name_spelled_differently_is_not_drift(tmp_path):
+    """PEP 503 says `Fortress_Kernel` and `fortress-kernel` are one
+    package. Reporting that as disagreement would be reporting a spelling
+    as a defect."""
+    pyproject = '[project]\nname = "demo-pkg"\nversion = "0.1.0"\n'
+    setup = 'from setuptools import setup\n\nsetup(name="Demo_Pkg", version="0.1.0")\n'
+    root = _repo(tmp_path, pyproject=pyproject, files={"setup.py": setup})
+    hits = [f for f in _scan(root)
+            if f.attributes["kind"] == "parallel packaging metadata"]
+    assert len(hits) == 1
+    assert hits[0].severity is Severity.MINOR, hits[0].summary
+
+
+def test_a_computed_value_is_not_compared_because_it_is_not_a_declaration(tmp_path):
+    """A version read at import time is not something this scan can read.
+    Comparing it against anything would manufacture the disagreement."""
+    setup = ('from setuptools import setup\n\n'
+             'setup(name="demo", version=open("VERSION").read())\n')
+    root = _repo(tmp_path, files={"setup.py": setup})
+    hits = [f for f in _scan(root)
+            if f.attributes["kind"] == "parallel packaging metadata"]
+    assert len(hits) == 1
+    assert hits[0].attributes["fields"] == "name"
+
+
+def test_no_setup_py_means_nothing_to_compare(tmp_path):
+    root = _repo(tmp_path)
+    assert "parallel packaging metadata" not in _kinds(_scan(root))
+
+
+def test_packaging_drift_is_reported_even_when_no_module_was_scanned(tmp_path):
+    """The check reads two files, so it is knowable when nothing parsed.
+    Behind the no-modules guard it would be an unreported blind spot in a
+    repository whose every source file is unassessable."""
+    pyproject = (
+        '[project]\nname = "demo"\nversion = "0.1.0"\ndescription = "a"\n'
+    )
+    root = _repo(tmp_path, pyproject=pyproject, files={
+        "setup.py": SETUP_PY.format(description="b")})
+    model = build_model(root, [])
+    assert not model.modules
+    kinds = _kinds(derive_findings(model))
+    assert "parallel packaging metadata" in kinds
+
+
+# ---------------------------------------------------------------------------
+# A dependency somebody parked in a comment (1.8.0)
+#
+# `unresolvable dependency` is the slopsquat check and it is right to be loud.
+# A deliberately commented-out dependency produces exactly the same evidence,
+# and the evidence separating the two was in a file the scan had already read
+# and thrown away at the `#`. Measured on ATS 2026-09-17: three optional
+# embedding backends, each imported lazily by the one class that uses it, each
+# commented out in requirements.txt directly above the code importing it.
+# ---------------------------------------------------------------------------
+
+def _repo_with_parked_dependency(tmp_path, requirements):
+    root = tmp_path / "proj"
+    (root / "pkg").mkdir(parents=True)
+    (root / ".git").mkdir()
+    (root / "pkg" / "__init__.py").write_text("")
+    (root / "pkg" / "backend.py").write_text(
+        "def load():\n    import voyageai\n    return voyageai.Client()\n")
+    (root / "requirements.txt").write_text(requirements)
+    return root
+
+
+def _unresolvable(root):
+    model = build_model(root, _collect_files(root, []))
+    return {f.attributes["package"]: f for f in derive_findings(model)
+            if f.attributes.get("kind") == "unresolvable dependency"}
+
+
+def test_a_commented_out_dependency_is_cited_in_the_finding(tmp_path):
+    root = _repo_with_parked_dependency(tmp_path, "numpy\n# voyageai   # the backend\n")
+    finding = _unresolvable(root)["voyageai"]
+    assert finding.attributes["commented_out_at"] == "requirements.txt:2"
+    assert "requirements.txt:2" in finding.summary
+    assert "TYPED THIS NAME ON PURPOSE" in finding.detail
+
+
+def test_a_commented_out_dependency_does_not_clear_the_finding(tmp_path):
+    """It must not. Nothing installs a comment, so the import still fails at
+    the first call -- the reader is told where to look, not to stop looking."""
+    root = _repo_with_parked_dependency(tmp_path, "numpy\n# voyageai\n")
+    finding = _unresolvable(root)["voyageai"]
+    assert finding.severity is Severity.MAJOR
+
+
+def test_a_name_nobody_typed_anywhere_is_reported_as_before(tmp_path):
+    """The control, and the case the detector exists for: a name that appears
+    in no dependency file at all gets no citation and no softening."""
+    root = _repo_with_parked_dependency(tmp_path, "numpy\n")
+    finding = _unresolvable(root)["voyageai"]
+    assert "commented_out_at" not in finding.attributes
+    assert "TYPED THIS NAME ON PURPOSE" not in finding.detail
+
+
+def test_prose_in_a_comment_does_not_answer_for_a_package(tmp_path):
+    """Only the first token of a comment is read. Reading every token swept
+    up the prose: `# Optional - only needed if you inject one` contributed
+    six words, each of which would then answer for an import of that name."""
+    from ghost_buster.structure import commented_out_dependencies
+    root = _repo_with_parked_dependency(
+        tmp_path, "numpy\n# Optional - needed only if you inject voyageai\n")
+    parked = commented_out_dependencies(root)
+    assert "voyageai" not in parked
+    assert "needed" not in parked
+
+
+def test_a_declared_dependency_is_not_reported_at_all(tmp_path):
+    """The fix the finding asks for: moving the name out of the comment and
+    into a requirements file the scan reads clears it."""
+    root = _repo_with_parked_dependency(tmp_path, "numpy\n")
+    (root / "requirements-optional.txt").write_text("voyageai   # the backend\n")
+    assert "voyageai" not in _unresolvable(root)

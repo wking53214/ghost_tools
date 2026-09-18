@@ -40,8 +40,11 @@ MUTANTS = [
 
     # --- remembering wrong ---
     ("the blind-spot streak counts non-consecutive absences", _L,
-     "                if state is None or state == RAN:\n                    break\n",
-     "                if state is None or state == RAN:\n                    continue\n"),
+     "                if run.checks.get(name) not in _DID_NOT_LOOK:\n                    break\n",
+     "                if run.checks.get(name) not in _DID_NOT_LOOK:\n                    continue\n"),
+    ("a check with nothing to examine counts as a blind spot again", _L,
+     '_DID_NOT_LOOK = frozenset({DECLINED, COULD_NOT_RUN, NOT_RUN})\n',
+     '_DID_NOT_LOOK = frozenset({DECLINED, COULD_NOT_RUN, NOT_RUN, NOT_APPLICABLE})\n'),
     ("every blind spot is MAJOR again (--mutate becomes permanent noise)", _L,
      "                severity=_BLIND_SPOT_SEVERITY.get(last, Severity.MINOR),\n",
      "                severity=Severity.MAJOR,\n"),

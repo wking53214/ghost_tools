@@ -1,5 +1,247 @@
 # Changelog
 
+## 1.9.1 (2026-09-17)
+
+**A corpus that could not demonstrate what it documented.**
+
+`Tests/fixtures/wizzle` was added in the 1.7.1-1.7.8 merge as a forensics
+edge-case repository: an enum member produced in library code, removed, and
+still named by a test, to show where a git-history-based provenance model
+produces findings that are technically correct and semantically
+misleading.
+
+It was a standalone repository copied into this tree as static files, and
+the scenarios it documented were defined by commits from its own history --
+`16e9923`, `3e2ddc3`, `ce544ad`, `a1a1356` -- none of which exist here. The
+forensics layer grades a removed member by what git says happened to it.
+This corpus had no git to say anything, so it could not produce a single
+one of the findings it was written to illustrate.
+
+Meanwhile it was doing three jobs nobody asked for:
+
+- `testpaths = ["Tests"]` reaches the whole tree, so pytest collected
+  `Tests/fixtures/wizzle/Tests/test_status.py` as a real test and errored
+  on `from enums import Status`. A green suite exited non-zero, which is
+  how an exit code stops being read.
+- The self-scan reported `unresolvable dependency: 'enums'` at MAJOR,
+  permanently, against this repository.
+- Three MINOR `dead_code` findings for functions in a fake library.
+
+Nothing referenced it. No test, no tool, no line of the README or this
+changelog. Deleted, and the self-scan drops from 89 findings to 85 -- the
+four above, and nothing else changed.
+
+**The argument survived; the files did not.** `docs/forensics-limits.md`
+carries the durable half: a security fix, a deliberate refactor and a
+regression leave the same trace in git history, the detector escalates
+anyway because the one that matters is indistinguishable from the one that
+does not, and the case file rather than a suppression is what stops the
+second reader re-deriving a decision the first already made. The invented
+commit SHAs, the `/tmp/wizzle` run instructions and the "future versions
+could" roadmap did not survive, the last of those because a list of
+unmeasured improvements is the kind of claim this project spends its time
+finding in other people's repositories. What is left names the two ideas
+that are not signal (commit-message prefixes, changelog absence) and the
+one that might be, and says it is unmeasured.
+
+The README's `unreachable_declared_state` paragraph now points at it.
+
+**The lint gate was red on main.** Checked out d1fd094 -- the merge of #64 --
+in a clean worktree and ran the pinned ruff 0.15.22: nine errors, every one
+in a test file. Four unused `import pytest`, one unused `pathlib.Path`, two
+semicolon-joined statements, and a module-level import of
+`_remedy_doc_counts` that a function-local import inside the same file
+already shadowed. `ruff check .` is a step that workflow calls a hard gate,
+so it had been failing on every push since that merge.
+
+Fixed: seven by `ruff check . --fix`, the two semicolons by hand, and the
+blank lines the removed imports left behind. No behaviour changed and no
+assertion moved -- the 63 hand mutants over those four test files still
+die, which is the check that the imports really were unused rather than
+merely unreferenced by ruff's reading.
+
+**Two of 1.8.0's own tests were environment-dependent**, and the CI matrix
+caught what no local run could. They asserted on the emitted
+`undeclared dependency` finding, which needs to map an import name to a
+distribution through installed metadata. Python 3.12 stopped putting
+setuptools in new virtualenvs, so on 3.12 there was nothing to map to, the
+scan correctly recorded the import as undecidable rather than undeclared,
+and the test that expected a finding got none while the test that expected
+silence got it for the wrong reason. Both now assert on the build-time
+exemption itself, which is a pure function of pyproject.toml and the file
+list. The 39 hand mutants over that module still die, including the two
+that invert the exemption, so the new assertions are strictly stronger than
+what they replaced.
+
+## 1.9.0 (2026-09-17)
+
+**The serum was a profile of the surgeon.**
+
+Run against fortress-kernel, a patient that met all six health criteria,
+the entire enhancement pass was this:
+
+    serum (measured, not applied):
+      measured redundancy (same input, done again):
+        read        17 calls, 4 distinct, 13 repeated  0.00s (0% of the run)
+        ast.parse    4 calls, 4 distinct,  0 repeated  0.01s (6% of the run)
+        subprocess   1 calls, 1 distinct,  0 repeated  0.00s (2% of the run)
+
+`speed.Profile` wraps `ast.parse`, `Path.read_*` and `subprocess.run`.
+Every call it counts is one ghost_buster makes. So the thirteen repeated
+reads are the scanner re-reading the patient, they cost 0.00s, and they
+were printed under the patient's name as the reward for passing the
+readiness gate. Those counters earned their place exactly once, when this
+toolkit was the patient and the run showed 9.5 parses per file.
+
+The static half was better aimed and barely there: a count of pitstop
+findings, appended ONLY when there were some. A sweep that ran and found
+nothing printed nothing, in the flagship feature of a project whose first
+principle is that silence is the defect.
+
+**The serum now has three parts and each says whose facts it reports.**
+
+*The surface* is every enhancement site in the patient, always reported,
+with a count when it is zero.
+
+*The dose* is the new thing, and it is the ladder the README had promised
+and never built. The check for an enhancement is the patient's own test
+suite; candidacy established that the suite passes and then nothing used
+that fact. A passing suite is not a suite that would notice. So each site
+is now graded by this toolkit's own standard for whether a test means
+anything: empty the function that holds the site, run the patient's suite,
+and see whether anything fails. The suite fails, the site can be verified.
+The suite passes, it cannot, and no dose is offered there. The run does not
+finish, it is unknown, which counts against the patient like every other
+criterion this tool could not assess.
+
+*The scan's own work* is the old profiler output, kept, labelled as
+ghost_buster's rather than the patient's, and printed only when something
+was repeated enough to act on. On fortress-kernel it now collapses to one
+line saying so.
+
+It costs one whole-suite run per site plus a baseline, so `--serum-budget
+SECONDS` bounds it (default 120). A site the budget did not reach is
+reported as not assessed, never dropped. A baseline that is not green in
+the scratch copy retires every verdict below it rather than producing
+verdicts nobody should believe.
+
+**What is still not rewritten, and the one that looks safe.**
+
+`x in [1, 2, 3]` inside a loop is O(n) per pass where `x in {1, 2, 3}` is
+O(1), every element is a hashable constant, and it looks like the obvious
+first automatic dose. It is not safe:
+
+    >>> [1] in [1, 2, 3]
+    False
+    >>> [1] in {1, 2, 3}
+    TypeError: unhashable type: 'list'
+
+List membership compares; set membership hashes the left operand first. The
+rewrite turns a `False` into a TypeError for every unhashable value that
+reaches it, nothing in the tree says what reaches it, and a suite that
+never passes an unhashable value goes green either way. It gets the same
+answer as the invariant-call hoist: reported, ranked, never rewritten. "The
+suite is green" is not a verification for a rewrite whose failure mode the
+suite does not exercise. The analysis is in `serum.py` rather than in a
+commit message, because the next person to look at that rewrite will read
+the module.
+
+**Two decisions became named functions so they could be tested directly.**
+`over_budget` and `verdict_for` were branches inside a loop that only fired
+on a timing or on a crashed subprocess; three hand mutants survived against
+them, which is the mutation suite doing its job on the module that exists
+to grade other people's suites. Extracted, tested, and the mutants re-aimed
+at the functions: 19 new mutants, all killed.
+
+## 1.8.0 (2026-09-17)
+
+**Three defects this toolkit walked past on a repository it was scanning.**
+
+Pointed at fortress-kernel, ghost_buster reported one MAJOR finding and two
+MINOR ones. The MAJOR one was wrong, and two real defects sitting in plain
+sight in the same two files went unmentioned. All three are fixed here, and
+the reason they are one release rather than three is that they are the same
+mistake: the scan read `[project]` and stopped.
+
+**`undeclared dependency` now reads `[build-system].requires`.**
+
+`setup.py` imports `setuptools`. fortress-kernel declares it in
+`[build-system].requires`, which is the only correct place: a PEP 517
+frontend installs that list into an isolated environment before `setup.py`
+is ever imported, and putting it in `[project].dependencies` would install
+a build tool alongside the package at runtime. The scan read only
+`[project].dependencies`, `[project].optional-dependencies` and
+`requirements.txt`, so it reported the one right answer as a MAJOR
+works-on-my-machine failure.
+
+A build-time file's imports are now satisfied by `[build-system].requires`.
+The exemption is for build-time files only -- currently `setup.py` at the
+repository root. A runtime module importing the same package is still
+undeclared, because consent to install something before the build is not a
+promise that it will be importable after it, and treating it as one would
+hide a real ImportError.
+
+**`parallel packaging metadata`: two files declaring one package.**
+
+fortress-kernel ships both `setup.py` and `pyproject.toml`, and both
+declare the name, the version, the description, the Python floor and the
+dependencies. The descriptions had already drifted: `pyproject.toml` said
+"Minimal, composable governance kernel...", `setup.py` said "FORTRESS
+Unified Governance Kernel - Multi-controller safety orchestration". Which
+one a user gets depends on how they installed it.
+
+This is the packaging case of `drifted_copy`, and it is graded the same
+way. Disagreeing is MAJOR: one of the two answers is already wrong.
+Agreeing is MINOR -- nothing is broken today, and the defect is that
+keeping it that way is an obligation nobody agreed to and nothing checks.
+
+Only literal values are compared. `version=read_version()` is not a
+declaration this scan can read, so it is counted on neither side, and a
+name is compared the way an index compares it (PEP 503) so that
+`Fortress_Kernel` and `fortress-kernel` are not reported as drift.
+
+**`test_config_collects_nothing`: a runner pointed at nothing.**
+
+fortress-kernel set `testpaths = ["tests"]` and has no `tests/` directory.
+Its 48 tests sit at the repository root. pytest does not fail on this: it
+warns once and falls back to searching the working directory, or -- version
+and invocation depending -- collects nothing and exits 0.
+
+The second outcome is what this is for. A CI job whose whole purpose is to
+run the suite passes in seconds having run none of it, and a green check
+for zero tests is indistinguishable from a green check for all of them. The
+fallback is not a safety net either: it fires where somebody is watching
+(a local run) and not where nobody is.
+
+`no_ci_configuration` already said "you wrote tests and nothing runs them".
+This says the worse thing: somebody configured a runner and it does not.
+Read from the first of `pytest.ini`, `pyproject.toml`, `tox.ini`,
+`setup.cfg` that declares `testpaths`, which is pytest's own order. It is
+static -- it never runs pytest -- so unlike `--tests` it holds for an
+untrusted repository, which is exactly where nobody is going to notice by
+watching the output.
+
+It stays quiet in the two places where quiet is right. A repository with no
+test files at all is not reported, because `testpaths` naming a directory
+nobody has created yet is a plan. A path that exists is not reported,
+whatever is or is not under it. One missing entry of several is MINOR, not
+MAJOR: the suite still runs, and what is reported is that a configuration
+has started naming things that are not there.
+
+The check is also not suppressed by CI being configured, which is the
+opposite of how `no_ci_configuration` behaves and is deliberate. CI is what
+turns "collected nothing" into a green badge, so the finding matters more
+there, not less.
+
+**Measured 2026-09-17** on three repositories in this ecosystem, pinned by
+commit in `ghost_buster/calibration.json`: one finding each, both on
+fortress-kernel, and none on the two that are configured correctly. That is
+a small corpus and the record says so.
+
+**The project scan now prints a test-configuration line on every run**,
+including the runs where it found nothing -- a configuration that was
+checked and is fine must not print identically to one nobody looked at.
+
 ## 1.7.8 (2026-09-12)
 
 **Evidence that costs nothing to fake does not get to lower a severity.**

@@ -37,7 +37,6 @@ from __future__ import annotations
 
 import subprocess
 
-import pytest
 
 from ghost_buster.annotate import (Disagreement, annotate_files, refuses,
                                    update_readme)
@@ -275,8 +274,7 @@ def _linked_out_world(tmp_path):
 
 def test_no_writer_follows_a_link_out_of_the_repository(tmp_path):
     """All three, over one world."""
-    from ghost_buster.operate import (_remedy_annotate, _remedy_count_block,
-                                      _remedy_doc_counts)
+    from ghost_buster.operate import (_remedy_annotate, _remedy_count_block)
     root, victim = _linked_out_world(tmp_path)
     before = victim.read_text()
     files = [root / "README.md", root / "a.py"]

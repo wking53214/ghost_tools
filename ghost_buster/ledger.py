@@ -74,7 +74,28 @@ DECLINED = "declined"          # the caller said --no-X
 COULD_NOT_RUN = "could_not_run"  # no git, no tests, no gitleaks
 NOT_RUN = "not_run"            # opt-in and not opted into (--mutate)
 
-#: The states in which a check did NOT look at anything.
+#: There was nothing here to ask the question about. Not a skip: a
+#: repository that reaches across no boundary has no cross-boundary seam
+#: to leave unchecked, the way a repository with no enums has no
+#: unreachable member. (v1.8.0)
+#:
+#: Added because the four states above could not express it and the
+#: boundary check had to pick one. It picked NOT_RUN, so every
+#: single-repository scan accrued a blind-spot streak that no action could
+#: ever clear -- the check could not run, because there was nothing for it
+#: to run on. Measured on ATS over 7 consecutive runs: a permanent
+#: INFORMATIONAL finding reporting a gap that did not exist.
+#:
+#: That is the failure _BLIND_SPOT_SEVERITY below already reasons about
+#: ("a permanent unfixable MAJOR is how a tool teaches people to stop
+#: reading it"), one severity quieter and therefore likelier to survive
+#: unnoticed. The distinction is narrow on purpose: a repository that DOES
+#: reach across a boundary and was scanned alone has a real unchecked
+#: seam, stays NOT_RUN, and still accrues its streak.
+NOT_APPLICABLE = "not_applicable"
+
+#: The states in which a check did NOT look at anything it should have.
+#: NOT_APPLICABLE is deliberately absent: nothing went unexamined.
 _DID_NOT_LOOK = frozenset({DECLINED, COULD_NOT_RUN, NOT_RUN})
 
 #: How loud a blind spot is depends on WHY nobody looked, and getting this
@@ -541,8 +562,11 @@ class Ledger:
         for name in names:
             streak = 0
             for run in reversed(self.runs):
-                state = run.checks.get(name)
-                if state is None or state == RAN:
+                # Asked against the set of states that mean something went
+                # unexamined, rather than against RAN. The two differ for
+                # NOT_APPLICABLE, which ends a streak without being a run:
+                # there was no question to ask, so there is no gap to count.
+                if run.checks.get(name) not in _DID_NOT_LOOK:
                     break
                 streak += 1
             streaks[name] = streak

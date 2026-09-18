@@ -43,7 +43,7 @@ from .correlate import (
 )
 from .kernel import check_kernel, render_report as render_kernel_report
 from .ledger import (
-    COULD_NOT_RUN, DECLINED, Ledger, LedgerError, NOT_RUN, RAN,
+    COULD_NOT_RUN, DECLINED, Ledger, LedgerError, NOT_APPLICABLE, NOT_RUN, RAN,
     _head_commit, render_report as render_ledger_report,
 )
 from .mechanical import run_all
@@ -332,13 +332,22 @@ def _run_model_checks(args, files, findings, checks, say) -> None:
         findings.extend(boundary_findings)
         checks["boundary"] = RAN if joined.ran else COULD_NOT_RUN
     else:
-        checks["boundary"] = NOT_RUN
+        # Which of the two it is, the notice already decides: it is written
+        # when this repository reaches for a package it does not provide or
+        # holds a dormant test, and withheld when it does neither. That is
+        # exactly the difference between a seam left unchecked and no seam
+        # at all, so the state follows the notice rather than assuming the
+        # worse of the two. Before 1.8.0 both were NOT_RUN and every
+        # single-repository scan grew a blind-spot streak nothing could
+        # clear.
         notice = render_single_repo_notice(args.path, files)
         if notice:
+            checks["boundary"] = NOT_RUN
             say(notice)
         else:
-            say("ghost_buster: boundary scan NOT RUN (single repository; "
-                "no unprovided packages reached for)")
+            checks["boundary"] = NOT_APPLICABLE
+            say("ghost_buster: boundary scan NOT APPLICABLE (single repository; "
+                "no unprovided packages reached for, no dormant tests)")
 
     if args.structure:
         model = build_model(args.path, files)

@@ -18,6 +18,16 @@ _M = "ghost_buster/mechanical.py"
 
 MUTANTS = [
     # (label, file, exact text to replace, replacement)
+    # --- the __members__ data path (1.8.1) ---
+    ("a `__members__.get` deserialiser goes invisible again", _M,
+     '            elif (isinstance(node, ast.Call)\n                  and isinstance(node.func, ast.Attribute)\n                  and node.func.attr == "get"\n                  and members_mapping_of(node.func.value) is not None\n                  and node.args):\n                enum, arg = members_mapping_of(node.func.value), node.args[0]\n',
+     ''),
+    ("a `__members__[name]` deserialiser goes invisible again", _M,
+     '            elif (isinstance(node, ast.Subscript)\n                  and members_mapping_of(node.value) is not None):\n                enum, arg = members_mapping_of(node.value), node.slice\n',
+     ''),
+    ("any attribute named __members__ answers for any enum", _M,
+     '        if (isinstance(node, ast.Attribute) and node.attr == "__members__"\n                and isinstance(node.value, ast.Name)\n                and node.value.id in declared):\n            return node.value.id\n',
+     '        if isinstance(node, ast.Attribute) and node.attr == "__members__":\n            return next(iter(declared), None)\n'),
     # --- missing the state ---
     ("a comparison counts as producing the value", _M,
      "            if isinstance(node, ast.Attribute) and id(node) not in compared:",

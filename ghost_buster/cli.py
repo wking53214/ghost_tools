@@ -27,6 +27,7 @@ from .ledger import (
     Ledger,
 )
 from . import readiness
+from . import serum
 from .casefile import Casefile, Prior
 from .operate import Refused, notes_on_arrival, operate
 from .mutation import render_run
@@ -119,6 +120,14 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--operate-dry-run", action="store_true",
         help="with --operate: diagnose and assess candidacy, write nothing",
+    )
+    parser.add_argument(
+        "--serum-budget", type=float, default=serum.DEFAULT_BUDGET, metavar="SECONDS",
+        help="with --operate: whole seconds the serum may spend establishing, per "
+             "enhancement site, whether this patient's own test suite would catch a "
+             "mistake made there. It runs the suite once per site, so this is a real "
+             "cost; a site the budget did not reach is reported as not assessed, never "
+             "dropped. (default: %(default)ss)",
     )
     parser.add_argument(
         "--profile", action="store_true",
@@ -344,7 +353,8 @@ def _operate(args, evidence, casefile_path, archive, arrival=None) -> int:
     try:
         op = operate(args.path, evidence.files, evidence.findings, evidence.checks,
                      casefile=Casefile(casefile_path), branch=args.operate_branch,
-                     dry_run=args.operate_dry_run, arrival=arrival)
+                     dry_run=args.operate_dry_run, arrival=arrival,
+                     serum_budget=args.serum_budget)
     except Refused as e:
         print(f"refused: {e}", file=sys.stderr)
         return 2
@@ -374,6 +384,25 @@ def _present(args, evidence, new, known, priors, archive, casefile_path) -> None
         print()
     if evidence.mutation_run is not None:
         print(render_run(evidence.mutation_run, verbose=args.mutate_verbose))
+
+
+def _note_stale_baseline(baseline, findings) -> List[Finding]:
+    """The receipt line and the finding, for baseline entries that matched
+    nothing. Both, because they reach different readers: the line is on the
+    same channel as every other check's receipt, and the finding is what a
+    caller reading --json actually gets. Until 1.8.0 there was only the
+    line. See Baseline.derive_findings for why the rot is worth reporting.
+
+    What it returns belongs in the run's NEW list and never in the set the
+    baseline diffs: the baseline does not get to suppress the report of its
+    own rot.
+    """
+    stale = baseline.stale(findings)
+    if stale:
+        print(f"ghost_buster: {len(stale)} of {baseline.size} baseline entries matched nothing scanned "
+              f"(fixed, renamed detector, or a baseline written from another checkout); "
+              f"first: {stale[0].id} {stale[0].evidence.file}", file=sys.stderr)
+    return baseline.derive_findings(findings)
 
 
 def main(argv: List[str] = None) -> int:
@@ -429,11 +458,7 @@ def main(argv: List[str] = None) -> int:
         return 0
 
     new, known = baseline.diff(findings)
-    stale = baseline.stale(findings)
-    if stale:
-        print(f"ghost_buster: {len(stale)} of {baseline.size} baseline entries matched nothing scanned "
-              f"(fixed, renamed detector, or a baseline written from another checkout); "
-              f"first: {stale[0].id} {stale[0].evidence.file}", file=sys.stderr)
+    new.extend(_note_stale_baseline(baseline, findings))
 
     casefile_path = args.casefile or (args.path / ".ghost_casefile.json")
     priors = None

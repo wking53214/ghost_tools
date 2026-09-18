@@ -20,7 +20,8 @@
         "re-exports and src layouts resolved"
       ],
       "disclosed": [
-        "duck-typed contracts go to unresolved, named"
+        "duck-typed contracts go to unresolved, named",
+        "a single-repository scan that reaches for no package it does not provide and holds no dormant test files the check not_applicable rather than not_run (1.8.0): there is no seam to leave unchecked, so it accrues no blind-spot streak. A single-repository scan that DOES reach across a boundary stays not_run and still accrues one"
       ],
       "source": "README, the seam; CHANGELOG 0.16.0, 0.17.1, 0.17.5",
       "reproduce": {
@@ -135,7 +136,8 @@
         "an import that cannot be mapped to a distribution goes to unresolved"
       ],
       "disclosed": [
-        "never infers an architectural boundary from a directory name"
+        "never infers an architectural boundary from a directory name",
+        "an unresolvable import whose name appears as the first token of a comment in a dependency file cites that location (1.8.0). It does not clear the finding and does not change its severity: nothing installs a comment. Measured on ATS 2026-09-17, 3 of 3 such names"
       ],
       "source": "README, the structural model; CHANGELOG 0.15.0",
       "reproduce": {
@@ -436,10 +438,6 @@
           "ghost_tools": {
             "branch": "main",
             "commit": "bf37c6e250"
-          },
-          "innovation_os": {
-            "branch": "main",
-            "commit": "3bb189d867"
           },
           "observe-perceive": {
             "branch": "main",
@@ -1082,10 +1080,6 @@
             "branch": "main",
             "commit": "bf37c6e250"
           },
-          "innovation_os": {
-            "branch": "main",
-            "commit": "3bb189d867"
-          },
           "observe-perceive": {
             "branch": "main",
             "commit": "c0a86516f6"
@@ -1111,7 +1105,8 @@
       "after": null,
       "exclusions": [],
       "disclosed": [
-        "thresholds (three returns, ten runs, five blind runs) set by design, not measured on a corpus; the trajectory filter is the constant-velocity Kalman filter from a pediatric deterioration engine"
+        "thresholds (three returns, ten runs, five blind runs) set by design, not measured on a corpus; the trajectory filter is the constant-velocity Kalman filter from a pediatric deterioration engine",
+        "not_applicable ends a blind-spot streak the way a run does (1.8.0). Measured on ATS: 7 consecutive runs of a permanent INFORMATIONAL blind spot for the boundary check, reporting a gap that did not exist"
       ],
       "source": "README, what it remembers; CHANGELOG 0.13.0, 0.17.4",
       "reproduce": {
@@ -1143,7 +1138,8 @@
         "git history is consulted, through forensics.py, to tell a state nobody wired up (MINOR) from one something stopped producing (MAJOR). This makes the detector no longer a pure function of the working tree, though still deterministic; `history=False` restores the narrower guarantee. Added 1.7.8",
         "an unreadable history -- no repository, no git, a shallow clone, a walk that exceeds its budget -- yields UNKNOWN provenance, which grades at the weight of what was actually observed and NEVER escalates. Collapsing UNKNOWN into 'never produced' would report the end of the search as the end of the history. Added 1.7.8",
         "RELOCATED_TO_TESTS is recognised only when the production leaves library code and appears in a test in the SAME commit. Splitting it across two commits, in either order, reports REMOVED_FROM_LIBRARY instead -- which carries the same severity, so the evasion loses the label and gains nothing. Asserted as a property in Tests/test_forensics.py, because a future version escalating only relocation would create the incentive that currently does not exist",
-        "history is searched for the text `Enum.MEMBER`, so a commit that renamed the ENUM hides everything before the rename and the answer degrades to NEVER_PRODUCED. The forensic layer is an escalation on top of a finding that stands without it, so a missed escalation loses precision rather than the finding"
+        "history is searched for the text `Enum.MEMBER`, so a commit that renamed the ENUM hides everything before the rename and the answer degrades to NEVER_PRODUCED. The forensic layer is an escalation on top of a finding that stands without it, so a missed escalation loses precision rather than the finding",
+        "a member reached by `Enum.__members__[name]` or `Enum.__members__.get(name)` counts as reachable from data (1.8.1), the same as `Enum[name]`. Measured on ATS 2026-09-17: a repository replaced `Verdict[name]` with the `.get` form to stop a KeyError aborting a decision before its ledger commit -- a strictly safer deserialiser -- and the data path went invisible to this detector, which then reported the member as produced only by test code. Iterating the mapping is not counted: reading no name out of a record reconstructs nothing"
       ],
       "source": "CHANGELOG 1.7.8; Tests/test_unreachable_declared_state.py; Tests/test_forensics.py",
       "reproduce": {
@@ -1160,6 +1156,51 @@
           }
         },
         "note": "Found 1 on each. On SWIZZLE: Phase.BETWEEN_RUNS, declared among four phases of which the world builder carries out three, so a case declaring it built a world without its mutation and was still judged as temporal. On ghost_tools itself: Status.REJECTED ('a human looked and said no'), which nothing produces and whose triage module does not exist. Both confirmed by hand. 1.7.6: counting lookup-table membership as production had made this detector miss a state of exactly the shape it was built to find -- it reported Status.REJECTED and stayed quiet about Status.CONFIRMED_BY_REVIEW, which is never assigned either. Findings on ghost_tools went 1 -> 5, and all five were confirmed by hand: two Status members superseded by `disposition`, and three EvidenceKind members in blackhole_extrapolator that appear only as keys in a confidence-weight table, so the table assigns confidence to evidence nothing can produce. 1.7.7: counting a TEST production as a production was the third blind spot of the same shape, and the worst -- the harness defect this detector was built for would have gone unreported if a single test had named the phase, which is the most likely thing in the world. Library and test corpora are now separated. The distinction added four true findings across the two repositories and none was actionable (states reached from stored data, or held unreachable on purpose), so test-only findings are INFORMATIONAL: weaker evidence, weaker claim. 1.7.8: the 1.7.7 discount was itself the defect. Grading a test production as weaker evidence of intent used a signal an adversary can manufacture for free, so the attack it was meant to close -- one test naming the state -- still worked, at the cost of one severity notch instead of total suppression. The discount is gone. Three things replace it. (1) Building the enum from a runtime value is now recognised as a production, which retired two FALSE POSITIVES on this repository: Status.CONFIRMED_BY_REVIEW and Status.REJECTED were reported at the top severity this detector emitted while Finding.from_dict built either from a stored record at schema.py:347. (2) A docstring claiming a member arrives from data is verified against the code: backed, it clears the finding; unbacked, it is CRITICAL. (3) Git history separates an oversight from a removal, and names the case where the last production MOVED from library code into a test -- the shape of quieting this detector rather than answering it. ghost_tools now reports 5 (4 EvidenceKind, 1 VoidKind, all never_produced, all confirmed by hand); the two Status findings are correctly silent."
+      }
+    },
+    {
+      "name": "stale_baseline",
+      "kind": "check",
+      "date": "2026-09-17",
+      "corpus": "3 repositories carrying or lacking a ghost_buster baseline: ATS (48 entries), ghost_tools itself (1 entry), SWIZZLE (no baseline file)",
+      "before": {
+        "repositories_with_inert_entries": 1,
+        "inert_entries_reported_in_structured_output": 0
+      },
+      "after": {
+        "repositories_with_inert_entries": 1,
+        "inert_entries_reported_in_structured_output": 36
+      },
+      "exclusions": [
+        "a baseline whose entries all still match produces nothing (measured on ghost_tools: 0 of 1 inert, no finding)",
+        "a repository with no baseline file produces nothing (measured on SWIZZLE)",
+        "the finding is never itself accepted into a baseline: an entry for it could never match again"
+      ],
+      "disclosed": [
+        "the proportion is reported and not graded: no threshold was measured, because which proportion is bad depends on how a team uses the file. The counts are in the attributes so a caller can apply its own cutoff",
+        "not recorded in the ledger: the ledger is written by the pipeline before the baseline diff runs, so this finding has no history and no persistent_finding escalation",
+        "stale entries suppress nothing by definition -- the defect is that the live entries cannot be told from the inert ones without this comparison"
+      ],
+      "source": "README, the surgeon; CHANGELOG 1.8.0",
+      "reproduce": {
+        "command": "python -m ghost_buster.cli <repo> --json --no-tests --no-secrets --no-branches --single-repo --no-ledger | python -c \"import json,sys; print(len([r for r in json.load(sys.stdin) if r['detector']=='stale_baseline']))\"",
+        "tool_version": "1.8.0",
+        "corpus_manifest": {
+          "ATS": {
+            "branch": "claude/ghost-tools-ats-9tzf7i",
+            "commit": "5b1aee337c"
+          },
+          "ghost_tools": {
+            "branch": "claude/ghost-tools-ats-9tzf7i",
+            "commit": "d1fd0944f1"
+          },
+          "SWIZZLE": {
+            "branch": "main",
+            "commit": "bb9079d5ff",
+            "pinned_from": "no baseline file; the control for a repository that produces nothing"
+          }
+        },
+        "note": null
       }
     }
   ]
