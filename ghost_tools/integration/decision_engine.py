@@ -15,9 +15,9 @@ from typing import Dict, List, Optional, Callable, Any
 from datetime import datetime
 import uuid
 
-from swizzle.integration.event_system import Event, EventType
-from swizzle.integration.ml_predictor import MLPredictor, PredictionCache
-from swizzle.integration.unified_index import get_unified_index
+from .event_system import Event, EventType
+from .ml_predictor import MLPredictor, PredictionCache
+from .unified_index import get_unified_index
 
 
 class DecisionType(str, Enum):
