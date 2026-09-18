@@ -439,10 +439,6 @@
             "branch": "main",
             "commit": "bf37c6e250"
           },
-          "innovation_os": {
-            "branch": "main",
-            "commit": "3bb189d867"
-          },
           "observe-perceive": {
             "branch": "main",
             "commit": "c0a86516f6"
@@ -1083,10 +1079,6 @@
           "ghost_tools": {
             "branch": "main",
             "commit": "bf37c6e250"
-          },
-          "innovation_os": {
-            "branch": "main",
-            "commit": "3bb189d867"
           },
           "observe-perceive": {
             "branch": "main",
