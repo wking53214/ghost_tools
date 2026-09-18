@@ -1,0 +1,222 @@
+"""Ghost Tools consumer for Swizzle integration data.
+
+Imports and applies shared models from Swizzle:
+- Invariant validation: check findings against shared invariants
+- Mutation cases: run Swizzle cases through ghost-buster
+- Triage ledger: use historical decisions for filtering
+- Performance contracts: validate against performance contracts
+- Architecture audit: check against shared architecture rules
+- Feedback loop: apply false positive patterns to filter results
+"""
+
+from pathlib import Path
+from typing import Dict, List, Optional, Any
+import json
+from dataclasses import dataclass
+
+
+@dataclass
+class IntegrationConfig:
+    """Configuration for Ghost Tools integration."""
+    swizzle_bundle_dir: Path
+    enabled_integrations: List[str]  # which integrations to use
+    load_invariants: bool = True
+    apply_mutation_cases: bool = True
+    use_triage_ledger: bool = True
+    validate_performance: bool = True
+    apply_false_positive_filters: bool = True
+    check_architecture: bool = True
+
+
+class SwizzleIntegrationConsumer:
+    """Ghost Tools consumer of Swizzle integration data."""
+
+    def __init__(self, config: IntegrationConfig):
+        self.config = config
+        self.invariants: Optional[Dict] = None
+        self.mutations: Optional[Dict] = None
+        self.triage_ledger: Optional[Dict] = None
+        self.performance_contracts: Optional[Dict] = None
+        self.false_positive_patterns: Optional[Dict] = None
+        self.architecture_rules: Optional[Dict] = None
+
+        self._load_integration_data()
+
+    def _load_integration_data(self) -> None:
+        """Load all integration data from Swizzle bundle."""
+        if self.config.load_invariants:
+            self.invariants = self._load_json("invariants.json")
+
+        if self.config.apply_mutation_cases:
+            self.mutations = self._load_json("mutations.json")
+
+        if self.config.use_triage_ledger:
+            self.triage_ledger = self._load_json("triage-ledger.json")
+
+        if self.config.validate_performance:
+            self.performance_contracts = self._load_json("performance-contracts.json")
+
+        if self.config.apply_false_positive_filters:
+            self.false_positive_patterns = self._load_json("feedback-patterns.json")
+
+        if self.config.check_architecture:
+            self.architecture_rules = self._load_json("architecture-rules.json")
+
+    def _load_json(self, filename: str) -> Optional[Dict]:
+        """Load JSON file from Swizzle bundle."""
+        filepath = self.config.swizzle_bundle_dir / filename
+        if not filepath.exists():
+            return None
+        try:
+            return json.loads(filepath.read_text())
+        except Exception as e:
+            print(f"Warning: failed to load {filename}: {e}")
+            return None
+
+    def filter_false_positives(self, findings: List[Dict]) -> List[Dict]:
+        """Apply false positive patterns to filter Ghost's findings.
+
+        Args:
+            findings: List of finding dicts from ghost-buster output
+
+        Returns:
+            Filtered findings with false positives marked or removed
+        """
+        if not self.false_positive_patterns:
+            return findings
+
+        patterns = self.false_positive_patterns.get("patterns_by_type", {})
+        filtered = []
+
+        for finding in findings:
+            finding_type = finding.get("type")
+            is_false_positive = False
+
+            if finding_type in patterns:
+                for pattern in patterns[finding_type]:
+                    if self._matches_pattern(finding, pattern):
+                        is_false_positive = True
+                        finding["likely_false_positive"] = True
+                        finding["filter_pattern"] = pattern.get("id")
+                        break
+
+            filtered.append(finding)
+
+        return filtered
+
+    def _matches_pattern(self, finding: Dict, pattern: Dict) -> bool:
+        """Check if a finding matches a false positive pattern."""
+        indicators = pattern.get("indicators", [])
+        finding_text = json.dumps(finding)
+
+        # Simple heuristic: match if any indicator appears
+        return any(indicator.lower() in finding_text.lower() for indicator in indicators)
+
+    def validate_invariants(self, findings: List[Dict]) -> List[str]:
+        """Validate findings against shared invariants.
+
+        Returns list of invariant violation IDs found in findings.
+        """
+        if not self.invariants:
+            return []
+
+        violations = []
+        invariants_dict = self.invariants.get("invariants", {})
+
+        for finding in findings:
+            finding_type = finding.get("type")
+            for inv_id, invariant in invariants_dict.items():
+                # Simple matching: does this finding relate to this invariant?
+                if self._finding_relates_to_invariant(finding, invariant):
+                    violations.append(inv_id)
+
+        return violations
+
+    def _finding_relates_to_invariant(self, finding: Dict, invariant: Dict) -> bool:
+        """Check if a finding is related to an invariant."""
+        finding_text = json.dumps(finding).lower()
+        inv_description = invariant.get("description", "").lower()
+        inv_name = invariant.get("name", "").lower()
+
+        return (any(word in finding_text for word in inv_name.split()) or
+                any(word in finding_text for word in inv_description.split()))
+
+    def run_mutation_cases(self) -> Dict[str, Any]:
+        """Get Swizzle mutation cases to test against ghost-buster.
+
+        Returns dict mapping case_id to case details.
+        """
+        if not self.mutations:
+            return {}
+
+        return self.mutations.get("cases", {})
+
+    def check_performance_contract(self, metric_type: str, value: float) -> bool:
+        """Check if a performance metric violates any contract.
+
+        Args:
+            metric_type: "wall_time", "memory", "throughput"
+            value: metric value
+
+        Returns:
+            True if contract is satisfied, False if violated
+        """
+        if not self.performance_contracts:
+            return True
+
+        contracts = self.performance_contracts.get("contracts", {})
+        for contract in contracts.values():
+            if contract.get("metric_type") == metric_type:
+                threshold = contract.get("threshold_value")
+                if threshold and value > threshold:
+                    return False
+
+        return True
+
+    def get_architecture_violations(self, tool_name: str = "ghost_tools") -> List[Dict]:
+        """Get architecture violations from Swizzle audit.
+
+        Returns list of violation dicts.
+        """
+        if not self.architecture_rules:
+            return []
+
+        audits = self.architecture_rules.get("audits", {})
+        if tool_name not in audits:
+            return []
+
+        audit = audits[tool_name]
+        return audit.get("violations", {}).values()
+
+    def apply_triage_priors(self, finding_type: str) -> Optional[Dict]:
+        """Get prior triage data for a finding type.
+
+        Returns dict with historical decision data, or None if no history.
+        """
+        if not self.triage_ledger:
+            return None
+
+        training_data = self.triage_ledger.get("training_data", {})
+        return training_data.get(finding_type)
+
+    def generate_integration_report(self) -> str:
+        """Generate report of loaded integration data."""
+        report = {
+            "invariants_loaded": bool(self.invariants),
+            "mutations_loaded": bool(self.mutations),
+            "triage_ledger_loaded": bool(self.triage_ledger),
+            "performance_contracts_loaded": bool(self.performance_contracts),
+            "false_positive_patterns_loaded": bool(self.false_positive_patterns),
+            "architecture_rules_loaded": bool(self.architecture_rules),
+        }
+
+        if self.invariants:
+            report["invariant_count"] = len(self.invariants.get("invariants", {}))
+        if self.mutations:
+            report["mutation_count"] = len(self.mutations.get("cases", {}))
+        if self.triage_ledger:
+            report["triage_entries"] = len(self.triage_ledger.get("entries", {}))
+        if self.performance_contracts:
+            report["performance_contracts"] = len(self.performance_contracts.get("contracts", {}))
+
+        return json.dumps(report, indent=2)
