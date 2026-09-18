@@ -199,6 +199,68 @@ class SwizzleIntegrationConsumer:
         training_data = self.triage_ledger.get("training_data", {})
         return training_data.get(finding_type)
 
+    def process_event(self, event_data: Dict[str, Any]) -> None:
+        """Process an event from the Swizzle event bus.
+
+        Handles real-time updates to integration data.
+        """
+        event_type = event_data.get("type")
+        data = event_data.get("data", {})
+
+        if event_type == "finding_triaged":
+            self._handle_triage_event(data)
+        elif event_type == "violation_detected":
+            self._handle_violation_event(data)
+        elif event_type == "performance_regressed":
+            self._handle_regression_event(data)
+        elif event_type == "false_positive_confirmed":
+            self._handle_false_positive_event(data)
+        elif event_type == "mutation_case_discovered":
+            self._handle_mutation_event(data)
+
+    def _handle_triage_event(self, data: Dict[str, Any]) -> None:
+        """Update triage ledger from event."""
+        if self.triage_ledger:
+            # Record the triage decision for future reference
+            entries = self.triage_ledger.get("entries", {})
+            entries[data["finding_id"]] = {
+                "finding_type": data["finding_type"],
+                "decision": data["decision"],
+                "reasoning": data["reasoning"],
+            }
+
+    def _handle_violation_event(self, data: Dict[str, Any]) -> None:
+        """Log architecture violation from Swizzle."""
+        print(f"Architecture violation: {data['violation_type']} at {data['location']}")
+
+    def _handle_regression_event(self, data: Dict[str, Any]) -> None:
+        """Alert on performance regression."""
+        print(f"Performance regression detected: {data.get('metric_name', 'unknown')} "
+              f"regressed {data.get('regression_percent', 0):.1f}%")
+
+    def _handle_false_positive_event(self, data: Dict[str, Any]) -> None:
+        """Update false positive patterns from Swizzle."""
+        if self.false_positive_patterns:
+            patterns = self.false_positive_patterns.get("patterns_by_type", {})
+            finding_type = data["finding_type"]
+            if finding_type not in patterns:
+                patterns[finding_type] = []
+            patterns[finding_type].append({
+                "id": data["false_positive_id"],
+                "confidence": data["confidence"],
+                "indicators": data.get("indicators", []),
+            })
+
+    def _handle_mutation_event(self, data: Dict[str, Any]) -> None:
+        """Add discovered mutation cases to test suite."""
+        if self.mutations:
+            cases = self.mutations.get("cases", {})
+            cases[data["case_id"]] = {
+                "hypothesis": data["hypothesis"],
+                "severity": data["severity"],
+                "minimized": data.get("minimized", True),
+            }
+
     def generate_integration_report(self) -> str:
         """Generate report of loaded integration data."""
         report = {
