@@ -40,6 +40,46 @@ for the same reason the naming and dead-end detectors skip tests: best-effort
 cleanup in a teardown is ordinary, and `is_test_path` is shared so all three
 agree on what a test file is.
 
+CONTEXT MATTERS: MONITORING VS. TEST VERIFICATION
+
+The pattern matters as much as breadth. ANVIL serum candidacy revealed two
+distinct legitimate patterns:
+
+    MONITORING/AUDIT CONTEXT (oscillation_detector):
+    try:
+        is_repeated = self.oscillation_detector.observe(envelope_data)
+        if is_repeated:
+            envelope = envelope.add_audit_event(...)
+    except Exception:
+        pass
+
+This silently hides failures in monitoring, which masks what the operator
+needs to know. Fix: catch specific exceptions and log them:
+
+    except (AttributeError, ValueError, TypeError) as e:
+        print(f"Warning: oscillation detection failed: {e}")
+        traceback.print_exc()
+
+    TEST VERIFICATION CONTEXT (deep_freeze mutation tests):
+    try:
+        frozen["list"] = [9, 9, 9]
+        mutation_blocked = False
+    except Exception:
+        pass
+
+This intentionally tests that mutation raises an exception. The broad catch
+is risky but intentional. Fix: narrow to the exceptions the test actually
+expects and is verifying:
+
+    except (TypeError, AttributeError):
+        pass
+
+This signals to readers: "We expect these specific exceptions here, and
+that's the correct behaviour."
+
+The fix from broad to specific downgrades MAJOR to MINOR and improves
+readability without changing detection logic.
+
 SCOPE, DISCLOSED
 
 Only `pass`. A handler whose body is `continue`, `return None` or a lone
