@@ -3,6 +3,7 @@
 
 import subprocess
 import json
+from contextlib import suppress
 from pathlib import Path
 from datetime import datetime
 from collections import Counter
@@ -41,22 +42,18 @@ def analyze_arbiter_codebase() -> dict:
     # Count lines of code
     total_lines = 0
     for f in src_files:
-        try:
+        with suppress(OSError, IOError):
             with open(f) as file:
                 total_lines += len(file.readlines())
-        except:
-            pass
 
     stats["total_lines_of_code"] = total_lines
 
     # Count test lines
     test_lines = 0
     for f in test_files:
-        try:
+        with suppress(OSError, IOError):
             with open(f) as file:
                 test_lines += len(file.readlines())
-        except:
-            pass
 
     stats["total_test_lines"] = test_lines
 
