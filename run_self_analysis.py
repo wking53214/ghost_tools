@@ -44,7 +44,7 @@ def analyze_codebase() -> dict:
         try:
             with open(f) as file:
                 total_lines += len(file.readlines())
-        except:
+        except (OSError, UnicodeDecodeError):
             pass
 
     stats["total_lines_of_code"] = total_lines

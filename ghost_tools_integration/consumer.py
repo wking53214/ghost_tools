@@ -39,6 +39,7 @@ class SwizzleIntegrationConsumer:
         self.performance_contracts: Optional[Dict] = None
         self.false_positive_patterns: Optional[Dict] = None
         self.architecture_rules: Optional[Dict] = None
+        self.oracle_training: Dict[str, Any] = {}
 
         self._load_integration_data()
 
@@ -298,8 +299,13 @@ class SwizzleIntegrationConsumer:
 
     def _apply_oracle_training(self, data: Dict[str, Any]) -> None:
         """Apply oracle training update."""
-        # This would update internal oracle thresholds
-        pass
+        training_id = data.get("training_id", f"training_{len(self.oracle_training)}")
+        self.oracle_training[training_id] = {
+            "threshold": data.get("threshold"),
+            "confidence": data.get("confidence"),
+            "detector": data.get("detector"),
+            "severity": data.get("severity"),
+        }
 
     def _add_test_case(self, data: Dict[str, Any]) -> None:
         """Add test case to mutation suite."""
