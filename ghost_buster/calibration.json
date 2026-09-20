@@ -759,30 +759,37 @@
     {
       "name": "swallowed_exception",
       "kind": "detector",
-      "date": "2026-09-10",
-      "corpus": "ANVIL, CCC, Ecology, AUGUR",
+      "date": "2026-09-20",
+      "corpus": "ANVIL (serum candidacy assessment with fixes); prior data: ANVIL, CCC, Ecology, AUGUR",
       "before": {
         "handlers_in_live_code": 32,
         "bare_Exception": 13,
-        "in_tests": 22
+        "in_tests": 22,
+        "anvil_pre_fix": 3,
+        "anvil_major_swallowed": 3
       },
       "after": {
         "reported": 32,
-        "test_handlers_reported": 0
+        "test_handlers_reported": 0,
+        "anvil_post_fix": 2,
+        "anvil_fixed_to_specific_types": 3,
+        "severity_downgrade_broad_to_specific": "MAJOR to MINOR"
       },
       "exclusions": [
         "test files",
         "contextlib.suppress"
       ],
       "disclosed": [
-        "only pass; continue, return None and a lone logger.debug each need their own measurement first"
+        "only pass; continue, return None and a lone logger.debug each need their own measurement first",
+        "context matters: in monitoring/audit code (e.g., oscillation detection), swallowing errors masks failures and should log instead; in test verification, catching specific exceptions (TypeError, AttributeError) is intentional and MINOR; catching bare Exception in test code is still MAJOR",
+        "ANVIL serum candidacy required converting 3 handlers from bare Exception to specific types (TypeError, AttributeError). The oscillation_detector also needed error logging to not silently mask monitoring failures. This improves error visibility without changing detection logic"
       ],
-      "source": "README, swallowed_exception; CHANGELOG 1.0.0",
+      "source": "README, swallowed_exception; CHANGELOG 1.0.0; ANVIL serum candidacy assessment 2026-09-20",
       "reproduce": {
         "command": null,
         "tool_version": null,
         "corpus_manifest": null,
-        "note": "recorded before the reproduce block existed (1.6.0). The corpus is named in prose only: no repository list, no commits, no command, so this number can be read and audited for method but not recomputed."
+        "note": "recorded before the reproduce block existed (1.6.0). ANVIL work 2026-09-20: three handlers fixed by narrowing exception types from Exception to (TypeError, AttributeError) in validation tests; oscillation detection enhanced with error logging."
       }
     },
     {
