@@ -172,6 +172,62 @@ ghost-buster /path/to/repo --trust --secrets
 | Trust authorization | Tests declined | Configure trust.json and use `--trust` flag |
 | **Final result** | **CANDIDATE** | All 6 criteria met ✅ |
 
+## Structural Patterns That Pass Serum Review
+
+Some findings from `near_duplicate_function` and other structural detectors are legitimate patterns that should NOT trigger refactoring:
+
+### Pattern 1: Governance Pipeline
+Multiple handlers (validation, authorization, monitoring) that share the same control flow structure (check existence → execute → verify result → update envelope) for different services. Each is a separate concern with identical flow shape:
+
+```python
+async def _validate(envelope):
+    validator = self.dependencies.validator
+    if validator:
+        result = await validator.validate(envelope)
+        envelope = replace(envelope, governance_result=result)
+        if not result.passed:
+            raise ValidationException(...)
+    return envelope
+
+async def _authorize(envelope):
+    policy = self.dependencies.policy_engine  
+    if policy:
+        result = await policy.authorize(envelope)
+        envelope = replace(envelope, governance_result=result)
+        if not result.passed:
+            raise AuthorizationException(...)
+    return envelope
+```
+
+Do NOT merge these: they handle different concerns and will diverge in implementation details.
+
+### Pattern 2: Collection Accessors
+Multiple accessors that provide the same query interface (optional filter → return all or filtered) over different data structures:
+
+```python
+def query(self, trace_id=None):
+    with self._lock:
+        if trace_id is None:
+            return tuple(self._events)
+        return tuple(e for e in self._events if e.trace_id == trace_id)
+
+def get_metrics(self, name=None):
+    with self._lock:
+        if name is None:
+            return tuple(self._metrics)
+        return tuple(m for m in self._metrics if m.name == name)
+```
+
+This is correct: extracting a helper would obscure what each accessor operates on.
+
+### Test Code Standards
+Test code operates under different rules than production code:
+
+- **Long functions are acceptable** when they represent comprehensive workflows (integration tests, multi-step scenarios)
+- **Try/except blocks with pass** are acceptable when testing that exceptions are raised
+- **Repeated structures** in teardown and verification are ordinary
+- **Placeholder names** (e.g., `_old`, `module_ran_anyway_2`) are fine for test fixtures and intermediate values
+
 ## Lessons for Future Candidates
 
 1. **Exception breadth matters**: The distinction between `except Exception` and `except SpecificError` is critical for candidacy.
@@ -183,3 +239,5 @@ ghost-buster /path/to/repo --trust --secrets
 4. **Trust must be explicit**: Use `--trust` for test execution and configure trust.json for persistence.
 
 5. **Health gates exist for a reason**: A sick codebase amplifies its rot when enhanced. Better to heal first.
+
+6. **Structural duplicates aren't always refactoring opportunities**: Identical patterns across different domains (different governance handlers, different data collections) are often correct application of the same principle. Confirm they solve different problems before merging.
