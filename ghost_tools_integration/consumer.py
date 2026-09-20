@@ -298,8 +298,16 @@ class SwizzleIntegrationConsumer:
 
     def _apply_oracle_training(self, data: Dict[str, Any]) -> None:
         """Apply oracle training update."""
-        # This would update internal oracle thresholds
-        pass
+        if self.triage_ledger:
+            if "oracle_thresholds" not in self.triage_ledger:
+                self.triage_ledger["oracle_thresholds"] = {}
+            thresholds = self.triage_ledger["oracle_thresholds"]
+            finding_type = data.get("finding_type")
+            if finding_type:
+                thresholds[finding_type] = {
+                    "accuracy": data.get("accuracy"),
+                    "confidence": data.get("confidence"),
+                }
 
     def _add_test_case(self, data: Dict[str, Any]) -> None:
         """Add test case to mutation suite."""
