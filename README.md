@@ -47,24 +47,18 @@ Seven rules, each one written down because a real defect happened without it.
 Version history lives in `CHANGELOG.md`. This file describes the tool as it
 is at the version in its title.
 
-## Integration and Continuous Improvement
+## Relationship to SWIZZLE
 
-Ghost Tools integrates with Swizzle to form a continuous improvement ecosystem.
-Two systems work together:
+SWIZZLE, a separate repository, is this toolkit's adversarial laboratory. It
+builds repositories designed to make ghost_buster miss a planted defect, raise
+a false alarm or make an unsafe edit, and judges the outcome independently of
+the tool. The `swizzle-gate` CI job replays SWIZZLE's regression and seed
+cases against the base of every change and against the change itself, and
+fails when a case that passed now fails, or fails worse.
 
-**Arbiter** – Validates improvements between repositories using metrics-based
-decision making. Evaluates improvements against critical quality signals (test
-pass rates, performance, security) and decides whether to accept, conditionally
-accept, or reject based on weighted scores and confidence thresholds.
-
-**Continuous Improvement Loop** – Orchestrates iterative cycles between Swizzle
-and Ghost Tools. Each iteration proposes improvements, validates them through
-the Arbiter, records verdicts, and checks for convergence (when improvements
-drop below 1% threshold). Tracks acceptance rates and total cumulative
-improvement across all iterations.
-
-**See** [`docs/continuous-improvement-loop.md`](docs/continuous-improvement-loop.md)
-**for detailed architecture, configuration, and examples.**
+The arbiter and continuous-improvement loop once described here live only in
+SWIZZLE's `swizzle/integration/`. This repository no longer carries a copy;
+see `CHANGELOG.md`.
 
 ## The surgeon
 
