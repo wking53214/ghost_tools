@@ -26,14 +26,19 @@ of it, and `[tool.setuptools] packages` never shipped it. The four tests
 imported `swizzle.integration`, so without SWIZZLE installed they errored at
 collection: four of the five problems in the `tests` job on main. The fifth,
 a surviving mutant in `test_pipeline_boundary_mutants` introduced with the
-`cli.py` refactor in #73, remains. The removal also clears all 62 errors
+`cli.py` refactor in #73, is killed by a new test in `test_pipeline_boundary`
+that asks the seam directly: `main()` calls `_present()` and never prints the
+report itself. Only line count had killed it, and #73 shortened `main()`
+below the threshold. The removal also clears all 62 errors
 `ruff check .` reported on main, and the self-scan's two MAJOR
 `intra_function_duplicate_block` findings in `evaluate_test_gate`.
 
 A new `swizzle-gate` CI job runs `swizzle diff` between the base of each
 change and the change itself, over SWIZZLE's regression cases and its seed
-catalogue. It fails only when a case regresses or worsens. SWIZZLE is
-private, so the job needs the `LIBRARY_READ_TOKEN` secret.
+catalogue. It fails when a case regresses or worsens, or cannot be measured
+on either side; escapes already present on the base do not fail it. SWIZZLE
+is private, so the job needs the `LIBRARY_READ_TOKEN` secret, and it is
+skipped for pull requests from forks, which get no secrets.
 
 ## 1.9.1 (2026-09-17)
 
