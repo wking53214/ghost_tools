@@ -11,8 +11,9 @@ and retries with recalibration feedback on failure.
 import hashlib
 import hmac
 import logging
+import secrets
 import time
-from typing import Any, Awaitable, Callable, Dict
+from typing import Any, Awaitable, Callable, Dict, Optional
 
 from .filters import (
     EmpiricalValidationFilter,
@@ -33,34 +34,36 @@ class ContentPolishPipeline:
         execution_gateway: Async callable(prompt: str) -> str
             The LLM call. Receives the prompt, returns generated text.
         max_attempts: Max number of attempts (must be >= 1) before giving up.
-        signing_key: HMAC key for payload signatures. The default key is a
-            well-known constant, so ``payload_signature`` only provides
-            authenticity if you pass your own secret key here.
+        signing_key: HMAC key for payload signatures. With none, a random
+            per-instance key is used, so ``payload_signature`` can only be
+            verified elsewhere if you pass your own secret key here.
 
     Raises:
         ValueError: if ``max_attempts`` is less than 1.
     """
 
-    DEFAULT_SIGNING_KEY = b"CONTENTPOLISH_DEFAULT_HMAC_KEY"
-
     def __init__(
         self,
         execution_gateway: Callable[[str], Awaitable[str]],
         max_attempts: int = 5,
-        signing_key: bytes = DEFAULT_SIGNING_KEY,
+        signing_key: Optional[bytes] = None,
     ):
         if max_attempts < 1:
             raise ValueError(f"max_attempts must be >= 1, got {max_attempts}")
 
         self.gateway = execution_gateway
         self.max_attempts = max_attempts
-        self._signing_key = signing_key
-        if signing_key == self.DEFAULT_SIGNING_KEY:
+        if signing_key is None:
+            # No published default: a key in the source lets anyone forge a
+            # payload_signature. A random per-instance key cannot be forged,
+            # but nothing outside this instance can verify it either.
+            signing_key = secrets.token_bytes(32)
             logger.warning(
-                "ContentPolishPipeline is using the default signing key; "
-                "payload_signature will not provide authenticity. Pass a "
-                "secret signing_key to enable verification."
+                "ContentPolishPipeline has no signing_key; using a random "
+                "per-instance key, so payload_signature cannot be verified "
+                "elsewhere. Pass a secret signing_key to enable verification."
             )
+        self._signing_key = signing_key
 
         self.pronoun_filter = PersonalPronounFilter()
         self.speculation_filter = SpeculativeLanguageFilter()

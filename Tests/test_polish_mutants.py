@@ -174,7 +174,7 @@ def test_polish_mutant_is_killed(label, rel, old, new):
 def test_polish_tests_pass_unmutated():
     """A mutant is only judged against a suite that passes as written."""
     result = run_tests_with_mutation(
-        POLISH_TESTS, _P, "DEFAULT_SIGNING_KEY = b\"CONTENTPOLISH_DEFAULT_HMAC_KEY\"\n",
-        "DEFAULT_SIGNING_KEY = b\"CONTENTPOLISH_DEFAULT_HMAC_KEY\"\n",
+        POLISH_TESTS, _P, "        self._signing_key = signing_key\n",
+        "        self._signing_key = signing_key\n",
     )
     assert result.returncode == 0, result.stdout[-2000:]
