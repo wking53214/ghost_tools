@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+**A second copy of SWIZZLE's integration layer, removed.**
+
+`ghost_tools/integration/` (17 modules), `ghost_tools_integration/`,
+`run_self_analysis.py`, `run_arbiter_analysis.py` and four tests arrived
+together on 2026-09-18. The modules are byte-for-byte or near copies of
+`swizzle/integration/` in SWIZZLE, which keeps them and their tests.
+
+Nothing in ghost_buster, ghost_writer or blackhole_extrapolator imported
+them, and `[tool.setuptools] packages` never shipped them. The four tests
+imported `swizzle.integration`, not this tree, so without SWIZZLE installed
+they errored at collection -- the four errors behind a red `tests` job --
+and with it installed they tested SWIZZLE's code, not this repository's.
+The two scripts imported `ghost_tools.integration` and existed to
+demonstrate it. The self-scan's two MAJOR `intra_function_duplicate_block`
+findings in `evaluate_test_gate` go with them.
+
 ## 1.9.1 (2026-09-17)
 
 **A corpus that could not demonstrate what it documented.**
