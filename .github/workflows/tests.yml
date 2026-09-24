@@ -79,9 +79,17 @@ jobs:
     # writability check in operate.py is caught
     # (claim_rewritten_while_the_suite_runs, NONE -> HIGH).
     #
+    # A case that cannot be measured on either side fails the job
+    # (--fail-on-unmeasured, SWIZZLE 18f1afc or later): a candidate that
+    # cannot run at all must not pass as "unchanged".
+    #
     # SWIZZLE is private, so this job reads it with LIBRARY_READ_TOKEN and
     # fails by name when the secret is unset, as the library's other repos do.
+    # Pull requests from forks are given no secrets, so the job is skipped
+    # for them rather than failed with a message about the wrong cause.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
@@ -103,6 +111,13 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: "3.11"
+      - name: Give git an identity
+        # ghost_buster --operate commits each cut. A hosted runner has no git
+        # user, so without this every such commit is refused, both sides of
+        # the diff break alike, and nothing can be seen to regress.
+        run: |
+          git config --global user.name swizzle-gate
+          git config --global user.email swizzle-gate@invalid
       - name: Install SWIZZLE
         # pytest is not optional. SWIZZLE runs ghost_buster with its own
         # interpreter, and --operate runs each case's suite with pytest.
@@ -115,11 +130,21 @@ jobs:
         working-directory: swizzle
         env:
           GHOST_TOOLS: ${{ github.workspace }}/ghost_tools
-          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
         run: |
-          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
-            echo "::warning::no base revision for this event; nothing to compare against"
+          if [ "$EVENT" = "pull_request" ]; then
+            # The checkout is the merge commit under test; its first parent is
+            # exactly the base it was built on.
+            BASE=$(git -C "$GHOST_TOOLS" rev-parse HEAD^1)
+          else
+            BASE="$BEFORE"
+          fi
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ] \
+             || ! git -C "$GHOST_TOOLS" cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            # A first push, or a force-push that left the old head unreachable.
+            echo "::warning::no reachable base revision (${BASE:-none}); nothing to compare against"
             exit 0
           fi
-          python -m swizzle diff --ghost "$BASE" --ghost "$GHOST_TOOLS"
-          python -m swizzle diff --ghost "$BASE" --ghost "$GHOST_TOOLS" --seeds
+          python -m swizzle diff --ghost "$BASE" --ghost "$GHOST_TOOLS" --fail-on-unmeasured
+          python -m swizzle diff --ghost "$BASE" --ghost "$GHOST_TOOLS" --seeds --fail-on-unmeasured
