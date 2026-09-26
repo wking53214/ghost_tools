@@ -83,10 +83,14 @@ jobs:
     # (--fail-on-unmeasured, SWIZZLE 18f1afc or later): a candidate that
     # cannot run at all must not pass as "unchanged".
     #
-    # SWIZZLE is private, so this job reads it with LIBRARY_READ_TOKEN and
-    # fails by name when the secret is unset, as the library's other repos do.
+    # SWIZZLE is private, so this job reads it with LIBRARY_READ_TOKEN. When
+    # that secret is absent the gate cannot run at all, so the remaining steps
+    # are skipped and the job passes with a warning naming the missing secret.
+    # That is a deliberate trade: a repository without the secret stays green,
+    # and in exchange nothing is checking whether ghost_buster got worse. The
+    # warning is the only thing standing in for the gate, so read it.
     # Pull requests from forks are given no secrets, so the job is skipped
-    # for them rather than failed with a message about the wrong cause.
+    # for them rather than warning about the wrong cause.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -95,23 +99,31 @@ jobs:
         with:
           path: ghost_tools
           fetch-depth: 0   # the baseline revision is checked out from history
-      - name: Authorise reads of SWIZZLE
+      - name: Can SWIZZLE be read?
+        # The secrets context cannot be used in a job-level `if`, so this step
+        # records the answer as an output and every later step is gated on it.
+        id: authorised
         env:
           LIBRARY_READ_TOKEN: ${{ secrets.LIBRARY_READ_TOKEN }}
         run: |
           if [ -z "$LIBRARY_READ_TOKEN" ]; then
-            echo "::error::LIBRARY_READ_TOKEN secret is not set; SWIZZLE is private and cannot be fetched"
-            exit 1
+            echo "::warning::LIBRARY_READ_TOKEN is not set, so SWIZZLE could not be fetched and the regression gate DID NOT RUN. Nothing checked whether this change makes ghost_buster worse. Add the secret to restore the gate."
+            echo "yes=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "yes=true" >> "$GITHUB_OUTPUT"
           fi
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        if: steps.authorised.outputs.yes == 'true'
         with:
           repository: wking53214/SWIZZLE
           path: swizzle
           token: ${{ secrets.LIBRARY_READ_TOKEN }}
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        if: steps.authorised.outputs.yes == 'true'
         with:
           python-version: "3.11"
       - name: Give git an identity
+        if: steps.authorised.outputs.yes == 'true'
         # ghost_buster --operate commits each cut. A hosted runner has no git
         # user, so without this every such commit is refused, both sides of
         # the diff break alike, and nothing can be seen to regress.
@@ -119,6 +131,7 @@ jobs:
           git config --global user.name swizzle-gate
           git config --global user.email swizzle-gate@invalid
       - name: Install SWIZZLE
+        if: steps.authorised.outputs.yes == 'true'
         # pytest is not optional. SWIZZLE runs ghost_buster with its own
         # interpreter, and --operate runs each case's suite with pytest.
         # Without it both sides fail the suite-dependent cases identically,
@@ -126,6 +139,7 @@ jobs:
         # the disabled writability check above went through as "unchanged".
         run: python -m pip install ./swizzle pytest
       - name: Regression gate
+        if: steps.authorised.outputs.yes == 'true'
         # SWIZZLE resolves `corpus/` from its working directory.
         working-directory: swizzle
         env:
