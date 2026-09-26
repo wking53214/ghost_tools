@@ -1,5 +1,45 @@
 # Changelog
 
+## Unreleased
+
+**The SWIZZLE integration layer, removed; a SWIZZLE regression gate, added.**
+
+Arrived together on 2026-09-18, removed together:
+
+- `ghost_tools/integration/` (17 modules). Copies of `swizzle/integration/`
+  in SWIZZLE: 12 byte-identical, 5 differing only in import style. SWIZZLE
+  keeps them and their tests.
+- Four tests (`test_cicd_integration`, `test_continuous_loop`,
+  `test_integration_decisions`, `test_ml_predictor`). Byte-identical to
+  SWIZZLE's own copies, which remain there.
+- `ghost_tools_integration/consumer.py`, `run_self_analysis.py` and
+  `run_arbiter_analysis.py`. These are **not** copies: they existed only here
+  and have no counterpart in SWIZZLE. They are recoverable from `0073c49`.
+  consumer.py was the only reader of the bundle SWIZZLE's
+  `publish_ghost_integration_bundle` writes, so that bundle now has no reader.
+- `docs/continuous-improvement-loop.md` and the README section that pointed
+  to it. They described the arbiter and loop above as features of this
+  toolkit.
+
+Nothing in ghost_buster, ghost_writer or blackhole_extrapolator imported any
+of it, and `[tool.setuptools] packages` never shipped it. The four tests
+imported `swizzle.integration`, so without SWIZZLE installed they errored at
+collection: four of the five problems in the `tests` job on main. The fifth,
+a surviving mutant in `test_pipeline_boundary_mutants` introduced with the
+`cli.py` refactor in #73, is killed by a new test in `test_pipeline_boundary`
+that asks the seam directly: `main()` calls `_present()` and never prints the
+report itself. Only line count had killed it, and #73 shortened `main()`
+below the threshold. The removal also clears all 62 errors
+`ruff check .` reported on main, and the self-scan's two MAJOR
+`intra_function_duplicate_block` findings in `evaluate_test_gate`.
+
+A new `swizzle-gate` CI job runs `swizzle diff` between the base of each
+change and the change itself, over SWIZZLE's regression cases and its seed
+catalogue. It fails when a case regresses or worsens, or cannot be measured
+on either side; escapes already present on the base do not fail it. SWIZZLE
+is private, so the job needs the `LIBRARY_READ_TOKEN` secret, and it is
+skipped for pull requests from forks, which get no secrets.
+
 ## 1.9.1 (2026-09-17)
 
 **A corpus that could not demonstrate what it documented.**
