@@ -23,7 +23,7 @@ as the `PROVENANCE.md` files in the other repos of this stack.
 
 | Source file | Copied to | Changes in the copy |
 |---|---|---|
-| `LICENSE` | `ghost_writer/polish/LICENSE` | copyright holder line changed from the GitHub username to `William King` |
+| `LICENSE` | `ghost_writer/polish/LICENSE` | copyright holder line changed from the GitHub username to `William N. King` |
 | `content_polish_pipeline/filters.py` | `ghost_writer/polish/filters.py` | attribution header added |
 | `content_polish_pipeline/pipeline.py` | `ghost_writer/polish/pipeline.py` | attribution header added; unused `import asyncio` removed (this repo's CI runs `ruff check` as a hard gate and F401 fails it); the `try/except ImportError` standalone-import fallback replaced by the plain relative import; logger renamed `content_polish_pipeline` to `ghost_writer.polish` |
 | `content_polish_pipeline/__init__.py` | `ghost_writer/polish/__init__.py` | rewritten: docstring, same four exports, no `__version__` (the package is versioned by ghost_tools now) |
