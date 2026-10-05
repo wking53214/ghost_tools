@@ -166,7 +166,8 @@ def notes_for(disagreements: Iterable[Disagreement]) -> Dict[str, Dict[int, List
 
 
 def annotate_files(disagreements: Iterable[Disagreement],
-                   files: Iterable[Path] = ()) -> List[Path]:
+                   files: Iterable[Path] = (),
+                   root: Path | None = None) -> List[Path]:
     """Write the notes. Returns the files actually changed.
 
     Every scanned file is visited, not only the ones with something to say,
@@ -186,6 +187,8 @@ def annotate_files(disagreements: Iterable[Disagreement],
     for name in targets:
         notes = by_file.get(name, {})
         path = Path(name)
+        if refuses(path, root) is not None:
+            continue
         try:
             before = path.read_text()
         except OSError:
@@ -199,6 +202,45 @@ def annotate_files(disagreements: Iterable[Disagreement],
             continue
         changed.append(path)
     return changed
+
+
+def refuses(path: Path, root: Path | None) -> str | None:
+    """Why this path must not be written, or None if it may be.
+
+    THE HOLE THIS CLOSES
+
+    Every other write in this tool resolves its target and checks that the
+    result is inside the patient before touching it -- `operate._resolve`
+    does exactly that for a finding's file, and declines rather than
+    guessing when the answer is not inside. This module did not, because it
+    does not take paths from findings: it composes `root / "README.md"` and
+    walks the corpus, and both of those were assumed to be inside the tree
+    by construction.
+
+    A symlink breaks the assumption. A README that is a link to a file
+    outside the repository is an ordinary thing for a repository to contain,
+    and writing "the README" then writes somewhere else entirely -- outside
+    the branch the operation opened, so outside anything the operation can
+    revert, and outside the commit it then tries to make, which fails with
+    nothing to commit and reports a symptom after the damage.
+
+    So the check is here, at the write, rather than at each caller. Both
+    callers reach this module by different routes (`--annotate-names` and
+    `--operate`) and a guard on one of them is a guard on neither.
+
+    Resolution follows symlinks on purpose: the question is not what the
+    path is spelled, it is which file the bytes will land in.
+    """
+    if root is None:
+        # Nothing to be inside of. The caller did not say where the patient
+        # is, so there is no containment claim to check and none is made.
+        return None
+    try:
+        target = Path(path).resolve()
+        target.relative_to(Path(root).resolve())
+    except (OSError, ValueError):
+        return f"{Path(path).name} resolves outside the repository"
+    return None
 
 
 def _relative(path: str, root: Path | None) -> str:
@@ -251,7 +293,24 @@ def render_section(disagreements: Sequence[Disagreement], root: Path | None = No
 
 def update_readme(path: Path, disagreements: Sequence[Disagreement],
                   root: Path | None = None) -> bool:
-    """Replace the marked block, or append one. True if the file changed."""
+    """Replace the marked block, or append one. True if the file changed.
+
+    Refuses two things, both of them additions nobody asked for.
+
+    A path that resolves outside the repository. See `refuses`.
+
+    A section recording nothing, in a document that never had one. The
+    count-block remedy states the principle and declines to write its own
+    markers for it: "a scanner that inserts its own markup into somebody's
+    README uninvited has decided something that was not its to decide."
+    That argument does not stop being true one module over. An existing
+    block is different -- the repository opted in by carrying it, and
+    "no disagreements, this block records that the check ran" is then a
+    fact somebody asked to be told.
+    """
+    if refuses(path, root) is not None:
+        return False
+
     section = render_section(disagreements, root)
     try:
         before = path.read_text()
@@ -262,6 +321,8 @@ def update_readme(path: Path, disagreements: Sequence[Disagreement],
     if opened and closed and closed.start() > opened.start():
         after = (before[:opened.start()] + section
                  + before[closed.end():].lstrip("\n"))
+    elif not disagreements:
+        return False
     else:
         prefix = before if not before or before.endswith("\n") else before + "\n"
         after = prefix + ("\n" if prefix else "") + section
@@ -276,6 +337,6 @@ def annotate(files: Sequence[Path], readme: Path,
              root: Path | None = None) -> Tuple[List[Disagreement], List[Path], bool]:
     """Find the disagreements, write both records, say what happened."""
     disagreements = find_name_disagreements(files)
-    changed = annotate_files(disagreements, files)
+    changed = annotate_files(disagreements, files, root=root)
     wrote_readme = update_readme(readme, disagreements, root)
     return disagreements, changed, wrote_readme

@@ -16,7 +16,7 @@ import pytest
 from ghost_buster.cli import main
 from ghost_buster.ledger import (
     BLIND_SPOT_AFTER, COULD_NOT_RUN, DECLINED, FLAPPING_AFTER, Ledger, LedgerError,
-    MAX_RUNS_KEPT, NOT_RUN, PERSISTENT_AFTER, RAN, SCHEMA_VERSION,
+    MAX_RUNS_KEPT, NOT_APPLICABLE, NOT_RUN, PERSISTENT_AFTER, RAN, SCHEMA_VERSION,
 )
 from ghost_buster.schema import Category, Evidence, Finding, Layer, Severity, Status
 
@@ -196,6 +196,42 @@ def test_blind_spot_severity_follows_the_reason_nobody_looked(tmp_path, state, s
         derived = _run(led, [_f()], checks=checks)
     spot = next(d for d in derived if d.attributes.get("check") == "tests")
     assert spot.severity == severity
+
+
+def test_a_check_with_nothing_to_examine_is_never_a_blind_spot(tmp_path):
+    """NOT_APPLICABLE is not a skip. A repository that reaches across no
+    boundary has no cross-boundary seam to leave unchecked, so counting it
+    would put a finding nobody can ever clear in every single-repository
+    ledger -- the failure _BLIND_SPOT_SEVERITY reasons about, one severity
+    quieter. Measured on ATS: 7 consecutive runs of exactly that."""
+    led = _ledger(tmp_path)
+    checks = dict(ALL_RAN, boundary=NOT_APPLICABLE)
+    for _ in range(BLIND_SPOT_AFTER * 2):
+        derived = _run(led, [_f()], checks=checks)
+    assert not any(d.attributes.get("check") == "boundary" for d in derived)
+
+
+def test_a_check_nobody_ran_is_still_a_blind_spot_beside_one_that_did_not_apply(tmp_path):
+    """The other half: adding the state must not have muffled the states it
+    sits beside, and the two are told apart in the same run."""
+    led = _ledger(tmp_path)
+    checks = dict(ALL_RAN, boundary=NOT_APPLICABLE, tests=DECLINED)
+    for _ in range(BLIND_SPOT_AFTER):
+        derived = _run(led, [_f()], checks=checks)
+    spots = {d.attributes.get("check") for d in derived if d.attributes.get("check")}
+    assert spots == {"tests"}
+
+
+def test_an_inapplicable_run_breaks_a_streak_the_way_a_run_does(tmp_path):
+    """A check that had nothing to look at this time ends the streak: the
+    question stopped being unanswered, it stopped being asked."""
+    led = _ledger(tmp_path)
+    declined = dict(ALL_RAN, boundary=DECLINED)
+    for _ in range(BLIND_SPOT_AFTER - 1):
+        _run(led, [_f()], checks=declined)
+    _run(led, [_f()], checks=dict(ALL_RAN, boundary=NOT_APPLICABLE))
+    derived = _run(led, [_f()], checks=declined)
+    assert not any(d.attributes.get("check") == "boundary" for d in derived)
 
 
 def test_a_check_that_ran_recently_is_not_a_blind_spot(tmp_path):

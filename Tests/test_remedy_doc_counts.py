@@ -54,7 +54,8 @@ def _git(root, *args):
                           text=True, check=True).stdout.strip()
 
 
-def _claim(root, path, documented, collected, passed=None, line=1, writable="yes"):
+def _claim(root, path, documented, collected, passed=None, line=1,
+           writable="yes", unexamined=0):
     """The correlation finding the remedy acts on, built as correlate.py
     builds it. Constructed here rather than produced by a scan so each test
     can vary one field; a test that runs the whole pipeline to reach this
@@ -76,6 +77,10 @@ def _claim(root, path, documented, collected, passed=None, line=1, writable="yes
             # the only thing under examination.
             "writable": writable,
             "not_writable_because": "" if writable == "yes" else "a dated or versioned document",
+            # Test files that produced no result either way. Zero by
+            # default, so every test written before this existed still
+            # describes the run it always described.
+            "unexamined": str(unexamined),
         },
         evidence=Evidence(file=str(root / path), line_start=line, line_end=line),
     )
@@ -142,6 +147,14 @@ def test_a_suite_that_is_not_green_goes_to_a_human(repo):
     ("This release gained 390 tests.", "delta"),
     ("It went from 200 to 390 tests, then settled.", "transition"),
     ('The other project claimed "390 tests".', "quotation"),
+    # Each of these names the suite, so `why_not_writable` passes them and
+    # `claim_shape` is the only thing left to refuse them. Without one of
+    # these the claim-shape re-check can be deleted with this test still
+    # green, because the writability re-derivation added in 1.7.1 declines
+    # the three above for saying nothing about what they count. Measured:
+    # the mutant survived until these were added.
+    ("The test suite gained 390 tests this quarter.", "delta, naming the suite"),
+    ("The test suite went from 200 to 390 tests.", "transition, naming the suite"),
 ])
 def test_a_claim_that_is_not_a_total_is_left_alone(repo, sentence, shape):
     (repo / "README.md").write_text(f"# thing\n\n{sentence}\n")
@@ -152,8 +165,16 @@ def test_a_claim_that_is_not_a_total_is_left_alone(repo, sentence, shape):
 
 
 def test_two_identical_claims_on_one_line_are_ambiguous(repo):
+    """Ambiguity is the reason, and the only reason.
+
+    The sentence names the suite on purpose. Without that, `why_not_writable`
+    refuses it for saying nothing about what it counts, and the ambiguity
+    check could be deleted with this test still passing -- which it was, and
+    the mutant survived until the wording was fixed.
+    """
     (repo / "README.md").write_text(
-        "# thing\n\nWe had 390 tests, and still 390 tests, collected.\n")
+        "# thing\n\nThe test suite has 390 tests, and still 390 tests, "
+        "collected.\n")
     changed, _ = _remedy_doc_counts(
         repo, [], [_claim(repo, "README.md", 390, 1727, line=3)])
     assert changed == 0
@@ -161,18 +182,29 @@ def test_two_identical_claims_on_one_line_are_ambiguous(repo):
 
 
 def test_a_file_outside_the_patient_is_refused(repo, tmp_path):
-    """Containment is the reason, and the only reason. The wording below is
-    an ordinary live claim on purpose: an earlier version of this test said
-    "Claims 390 tests passing", which the named-subject rule declines all by
-    itself, so the test passed while the containment check was removed."""
-    outside = tmp_path / "elsewhere.md"
-    outside.write_text("The suite has 390 tests passing.\n")
+    """Containment is the reason, and the only reason.
+
+    The wording below is an ordinary live claim on purpose: an earlier
+    version of this test said "Claims 390 tests passing", which the
+    named-subject rule declines all by itself, so the test passed while the
+    containment check was removed.
+
+    The FILENAME is README.md for the same reason, and it is the second time
+    this test has had to be rescued from a guard that covered for the one it
+    is about. `why_not_writable` is now re-derived from the resolved file at
+    write time (v1.7.1), and its first question is whether the name is a
+    current-state document -- so an outside file called `elsewhere.md` was
+    refused for its NAME, and the containment check could be deleted with
+    this test still passing. Measured: the mutant survived.
+    """
+    outside = tmp_path / "README.md"
+    outside.write_text("The test suite has 390 tests passing.\n")
     claim = _claim(repo, "README.md", 390, 1727, line=1)
     claim.evidence.file = str(outside)
     claim.evidence.absolute_file = str(outside)
     changed, _ = _remedy_doc_counts(repo, [], [claim])
     assert changed == 0
-    assert outside.read_text() == "The suite has 390 tests passing.\n"
+    assert outside.read_text() == "The test suite has 390 tests passing.\n"
 
 
 def test_a_line_past_the_end_of_the_file_is_refused(repo):
@@ -360,3 +392,143 @@ def test_a_bare_count_saying_nothing_is_refused():
     from ghost_buster.mechanical import why_not_writable
     assert why_not_writable("README.md", "\n", " tests, all passing.\n") == \
         "does not assert about the whole suite"
+
+
+# ---------------------------------------------------------------------------
+# The writability verdict is re-derived at the write, from the file being
+# written. (v1.7.1)
+#
+# `finding.attributes["writable"]` was decided during the workup, about the
+# text as it was then and the path the scan walked. Both can have moved by
+# the time this runs, and an adversarial harness moved both.
+# ---------------------------------------------------------------------------
+
+def test_a_claim_that_became_dated_during_the_workup_is_refused(repo):
+    """The repository's own suite runs during the workup -- this tool starts
+    it -- so a test that rewrites a document executes inside the window
+    between the reading and the writing.
+
+    The finding still says `writable: yes`, decided about a live sentence
+    that no longer exists. Re-running `claim_shape` is not enough: that
+    answers the REPORTING question, and a dated sentence passes it. The
+    predicate that authorises a write is the one that has to be re-asked.
+    """
+    (repo / "README.md").write_text(
+        "# thing\n\nAs of 2026-01-14 the test suite had 390 tests, all "
+        "passing.\n")
+    changed, _ = _remedy_doc_counts(
+        repo, [], [_claim(repo, "README.md", 390, 1727, line=3)])
+    assert changed == 0
+    assert "390" in (repo / "README.md").read_text()
+
+
+def test_writability_is_judged_on_the_file_that_is_actually_written(repo):
+    """README.md is a link to a document whose own name the same rule
+    refuses. The verdict was reached about the link and the bytes go to the
+    target, so a file that is not a current-state document was rewritten --
+    while the finding named a path whose history shows no change."""
+    (repo / "docs").mkdir(exist_ok=True)
+    target = repo / "docs" / "project_notes.md"
+    target.write_text("# notes\n\nThe test suite has 390 tests, all passing.\n")
+    link = repo / "LINKED.md"
+    link.symlink_to(target)
+    claim = _claim(repo, "LINKED.md", 390, 1727, line=3)
+    changed, _ = _remedy_doc_counts(repo, [], [claim])
+    assert changed == 0
+    assert "390" in target.read_text()
+
+
+def test_a_live_claim_is_still_written(repo):
+    """The re-derivation must not close the feature it guards."""
+    (repo / "README.md").write_text(
+        "# thing\n\nThe test suite has 390 tests, all passing.\n")
+    changed, _ = _remedy_doc_counts(
+        repo, [], [_claim(repo, "README.md", 390, 1727, line=3)])
+    assert changed == 1
+    assert "1727 tests" in (repo / "README.md").read_text()
+
+
+# ---------------------------------------------------------------------------
+# A suite that did not finish running (v1.7.3)
+#
+# `passed == collected` is satisfied by a suite with a whole file missing
+# from it: a module that cannot be imported contributes to neither side, so
+# the subtraction says green.
+#
+# Measured by an adversarial harness against 1.7.2: a README was rewritten
+# to "The test suite has 30 tests, all passing." over a repository where one
+# test file could not be collected -- and the SAME run reported the blocked
+# module as a finding of its own, naming the missing import. The tool knew
+# and certified anyway.
+#
+# That is the one failure a reader cannot catch by looking at the diff.
+# Every byte is in a permitted place and the document is now false.
+# ---------------------------------------------------------------------------
+
+def test_a_suite_that_did_not_finish_running_is_not_rewritten(repo):
+    readme = repo / "README.md"
+    readme.write_text("# thing\n\nThe test suite has 12 tests, all passing.\n")
+    changed, note = _remedy_doc_counts(
+        repo, [readme],
+        [_claim(repo, "README.md", 12, 30, line=3, unexamined=1)])
+    assert changed == 0
+    assert "12 tests" in readme.read_text()
+
+
+def test_the_refusal_says_which_number_is_not_a_total(repo):
+    """A refusal a human cannot act on is a refusal they will override.
+
+    Reported BESIDE a real cut, because that is the only way a remedy's
+    note reaches anybody: a run that declines everything returns no note at
+    all, which is a limitation of the operation flow rather than of this
+    guard and is recorded in `test_write_containment.py`.
+
+    The human is not left with nothing in that case. The finding itself is
+    MAJOR and its detail says why subtracting one number from the other
+    reads as green. The note is the second telling, not the only one.
+    """
+    readme = repo / "README.md"
+    readme.write_text("# thing\n\nThe test suite has 12 tests, all passing.\n")
+    other = repo / "CONTRIBUTING.md"
+    other.write_text("# contributing\n\nThe test suite has 9 tests, all passing.\n")
+    _, note = _remedy_doc_counts(
+        repo, [readme, other],
+        [_claim(repo, "README.md", 12, 30, line=3, unexamined=2),
+         _claim(repo, "CONTRIBUTING.md", 9, 30, line=3)])
+    assert "did not finish running" in note or "not a total" in note
+    assert "12 tests" in readme.read_text(), "the unexamined claim stood"
+
+
+def test_a_suite_that_fully_ran_is_still_rewritten(repo):
+    """The control. This refusal must not close the remedy it guards."""
+    readme = repo / "README.md"
+    readme.write_text("# thing\n\nThe test suite has 12 tests, all passing.\n")
+    changed, _ = _remedy_doc_counts(
+        repo, [readme],
+        [_claim(repo, "README.md", 12, 30, line=3, unexamined=0)])
+    assert changed == 1
+    assert "30 tests" in readme.read_text()
+
+
+def test_a_finding_that_never_heard_of_unexamined_behaves_as_before(repo):
+    """An absent attribute reads as zero rather than as a refusal. A finding
+    from an older run, or from a connector that does not publish it, must
+    not be declined on a number nobody supplied."""
+    readme = repo / "README.md"
+    readme.write_text("# thing\n\nThe test suite has 12 tests, all passing.\n")
+    claim = _claim(repo, "README.md", 12, 30, line=3)
+    del claim.attributes["unexamined"]
+    changed, _ = _remedy_doc_counts(repo, [readme], [claim])
+    assert changed == 1
+
+
+def test_a_non_numeric_unexamined_does_not_decline_and_does_not_raise(repo):
+    """Garbage in the attribute is not evidence of an unexamined file. It
+    must not crash the remedy and must not be read as a refusal -- a guard
+    that fires on malformed input fires on the wrong repositories."""
+    readme = repo / "README.md"
+    readme.write_text("# thing\n\nThe test suite has 12 tests, all passing.\n")
+    claim = _claim(repo, "README.md", 12, 30, line=3)
+    claim.attributes["unexamined"] = "several"
+    changed, _ = _remedy_doc_counts(repo, [readme], [claim])
+    assert changed == 1

@@ -968,3 +968,85 @@ def test_different_files_still_get_different_ids(tmp_path):
         )
 
     assert make("one.py").id != make("two.py").id
+
+
+# ---------------------------------------------------------------------------
+# A decorator is a reference (v1.7.5)
+#
+# `@register("audit")` hands the function to something that keeps it. The name
+# is then reached through that registry and never appears as an identifier
+# again, so a scan for identifiers calls it dead.
+#
+# This was DISCLOSED rather than hidden -- the detector's own docstring has
+# named it, and named this tool's own `@register` as the example, since 0.1.1.
+# Disclosure is enough for a report a human reads and stops being enough the
+# moment autonomy is contemplated: measured on one real patient, 51 of 85
+# findings were this class, and a remedy authorised to delete dead code would
+# have removed every command that tool has.
+# ---------------------------------------------------------------------------
+
+def _dead(tmp_path, body):
+    import textwrap
+    path = tmp_path / "m.py"
+    path.write_text(textwrap.dedent(body))
+    return {f.summary.split("'")[1] for f in detect_dead_code([path])}
+
+
+def test_a_decorated_function_is_not_dead(tmp_path):
+    assert _dead(tmp_path, """
+        REGISTRY = {}
+
+        def register(name):
+            def wrap(fn):
+                REGISTRY[name] = fn
+                return fn
+            return wrap
+
+        @register("audit")
+        def handler(args):
+            return 0
+    """) == set()
+
+
+def test_a_bare_decorator_also_counts(tmp_path):
+    assert "handler" not in _dead(tmp_path, """
+        def register(fn):
+            return fn
+
+        @register
+        def handler(args):
+            return 0
+    """)
+
+
+def test_a_decorated_class_is_not_dead(tmp_path):
+    assert "Thing" not in _dead(tmp_path, """
+        def register(cls):
+            return cls
+
+        @register
+        class Thing:
+            pass
+    """)
+
+
+def test_an_undecorated_function_is_still_dead(tmp_path):
+    """The boundary. This must not close the detector it guards -- the whole
+    point of the detector is that unreferenced code gets reported."""
+    assert _dead(tmp_path, """
+        def nobody_calls_this():
+            return 1
+    """) == {"nobody_calls_this"}
+
+
+def test_the_cost_is_false_negatives_and_that_is_the_chosen_direction(tmp_path):
+    """A genuinely dead decorated function now goes unreported. That is the
+    direction this detector already chose everywhere else it had to choose,
+    and it is recorded here so the trade is visible rather than discovered."""
+    assert _dead(tmp_path, """
+        import functools
+
+        @functools.cache
+        def genuinely_unused():
+            return 1
+    """) == set()

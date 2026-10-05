@@ -27,8 +27,9 @@ from .ledger import (
     Ledger,
 )
 from . import readiness
+from . import serum
 from .casefile import Casefile, Prior
-from .operate import Refused, operate
+from .operate import Refused, notes_on_arrival, operate
 from .mutation import render_run
 from .schema import Finding, FindingSet, Severity
 from .pipeline import Stop, gather
@@ -117,6 +118,14 @@ def _add_operate_args(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_report_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--serum-budget", type=float, default=serum.DEFAULT_BUDGET, metavar="SECONDS",
+        help="with --operate: whole seconds the serum may spend establishing, per "
+             "enhancement site, whether this patient's own test suite would catch a "
+             "mistake made there. It runs the suite once per site, so this is a real "
+             "cost; a site the budget did not reach is reported as not assessed, never "
+             "dropped. (default: %(default)ss)",
+    )
     parser.add_argument(
         "--profile", action="store_true",
         help="instrument the scan and report work done more than once with the "
@@ -374,7 +383,7 @@ def _verify_chain(args) -> int:
     return 1 if any("no link recorded" not in b.what for b in breaks) else 0
 
 
-def _operate(args, evidence, casefile_path, archive) -> int:
+def _operate(args, evidence, casefile_path, archive, arrival=None) -> int:
     """--operate: the only mode that writes to the target. Everything it
     needs was already established by the scan; this decides whether to
     let it run and what to say about the result."""
@@ -385,7 +394,8 @@ def _operate(args, evidence, casefile_path, archive) -> int:
     try:
         op = operate(args.path, evidence.files, evidence.findings, evidence.checks,
                      casefile=Casefile(casefile_path), branch=args.operate_branch,
-                     dry_run=args.operate_dry_run)
+                     dry_run=args.operate_dry_run, arrival=arrival,
+                     serum_budget=args.serum_budget)
     except Refused as e:
         print(f"refused: {e}", file=sys.stderr)
         return 2
@@ -417,62 +427,89 @@ def _present(args, evidence, new, known, priors, archive, casefile_path) -> None
         print(render_run(evidence.mutation_run, verbose=args.mutate_verbose))
 
 
-def main(argv: List[str] = None) -> int:
-    parser = _build_parser()
-    args = parser.parse_args(argv)
-    # Consent to run this repository's code, resolved once and carried on
-    # args so every check that executes code asks the same answer.
+def _note_stale_baseline(baseline, findings) -> List[Finding]:
+    """The receipt line and the finding, for baseline entries that matched
+    nothing. Both, because they reach different readers: the line is on the
+    same channel as every other check's receipt, and the finding is what a
+    caller reading --json actually gets. Until 1.8.0 there was only the
+    line. See Baseline.derive_findings for why the rot is worth reporting.
+
+    What it returns belongs in the run's NEW list and never in the set the
+    baseline diffs: the baseline does not get to suppress the report of its
+    own rot.
+    """
+    stale = baseline.stale(findings)
+    if stale:
+        print(f"ghost_buster: {len(stale)} of {baseline.size} baseline entries matched nothing scanned "
+              f"(fixed, renamed detector, or a baseline written from another checkout); "
+              f"first: {stale[0].id} {stale[0].evidence.file}", file=sys.stderr)
+    return baseline.derive_findings(findings)
+
+
+def _setup_trust(args) -> None:
+    """Handle trust resolution and logging."""
     args.trusted = trust_grant(args.path) if args.trust else trust_check(args.path)
     if args.trust:
         print(f"ghost_buster: trust: {args.trusted.identity}: {args.trusted.reason}", file=sys.stderr)
     elif args.trusted.store is None:
         print(f"ghost_buster: trust: {args.trusted.reason}", file=sys.stderr)
 
-    if args.priors:
-        casefile_path = args.casefile or (args.path / ".ghost_casefile.json")
-        ledger_path = args.ledger_path or (args.path / ".ghost_ledger.json")
-        ledger = Ledger(ledger_path) if ledger_path.is_file() else None
-        rows = build_priors(Casefile(casefile_path), ledger)
-        print(priors_json(rows) if args.json else render_priors(rows, casefile_path, ledger_path if ledger else None))
-        return 0
 
+def _handle_priors_mode(args) -> int:
+    """Handle --priors mode and exit early if active."""
+    if not args.priors:
+        return None
+
+    casefile_path = args.casefile or (args.path / ".ghost_casefile.json")
+    ledger_path = args.ledger_path or (args.path / ".ghost_ledger.json")
+    ledger = Ledger(ledger_path) if ledger_path.is_file() else None
+    rows = build_priors(Casefile(casefile_path), ledger)
+    print(priors_json(rows) if args.json else render_priors(rows, casefile_path, ledger_path if ledger else None))
+    return 0
+
+
+def _validate_path(args) -> int:
+    """Validate and gather arrival state from path."""
     if not args.path.is_dir():
         print(f"error: {args.path} is not a directory", file=sys.stderr)
         return 2
+    return None
 
-    # The evidence, gathered by pipeline.py. Everything from here down is
-    # interface: the baseline diff, what to print, and what to exit with.
+
+def _load_baseline(baseline_path) -> Baseline:
+    """Load baseline, with proper error handling."""
     try:
-        evidence = gather(args)
+        return Baseline(baseline_path)
+    except (ValueError, OSError) as e:
+        print(f"error: baseline {baseline_path} could not be read: {type(e).__name__}: {e}", file=sys.stderr)
+        raise
+
+
+def _gather_evidence_safe(args):
+    """Gather evidence with error handling."""
+    try:
+        return gather(args)
     except Stop as e:
         print(e, file=sys.stderr)
-        return 2
-    # The two the baseline diff and the exit code are computed from. The
-    # rest of the Evidence goes to whichever helper needs it.
-    findings = evidence.findings
-    baseline_path = evidence.baseline_path
+        raise
 
-    try:
-        baseline = Baseline(baseline_path)
-    except (ValueError, OSError) as e:
-        # A corrupt or unreadable baseline used to escape as a traceback with
-        # exit 1, the same status as "MAJOR finding". It is a usage error.
-        print(f"error: baseline {baseline_path} could not be read: {type(e).__name__}: {e}", file=sys.stderr)
-        return 2
 
-    if args.accept:
-        baseline.accept(findings)
-        print(f"accepted {len(findings)} finding(s) into {baseline_path}", file=sys.stderr)
-        if args.json:
-            print(FindingSet(findings).to_json())
-        return 0
+def _handle_accept_mode(args, baseline, findings, baseline_path) -> int:
+    """Handle --accept mode and exit early if active."""
+    if not args.accept:
+        return None
 
+    baseline.accept(findings)
+    print(f"accepted {len(findings)} finding(s) into {baseline_path}", file=sys.stderr)
+    if args.json:
+        print(FindingSet(findings).to_json())
+    return 0
+
+
+def _prepare_output_data(args, evidence, baseline, findings) -> tuple:
+    """Prepare new/known findings and associated data."""
     new, known = baseline.diff(findings)
-    stale = baseline.stale(findings)
-    if stale:
-        print(f"ghost_buster: {len(stale)} of {baseline.size} baseline entries matched nothing scanned "
-              f"(fixed, renamed detector, or a baseline written from another checkout); "
-              f"first: {stale[0].id} {stale[0].evidence.file}", file=sys.stderr)
+    new.extend(_note_stale_baseline(baseline, findings))
 
     casefile_path = args.casefile or (args.path / ".ghost_casefile.json")
     priors = None
@@ -483,12 +520,65 @@ def main(argv: List[str] = None) -> int:
     if archive is not None:
         print(archive.receipt(), file=sys.stderr)
 
+    return new, known, priors, archive, casefile_path
+
+
+def _handle_dispatch_modes(args) -> int:
+    """Handle verify-chain and operate modes."""
+    if args.verify_chain:
+        return _verify_chain(args)
+    return None
+
+
+def main(argv: List[str] = None) -> int:
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+
+    # Setup phase
+    _setup_trust(args)
+
+    # Early exit modes
+    result = _handle_priors_mode(args)
+    if result is not None:
+        return result
+
+    result = _validate_path(args)
+    if result is not None:
+        return result
+
+    arrival = notes_on_arrival(args.path)
+
+    # Gather evidence
+    try:
+        evidence = _gather_evidence_safe(args)
+    except Stop:
+        return 2
+
+    findings = evidence.findings
+    baseline_path = evidence.baseline_path
+
+    # Load and validate baseline
+    try:
+        baseline = _load_baseline(baseline_path)
+    except (ValueError, OSError):
+        return 2
+
+    # Accept mode
+    result = _handle_accept_mode(args, baseline, findings, baseline_path)
+    if result is not None:
+        return result
+
+    # Prepare output
+    new, known, priors, archive, casefile_path = _prepare_output_data(args, evidence, baseline, findings)
+
+    # Dispatch modes
     if args.verify_chain:
         return _verify_chain(args)
 
     if args.operate:
-        return _operate(args, evidence, casefile_path, archive)
+        return _operate(args, evidence, casefile_path, archive, arrival)
 
+    # Present results
     if args.json:
         print(FindingSet(new).to_json())
     else:

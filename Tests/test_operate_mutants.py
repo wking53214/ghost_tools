@@ -19,7 +19,7 @@ MUTANTS = [
     # Re-pointed in 1.6.1: the door check stopped being one expression when
     # it learned to tell the patient's dirt from the surgeon's own notes.
     ("a dirty tree is operated on", _O,
-     "        dirt = _dirty_paths(root)",
+     "        dirt = _dirty_paths(root, arrival)",
      "        dirt = []"),
     # Re-pointed in 1.3.0: the return to the patient's own branch moved
     # into the `finally` of _on_the_table, so that is where the mutant

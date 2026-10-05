@@ -43,7 +43,7 @@ from .correlate import (
 )
 from .kernel import check_kernel, render_report as render_kernel_report
 from .ledger import (
-    COULD_NOT_RUN, DECLINED, Ledger, LedgerError, NOT_RUN, RAN,
+    COULD_NOT_RUN, DECLINED, Ledger, LedgerError, NOT_APPLICABLE, NOT_RUN, RAN,
     _head_commit, render_report as render_ledger_report,
 )
 from .mechanical import run_all
@@ -121,17 +121,32 @@ def _collect_files(root: Path, extra_excludes: Iterable[str] = ()) -> List[Path]
     # Each real path once: a symlinked file is otherwise listed under both
     # names, and every function in it becomes its own near-duplicate.
     # Measured on OBSERVE, which keeps genuine symlinks.
-    seen_real = set()
-    out = []
+    #
+    # WHICH OF THE TWO NAMES SURVIVES (v1.7.1)
+    #
+    # The file, never the link to it. De-duplicating kept whichever name
+    # sorted first, which is arbitrary, and when the link sorted first every
+    # finding in that file named the link -- so a reader who followed the
+    # reported path and looked at its history saw a symlink that had never
+    # changed, and concluded nothing had happened. The bytes were in the
+    # other file, which no finding mentioned.
+    #
+    # A finding has to name the path whose history will show the change.
+    # Nothing else here moves for a repository with no symlinks in it.
+    seen_real: Dict[Path, int] = {}
+    out: List[Path] = []
     for p in sorted(list(root.rglob("*.py")) + list(root.rglob("*.md"))):
         if not excluded.isdisjoint(p.parts) or p.name.startswith("."):
             continue
         if any(part.endswith(".egg-info") for part in p.parts[:-1]):
             continue
         real = p.resolve()
-        if real in seen_real:
+        already = seen_real.get(real)
+        if already is not None:
+            if out[already].is_symlink() and not p.is_symlink():
+                out[already] = p
             continue
-        seen_real.add(real)
+        seen_real[real] = len(out)
         out.append(p)
     return out
 
@@ -317,13 +332,22 @@ def _run_model_checks(args, files, findings, checks, say) -> None:
         findings.extend(boundary_findings)
         checks["boundary"] = RAN if joined.ran else COULD_NOT_RUN
     else:
-        checks["boundary"] = NOT_RUN
+        # Which of the two it is, the notice already decides: it is written
+        # when this repository reaches for a package it does not provide or
+        # holds a dormant test, and withheld when it does neither. That is
+        # exactly the difference between a seam left unchecked and no seam
+        # at all, so the state follows the notice rather than assuming the
+        # worse of the two. Before 1.8.0 both were NOT_RUN and every
+        # single-repository scan grew a blind-spot streak nothing could
+        # clear.
         notice = render_single_repo_notice(args.path, files)
         if notice:
+            checks["boundary"] = NOT_RUN
             say(notice)
         else:
-            say("ghost_buster: boundary scan NOT RUN (single repository; "
-                "no unprovided packages reached for)")
+            checks["boundary"] = NOT_APPLICABLE
+            say("ghost_buster: boundary scan NOT APPLICABLE (single repository; "
+                "no unprovided packages reached for, no dormant tests)")
 
     if args.structure:
         model = build_model(args.path, files)
@@ -395,6 +419,9 @@ def _record_in_ledger(args, files, findings, checks, baseline_path, say) -> None
         records={"baseline": attest.digest_file(baseline_path),
                  "casefile": attest.digest_file(
                      args.casefile or (args.path / ".ghost_casefile.json"))},
+        # So the ledger can ask git what moved since the run it remembers.
+        # A file that moved is not a defect that was fixed.
+        root=args.path,
     )
     history = ledger.derive(findings)
     say(render_ledger_report(ledger, history))

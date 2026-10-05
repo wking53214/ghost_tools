@@ -27,6 +27,22 @@ pytestmark = pytest.mark.skipif(
 
 AWS_KEY = "AKIAABCDEFGHIJKLMNOP"  # gitleaks:allow -- fixture, not a real key
 
+#: A fake GitHub token, and it has to LOOK fake to a human and RANDOM to
+#: gitleaks, which are different requirements.
+#:
+#: The first version of this fixture was `ghp_` followed by
+#: 1234567890abcdefghijklmnopqrstuvwxyz. gitleaks 8.21.2 matched it.
+#: gitleaks 8.28.0 does not: the github-pat rule gained an entropy floor,
+#: and a visible sequence scores below it -- which is a good change, aimed
+#: at exactly the placeholder tokens people paste into documentation.
+#:
+#: Measured 2026-09-17 under 8.28.0: the sequence scored below the floor
+#: and was not reported; the value below scores 5.22 and is. So the test
+#: that asserts two rules fire on one commit was asserting something about
+#: one pinned gitleaks release rather than about this tool, and it failed
+#: the moment anybody installed a current one.
+GH_TOKEN = "ghp_A7xQ2mZk9LpR4vNw8TbG1cYh6JdE3sUf0iOa"  # gitleaks:allow -- fixture
+
 
 def _git(repo: Path, *args: str) -> None:
     subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True)
@@ -255,7 +271,7 @@ def test_multiple_rules_or_lines_in_one_commit_are_distinct_findings(tmp_path):
     repo = _init_repo(tmp_path / "repo")
     _commit(
         repo, "config.py",
-        f"AWS_KEY = '{AWS_KEY}'\nGH_TOKEN = 'ghp_1234567890abcdefghijklmnopqrstuvwxyz'\n",  # gitleaks:allow
+        f"AWS_KEY = '{AWS_KEY}'\nGH_TOKEN = '{GH_TOKEN}'\n",
         "add two secrets",
     )
 

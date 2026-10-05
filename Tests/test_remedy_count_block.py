@@ -126,7 +126,7 @@ def test_a_write_that_disturbs_the_document_raises(repo, monkeypatch):
     monkeypatch.setattr(pathlib.Path, "write_text", also_edit_the_prose)
     with pytest.raises(RemedyFailed) as failure:
         _remedy_count_block(repo, _files(repo), [_measured()])
-    assert "outside the block changed" in str(failure.value)
+    assert "outside the count changed" in str(failure.value)
 
 
 def test_a_write_that_loses_the_number_raises(repo, monkeypatch):
@@ -140,3 +140,106 @@ def test_a_write_that_loses_the_number_raises(repo, monkeypatch):
     with pytest.raises(RemedyFailed) as failure:
         _remedy_count_block(repo, _files(repo), [_measured()])
     assert "does not hold 1727" in str(failure.value)
+
+
+# ---------------------------------------------------------------------------
+# What the markers hand over: the count, and nothing else. (v1.7.1)
+#
+# Every test below is a case an adversarial harness constructed and the
+# remedy got wrong. They are kept in the order the damage matters.
+# ---------------------------------------------------------------------------
+
+def test_a_sentence_inside_the_block_survives(tmp_path):
+    """The one that mattered.
+
+    A repository wrote a sentence inside the markers. The markers hand over
+    a COUNT; nothing in them hands over a paragraph. Replacing the region
+    deleted it, and the verification -- "every byte outside the block is
+    unchanged" -- could not fail, because the loss was inside.
+    """
+    root = tmp_path / "repo"
+    root.mkdir()
+    sentence = "The suite is split by layer; see CONTRIBUTING for why."
+    (root / "README.md").write_text(
+        f"# thing\n\n{COUNT_BLOCK_OPEN}\n390 tests, all passing.\n"
+        f"{sentence}\n{COUNT_BLOCK_CLOSE}\n")
+    changed, _ = _remedy_count_block(root, _files(root), [_measured()])
+    after = (root / "README.md").read_text()
+    assert changed == 1
+    assert "1727 tests, all passing." in after
+    assert sentence in after
+
+
+def test_only_the_digits_move(tmp_path):
+    """Byte for byte outside the number, which is what the block promised."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    before = (f"# thing\n\n{COUNT_BLOCK_OPEN}\nWe run 390 tests, all passing, "
+              f"every night.\n{COUNT_BLOCK_CLOSE}\n")
+    (root / "README.md").write_text(before)
+    _remedy_count_block(root, _files(root), [_measured()])
+    after = (root / "README.md").read_text()
+    assert after == before.replace("390", "1727")
+
+
+def test_a_dated_document_is_left_alone(tmp_path):
+    """The prose remedy refuses a dated document by name and this one did
+    not look, so one repository could get two answers to the same question
+    depending on which mechanism reached it."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "PHASE_4_COMPLETE.md").write_text(
+        f"# phase 4\n\nClosed out 2026-01-14.\n\n{COUNT_BLOCK_OPEN}\n"
+        f"390 tests, all passing.\n{COUNT_BLOCK_CLOSE}\n")
+    changed, note = _remedy_count_block(root, _files(root), [_measured()])
+    assert changed == 0
+    assert "390" in (root / "PHASE_4_COMPLETE.md").read_text()
+
+
+def test_a_dated_document_is_reported_beside_a_real_cut(repo):
+    """Silence is the defect. A block this remedy declined is said out loud,
+    in the note that goes into the commit beside the ones it took."""
+    (repo / "STATUS_2026-01.md").write_text(
+        f"# status\n\n{COUNT_BLOCK_OPEN}\n390 tests, all passing.\n"
+        f"{COUNT_BLOCK_CLOSE}\n")
+    changed, note = _remedy_count_block(repo, _files(repo), [_measured()])
+    assert changed == 1
+    assert "left alone" in note and "dated" in note
+
+
+def test_a_block_holding_something_that_is_not_a_count_is_left_alone(tmp_path):
+    root = tmp_path / "repo"
+    root.mkdir()
+    body = "See the CI dashboard for current numbers."
+    (root / "README.md").write_text(
+        f"# thing\n\n{COUNT_BLOCK_OPEN}\n{body}\n{COUNT_BLOCK_CLOSE}\n")
+    changed, _ = _remedy_count_block(root, _files(root), [_measured()])
+    assert changed == 0
+    assert body in (root / "README.md").read_text()
+
+
+def test_two_counts_in_one_block_are_left_alone(tmp_path):
+    """No single span to name, so nothing is named. The doc-count remedy
+    refuses the same shape for the same reason."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "README.md").write_text(
+        f"# thing\n\n{COUNT_BLOCK_OPEN}\n390 tests, all passing.\n"
+        f"12 tests, all passing.\n{COUNT_BLOCK_CLOSE}\n")
+    changed, _ = _remedy_count_block(root, _files(root), [_measured()])
+    assert changed == 0
+    assert "390" in (root / "README.md").read_text()
+
+
+def test_an_empty_block_is_filled(tmp_path):
+    """A repository that writes bare markers is asking for the sentence.
+    Nothing is destroyed by giving it to them."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "README.md").write_text(
+        f"# thing\n\n{COUNT_BLOCK_OPEN}\n{COUNT_BLOCK_CLOSE}\n\nAfter.\n")
+    changed, _ = _remedy_count_block(root, _files(root), [_measured()])
+    after = (root / "README.md").read_text()
+    assert changed == 1
+    assert "1727 tests, all passing." in after
+    assert after.endswith("After.\n")

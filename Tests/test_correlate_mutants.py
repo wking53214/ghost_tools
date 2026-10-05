@@ -31,6 +31,23 @@ _S = "ghost_buster/schema.py"
 
 # (label, file, exact text to replace, replacement)
 MUTANTS = [
+    # --- what never ran (v1.7.3) ---
+    # A module that cannot be imported is in neither `collected` nor
+    # `passed`, so their difference says green. These three are the ways
+    # that fact can stop reaching the remedy that acts on it.
+    ("a file that never ran is not counted as unexamined", _C,
+     "    unexamined = max(errored, blocked)",
+     "    unexamined = 0"),
+    ("errored and blocked are summed, doubling one broken file", _C,
+     "    unexamined = max(errored, blocked)",
+     "    unexamined = errored + blocked"),
+    ("a suite with a file that never ran is still filed as minor", _C,
+     "            severity=(Severity.MINOR if not_passing == 0 and not unexamined"
+     "\n                      else Severity.MAJOR),",
+     "            severity=Severity.MINOR if not_passing == 0 else Severity.MAJOR,"),
+    ("the attribute the remedy reads is never published", _C,
+     '                "unexamined": str(unexamined),\n',
+     ""),
     # --- the join itself ---
     ("file join loosened to a shared suffix (a file matches its own vendored copy)", _C,
      "    return _portable(a) == _portable(b)\n",
@@ -103,8 +120,10 @@ MUTANTS = [
     ("doc/run connector reports the static bound instead of the measured count", _C,
      '    collected = int(getattr(report, "collected", 0) or 0)\n',
      '    collected = int(getattr(report, "static_lower_bound", 0) or 0)\n'),
+    # Re-pointed in 1.7.3: the severity learned about files that never ran.
     ("a suite with failures still reads as MINOR doc drift", _C,
-     "            severity=Severity.MINOR if not_passing == 0 else Severity.MAJOR,\n",
+     "            severity=(Severity.MINOR if not_passing == 0 and not unexamined\n"
+     "                      else Severity.MAJOR),\n",
      "            severity=Severity.MINOR,\n"),
 
     # --- provenance and plumbing ---

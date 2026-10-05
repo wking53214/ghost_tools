@@ -126,6 +126,91 @@ def test_a_tracked_note_that_changed_is_a_real_edit(patient):
     assert _dirty_paths(patient) == [".ghost_baseline.json"]
 
 
+# ------------------------------------------------- whose edit is it (v1.7.3)
+#
+# "Tracked, therefore somebody's real edit" turned out to be the wrong test,
+# and it reinstated the same deadlock one level down for any repository that
+# COMMITS its ledger -- which this tool's own documentation recommends, on
+# the grounds that a governance record nobody keeps is worth nothing.
+#
+# Measured on a clean checkout, in one command, with no harness: commit the
+# ledger, run --operate, and the workup writes the ledger, the door sees a
+# modified tracked file, and the operation refuses. Every time, forever.
+#
+# The distinction was never tracked versus untracked. It is whose edit it is.
+
+def _commit_the_ledger(patient, body='{"runs": []}'):
+    (patient / ".ghost_ledger.json").write_text(body)
+    _git(patient, "add", "-A")
+    _git(patient, "commit", "-q", "-m", "keep the governance record")
+
+
+def test_a_committed_note_this_run_rewrote_is_not_dirt(patient):
+    """Clean when we arrived, different now: the difference is ours."""
+    from ghost_buster.operate import notes_on_arrival
+    _commit_the_ledger(patient)
+    arrival = notes_on_arrival(patient)
+    (patient / ".ghost_ledger.json").write_text('{"runs": [{"at": "now"}]}')
+    assert _dirty_paths(patient, arrival) == []
+
+
+def test_a_committed_note_somebody_else_had_edited_is_still_dirt(patient):
+    """The boundary the fix must not cross.
+
+    An uncommitted edit to a committed record is somebody's work. It was
+    already different from HEAD before this run touched anything, and
+    proceeding would let the workup overwrite it.
+    """
+    from ghost_buster.operate import notes_on_arrival
+    _commit_the_ledger(patient)
+    (patient / ".ghost_ledger.json").write_text('{"runs": [], "mine": true}')
+    arrival = notes_on_arrival(patient)          # snapshot AFTER their edit
+    (patient / ".ghost_ledger.json").write_text('{"runs": [{"at": "now"}]}')
+    assert _dirty_paths(patient, arrival) == [".ghost_ledger.json"]
+
+
+def test_a_note_that_was_not_there_on_arrival_is_not_assumed_clean(patient):
+    """No entry means no evidence, and no evidence refuses rather than
+    proceeds. An absent or unreadable note must not read as 'ours'."""
+    _commit_the_ledger(patient)
+    (patient / ".ghost_ledger.json").write_text('{"runs": [{"at": "now"}]}')
+    assert _dirty_paths(patient, {}) == [".ghost_ledger.json"]
+
+
+def test_the_old_callers_lose_nothing(patient):
+    """Without a snapshot the door behaves exactly as it did before."""
+    _commit_the_ledger(patient)
+    (patient / ".ghost_ledger.json").write_text('{"runs": [{"at": "now"}]}')
+    assert _dirty_paths(patient) == [".ghost_ledger.json"]
+
+
+def test_the_operation_proceeds_past_a_committed_ledger(patient):
+    """The deadlock, end to end.
+
+    This is the shape a real repository has after taking the tool's own
+    advice about keeping the record.
+    """
+    from ghost_buster.operate import notes_on_arrival
+    _commit_the_ledger(patient)
+    arrival = notes_on_arrival(patient)
+    files, findings, checks = _workup(patient)
+    (patient / ".ghost_ledger.json").write_text('{"runs": [{"at": "now"}]}')
+    op = operate(patient, files, findings, checks, branch="ghost/op",
+                 arrival=arrival)
+    assert op.came_in_untouched
+
+
+def test_a_committed_ledger_somebody_edited_still_stops_the_operation(patient):
+    from ghost_buster.operate import notes_on_arrival
+    _commit_the_ledger(patient)
+    (patient / ".ghost_ledger.json").write_text('{"runs": [], "mine": true}')
+    arrival = notes_on_arrival(patient)
+    files, findings, checks = _workup(patient)
+    with pytest.raises(Refused):
+        operate(patient, files, findings, checks, branch="ghost/op2",
+                arrival=arrival)
+
+
 def test_the_operation_proceeds_past_its_own_ledger(patient):
     """The end-to-end shape of the defect: a scan wrote a ledger, and the
     operation in the same process refused it."""

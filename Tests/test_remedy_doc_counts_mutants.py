@@ -49,16 +49,35 @@ MUTANTS = [
      "ghost_buster/mechanical.py",
      '    if filename.lower() not in WRITABLE_DOCUMENTS:',
      "    if True:"),
+    # v1.7.3. `passed == collected` is satisfied by a suite with a whole
+    # file missing from it, so this is the guard that stops "N tests, all
+    # passing" being written over a suite that did not run.
+    ("a suite that did not finish running is certified as green anyway", _OP,
+     '        unexamined = finding.attributes.get("unexamined", "")\n'
+     '        if unexamined.isdigit() and int(unexamined) > 0:\n',
+     '        unexamined = finding.attributes.get("unexamined", "")\n'
+     '        if False:\n'),
+    ("every claim is declined as unexamined, closing the remedy", _OP,
+     '        if unexamined.isdigit() and int(unexamined) > 0:',
+     "        if True:"),
     ("a suite that is not green is rewritten anyway", _OP,
      '        if passed != collected:\n'
      '            declined.append("a suite that is not green")\n'
      '            continue\n',
      ""),
     ("a delta or a quotation is overwritten with today's total", _OP,
-     '        if claim_shape(claim_context(text, offset + match.start())) is not None:\n'
+     '        if claim_shape(claim_context(text, claim_at)) is not None:\n'
      '            declined.append("a claim that is not about this suite")\n'
      '            continue\n',
      ""),
+    # v1.7.1. The workup's writability verdict is re-derived here, from the
+    # resolved file and its text as it is NOW. Without it a sentence that
+    # became a dated one while the repository's own suite was running -- which
+    # this tool starts, inside its own window -- is still rewritten, and a
+    # document reached through a symlink is judged by the link's name.
+    ("the workup's writability verdict is trusted instead of re-derived", _OP,
+     "        stale = why_not_writable(\n            path.name,",
+     "        stale = None and why_not_writable(\n            path.name,"),
     ("an ambiguous line is written into anyway", _OP,
      "        if len(here) != 1:",
      "        if len(here) < 1:"),

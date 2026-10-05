@@ -18,8 +18,8 @@ from ghost_writer.polish.filters import (
 from ghost_writer.polish.oscillation import OscillationDetector
 from ghost_writer.polish.pipeline import ContentPolishPipeline
 
-# The pipeline logs a warning when the default signing key is used; the
-# tests below construct pipelines with the default key on purpose, so
+# The pipeline logs a warning when no signing key is passed; the tests
+# below construct pipelines without a key on purpose, so
 # silence that logger rather than let it print to stderr.
 logging.getLogger("ghost_writer.polish").addHandler(logging.NullHandler())
 logging.getLogger("ghost_writer.polish").propagate = False

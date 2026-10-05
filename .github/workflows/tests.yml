@@ -22,7 +22,7 @@ jobs:
           python -m pip install --upgrade pip
           # pytest-xdist is not optional: pyproject sets `addopts = "-n auto"`,
           # so pytest exits with `unrecognized arguments: -n` without it. It also
-          # cuts this job from ~16 minutes to a few, because the suite is 625
+          # cuts this job from ~16 minutes to a few, because the suite is 751
           # mutants each running a whole test file in a fresh interpreter.
           python -m pip install pytest pytest-xdist ruff==0.15.22
       - name: Install gitleaks
@@ -31,7 +31,7 @@ jobs:
         # actually exercises the real thing instead of skipping forever.
         run: |
           curl -sSL -o /tmp/gitleaks.tar.gz \
-            https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz
+            https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_x64.tar.gz
           tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
           sudo mv /tmp/gitleaks /usr/local/bin/gitleaks
           gitleaks version
@@ -56,7 +56,7 @@ jobs:
       - name: Install gitleaks
         run: |
           curl -sSL -o /tmp/gitleaks.tar.gz \
-            https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz
+            https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_x64.tar.gz
           tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
           sudo mv /tmp/gitleaks /usr/local/bin/gitleaks
       - name: ghost-buster on ghost_tools
@@ -67,3 +67,98 @@ jobs:
         run: |
           python -m ghost_buster.cli . --no-tests --no-branches --single-repo --no-ledger \
             --casefile .ghost_casefile.json
+
+  swizzle-gate:
+    # SWIZZLE replays its archived regression cases and its seed catalogue
+    # against the base of this change and against the change itself.
+    # `swizzle diff` exits 1 when a case that passed now fails (regressed) or
+    # a failing case fails worse (worsened). Escapes already present on the
+    # base are SWIZZLE's findings, not this job's failures: only a change
+    # that makes ghost_buster worse at something it used to get right turns
+    # this red. Measured locally: ~130s for both buckets, and disabling the
+    # writability check in operate.py is caught
+    # (claim_rewritten_while_the_suite_runs, NONE -> HIGH).
+    #
+    # A case that cannot be measured on either side fails the job
+    # (--fail-on-unmeasured, SWIZZLE 18f1afc or later): a candidate that
+    # cannot run at all must not pass as "unchanged".
+    #
+    # SWIZZLE is private, so this job reads it with LIBRARY_READ_TOKEN. When
+    # that secret is absent the gate cannot run at all, so the remaining steps
+    # are skipped and the job passes with a warning naming the missing secret.
+    # That is a deliberate trade: a repository without the secret stays green,
+    # and in exchange nothing is checking whether ghost_buster got worse. The
+    # warning is the only thing standing in for the gate, so read it.
+    # Pull requests from forks are given no secrets, so the job is skipped
+    # for them rather than warning about the wrong cause.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          path: ghost_tools
+          fetch-depth: 0   # the baseline revision is checked out from history
+      - name: Can SWIZZLE be read?
+        # The secrets context cannot be used in a job-level `if`, so this step
+        # records the answer as an output and every later step is gated on it.
+        id: authorised
+        env:
+          LIBRARY_READ_TOKEN: ${{ secrets.LIBRARY_READ_TOKEN }}
+        run: |
+          if [ -z "$LIBRARY_READ_TOKEN" ]; then
+            echo "::warning::LIBRARY_READ_TOKEN is not set, so SWIZZLE could not be fetched and the regression gate DID NOT RUN. Nothing checked whether this change makes ghost_buster worse. Add the secret to restore the gate."
+            echo "yes=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "yes=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        if: steps.authorised.outputs.yes == 'true'
+        with:
+          repository: wking53214/SWIZZLE
+          path: swizzle
+          token: ${{ secrets.LIBRARY_READ_TOKEN }}
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        if: steps.authorised.outputs.yes == 'true'
+        with:
+          python-version: "3.11"
+      - name: Give git an identity
+        if: steps.authorised.outputs.yes == 'true'
+        # ghost_buster --operate commits each cut. A hosted runner has no git
+        # user, so without this every such commit is refused, both sides of
+        # the diff break alike, and nothing can be seen to regress.
+        run: |
+          git config --global user.name swizzle-gate
+          git config --global user.email swizzle-gate@invalid
+      - name: Install SWIZZLE
+        if: steps.authorised.outputs.yes == 'true'
+        # pytest is not optional. SWIZZLE runs ghost_buster with its own
+        # interpreter, and --operate runs each case's suite with pytest.
+        # Without it both sides fail the suite-dependent cases identically,
+        # nothing can regress, and the gate passes whatever changed: measured,
+        # the disabled writability check above went through as "unchanged".
+        run: python -m pip install ./swizzle pytest
+      - name: Regression gate
+        if: steps.authorised.outputs.yes == 'true'
+        # SWIZZLE resolves `corpus/` from its working directory.
+        working-directory: swizzle
+        env:
+          GHOST_TOOLS: ${{ github.workspace }}/ghost_tools
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then
+            # The checkout is the merge commit under test; its first parent is
+            # exactly the base it was built on.
+            BASE=$(git -C "$GHOST_TOOLS" rev-parse HEAD^1)
+          else
+            BASE="$BEFORE"
+          fi
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ] \
+             || ! git -C "$GHOST_TOOLS" cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            # A first push, or a force-push that left the old head unreachable.
+            echo "::warning::no reachable base revision (${BASE:-none}); nothing to compare against"
+            exit 0
+          fi
+          python -m swizzle diff --ghost "$BASE" --ghost "$GHOST_TOOLS" --fail-on-unmeasured
+          python -m swizzle diff --ghost "$BASE" --ghost "$GHOST_TOOLS" --seeds --fail-on-unmeasured

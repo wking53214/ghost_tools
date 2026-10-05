@@ -173,3 +173,80 @@ def test_a_legacy_baseline_still_suppresses_what_it_accepted(tmp_path, capsys):
     out = capsys.readouterr()
     assert "0 new finding(s)" in out.out, out.out
     assert "matched nothing scanned" not in out.err, out.err
+
+
+# ---------------------------------------------------------------------------
+# 6. A baseline whose entries match nothing says so in the OUTPUT, not only
+#    on the receipt channel (1.8.0).
+#
+#    Attack 1 above has been detectable since 2026-09-08, and the answer went
+#    to stderr alone -- so it reached a person at a terminal and never reached
+#    the JSON a pipeline reads. Measured on ATS: 35 of 48 entries inert,
+#    announced on the one channel most likely to be redirected to /dev/null,
+#    while the 13 live entries suppressed four MAJOR findings.
+# ---------------------------------------------------------------------------
+
+def _stale_baseline(tmp_path, monkeypatch, capsys, entries=3):
+    repo = _checkout(tmp_path / "repo")
+    baseline = FindingSet()
+    for i in range(entries):
+        f = _finding(f"a finding that no longer occurs {i}")
+        f.status = Status.SUPPRESSED
+        baseline.add(f)
+    (repo / ".ghost_baseline.json").write_text(baseline.to_json())
+    monkeypatch.chdir(repo)
+    main([str(repo), "--json", "--no-tests", "--no-secrets", "--no-branches",
+          "--single-repo", "--no-ledger"])
+    return json.loads(capsys.readouterr().out)
+
+
+def test_a_stale_baseline_is_a_finding_in_the_json(tmp_path, monkeypatch, capsys):
+    """The one that was only ever a printed line."""
+    rows = _stale_baseline(tmp_path, monkeypatch, capsys)
+    stale = [r for r in rows if r["detector"] == "stale_baseline"]
+    assert len(stale) == 1
+    assert "3 of 3" in stale[0]["summary"]
+    assert stale[0]["attributes"]["stale"] == "3"
+
+
+def test_the_proportion_is_reported_and_not_graded(tmp_path, monkeypatch, capsys):
+    """No threshold: which proportion is bad depends on how a team uses the
+    file, and this tool does not ship numbers it has not measured. The counts
+    are in the attributes so a caller can apply its own cutoff."""
+    rows = _stale_baseline(tmp_path, monkeypatch, capsys)
+    stale = next(r for r in rows if r["detector"] == "stale_baseline")
+    assert stale["severity"] == Severity.MINOR.value
+    assert "100%" in stale["summary"]
+
+
+def test_a_baseline_that_still_matches_produces_no_such_finding(tmp_path, monkeypatch, capsys):
+    """The control. A live baseline is not rot, and reporting it as rot would
+    make the finding noise on every repository that uses the feature."""
+    repo = _checkout(tmp_path / "repo")
+    monkeypatch.chdir(repo)
+    main([str(repo), "--accept", "--no-tests", "--no-secrets", "--no-branches",
+          "--single-repo", "--no-ledger"])
+    capsys.readouterr()
+    main([str(repo), "--json", "--no-tests", "--no-secrets", "--no-branches",
+          "--single-repo", "--no-ledger"])
+    rows = json.loads(capsys.readouterr().out)
+    assert not [r for r in rows if r["detector"] == "stale_baseline"]
+
+
+def test_the_baseline_cannot_suppress_the_report_of_its_own_rot(tmp_path, monkeypatch, capsys):
+    """--accept must not be able to buy silence about the entries that no
+    longer match: an entry accepted for this finding would be an entry that
+    can never match anything again, which is the rot accepting itself."""
+    repo = _checkout(tmp_path / "repo")
+    baseline = FindingSet()
+    f = _finding("a finding that no longer occurs")
+    f.status = Status.SUPPRESSED
+    baseline.add(f)
+    (repo / ".ghost_baseline.json").write_text(baseline.to_json())
+    monkeypatch.chdir(repo)
+
+    main([str(repo), "--accept", "--no-tests", "--no-secrets", "--no-branches",
+          "--single-repo", "--no-ledger"])
+    capsys.readouterr()
+    stored = json.loads((repo / ".ghost_baseline.json").read_text())
+    assert not [r for r in stored if r["detector"] == "stale_baseline"]

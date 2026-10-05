@@ -74,10 +74,41 @@ class Status(str, Enum):
     """How sure ghost_buster is that this finding is real. See module
     docstring -- this is intentionally the same discipline as the HULK
     campaign's status vocabulary, narrowed to what ghost_buster actually
-    needs."""
+    needs.
+
+    WHICH OF THESE THIS TOOL PRODUCES (v1.7.6)
+
+    Three, and the distinction is worth stating because for a long time
+    nothing did. Its own `unreachable_declared_state` detector, pointed at
+    this repository, reported two members that no code here ever assigns:
+
+        produced here      CONFIRMED, REASONED, SUPPRESSED
+        arrives from data  CONFIRMED_BY_REVIEW, REJECTED
+
+    The second pair is not dead and must not be deleted. `Finding.from_dict`
+    reconstructs any member from a stored record, so a baseline, a casefile,
+    a hand-edited FindingSet or another tool's output can carry them, and
+    removing the members would turn reading such a file into a crash.
+
+    They are also not the mechanism a human triages with. That is
+    `disposition` -- "fix", "suppress", "document" -- implemented in
+    `ghost_writer/triage.py`, which is what closed the loop the README had
+    drawn for a long time and nothing had walked. `REJECTED` is an older
+    vocabulary for the same decision, kept readable rather than kept alive.
+
+    `AUTHORITATIVE` excludes REJECTED and includes CONFIRMED_BY_REVIEW, so
+    both are handled correctly when they do arrive. That is the point: a
+    state this tool does not produce still has to be read, and read
+    correctly, when somebody else produces it.
+
+    The detector still reports both, and should. The finding is true. What
+    changed is that this declaration no longer implies a state the code can
+    reach on its own.
+    """
 
     CONFIRMED = "confirmed"                  # deterministic detector; not in doubt
     REASONED = "reasoned"                    # semantic/LLM claim; not yet verified
+    # Read, never written here. See the note above.
     CONFIRMED_BY_REVIEW = "confirmed_by_review"  # a REASONED finding a human verified
     REJECTED = "rejected"                    # a human looked and said no
     SUPPRESSED = "suppressed"                # known, accepted, tracked -- not re-surfaced
@@ -219,8 +250,41 @@ class Finding:
     attributes: Dict[str, str] = field(default_factory=dict)
     confidence: Optional[float] = None  # 0.0-1.0, semantic layer only; None for mechanical
     first_seen: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    disposition: Optional[str] = None  # set by the human triage step, see triage.py
+    # Set by the human triage step: ghost_writer/triage.py, which records
+    # "fix", "suppress" or "document" against a finding id. This is the
+    # mechanism a person judges a finding with; `Status` is what the SCANNER
+    # concluded, and the two are deliberately separate.
+    disposition: Optional[str] = None
     disposition_note: str = ""
+    #: What identifies this finding, when the summary does not (v1.7.3).
+    #:
+    #: A MEASUREMENT IS NOT AN IDENTITY.
+    #:
+    #: The id is a content hash of detector + path + summary, and several
+    #: summaries carry a number the run just measured. The defect does not
+    #: change when the number does, but the id does, so a baseline cannot
+    #: match the finding twice and "accept this" silently means "accept it
+    #: until the next commit".
+    #:
+    #: Measured against 1.7.2 by an adversarial harness: adding three tests
+    #: to a suite, with the documented claim untouched, gave three findings
+    #: three new identities --
+    #:
+    #:     no_ci_configuration            "1 test file(s)" -> "2 test file(s)"
+    #:     doc_count_contradicted_by_run  "collects 30"    -> "collects 33"
+    #:     doc_test_count_drift           "at least 30"    -> "at least 33"
+    #:
+    #: Stripping digits from every summary is not the fix. Two dead-code
+    #: findings for `core_0` and `core_1` in one file differ only in a
+    #: digit, and collapsing those to one identity means accepting one
+    #: suppresses the other -- the same failure pointing the other way, and
+    #: the worse direction.
+    #:
+    #: So the DETECTOR says what identifies its finding, because only the
+    #: detector knows which part of its own sentence is the defect and
+    #: which part is this morning's arithmetic. Left None, the summary is
+    #: used exactly as before.
+    identity_key: Optional[str] = None
     id: str = field(init=False)
 
     def __post_init__(self):
@@ -241,7 +305,9 @@ class Finding:
         self.evidence.related_files = [
             _portable_path(p) for p in self.evidence.related_files
         ]
-        self.id = _stable_id(self.detector, portable, self.summary)
+        self.id = _stable_id(self.detector, portable,
+                             self.summary if self.identity_key is None
+                             else self.identity_key)
         if self.confidence is not None and not (0.0 <= self.confidence <= 1.0):
             raise ValueError(f"confidence must be 0.0-1.0, got {self.confidence}")
         if self.layer == Layer.MECHANICAL and self.status == Status.REASONED:

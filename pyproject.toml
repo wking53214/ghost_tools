@@ -4,18 +4,18 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ghost-tools"
-version = "1.7.0"
+version = "1.9.1"
 description = "Codebase integrity toolkit: finds structural ghosts, proves vacuous tests by mutation, outlines missing code, and turns human-triaged findings into accurate docs"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "Apache-2.0" }
+license = { text = "Proprietary" }
 authors = [{ name = "William King" }]
 keywords = ["code-quality", "mutation-testing", "dead-code", "documentation-drift", "ai-generated-code", "static-analysis"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: Apache Software License",
+    "License :: Other/Proprietary License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -46,7 +46,13 @@ dev = ["pytest>=8", "pytest-xdist>=3"]
 
 [tool.pytest.ini_options]
 testpaths = ["Tests"]
-# 625 mutants, each copying the project to a scratch directory, applying one
+# Tests/fixtures holds repositories verbatim, as data for the tests that
+# scan them -- including a `wizzle` checkout whose own Tests/ directory
+# imports modules that only exist relative to ITS root. Collecting them
+# is collecting data as tests, and it fails at import before a single
+# real test runs. ruff excludes the same tree for the same reason.
+norecursedirs = ["fixtures"]
+# 751 mutants, each copying the project to a scratch directory, applying one
 # exact text substitution and running a whole test file in a fresh
 # interpreter. Measured 2026-09-10: the copy costs 0.03s and the interpreter
 # 0.34s, so about 170 seconds is process overhead before an assertion runs,
