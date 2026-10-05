@@ -70,16 +70,7 @@ def _print_report(new: List[Finding], known: List[Finding],
         print("  (nothing new)\n")
 
 
-def _build_parser() -> argparse.ArgumentParser:
-    """Every flag in one place. Extracted from main() because ghost_buster's
-    own `long_function` detector flagged main() at 194 lines against its
-    threshold of 80 -- the argument table is the bulk of it and has no
-    control flow, so lifting it out is the whole fix.
-    """
-    parser = argparse.ArgumentParser(prog="ghost_buster")
-    # Consumed and exited on during parsing, so it works without the
-    # required `path` positional -- which is the only way anyone would
-    # ever type it.
+def _add_core_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--version", action="version", version=version_string(),
         help="print the version and exit",
@@ -104,6 +95,9 @@ def _build_parser() -> argparse.ArgumentParser:
              "another repo. Virtualenvs, site-packages, VCS dirs and tool "
              "caches are always skipped.",
     )
+
+
+def _add_operate_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--operate", action="store_true",
         help="OPT-IN. The surgeon operates: on a CLEAN tree, open a branch, apply "
@@ -121,6 +115,9 @@ def _build_parser() -> argparse.ArgumentParser:
         "--operate-dry-run", action="store_true",
         help="with --operate: diagnose and assess candidacy, write nothing",
     )
+
+
+def _add_report_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--serum-budget", type=float, default=serum.DEFAULT_BUDGET, metavar="SECONDS",
         help="with --operate: whole seconds the serum may spend establishing, per "
@@ -150,6 +147,9 @@ def _build_parser() -> argparse.ArgumentParser:
              "learns across the library. (default: <path>/.ghost_casefile.json "
              "if it exists)",
     )
+
+
+def _add_annotate_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--annotate-names", action="store_true",
         help="OPT-IN, and the only thing ghost_buster does that writes to the "
@@ -167,6 +167,9 @@ def _build_parser() -> argparse.ArgumentParser:
         help="README to write the name-disagreement table into "
              "(default: <path>/README.md)",
     )
+
+
+def _add_mutate_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--mutate", action="store_true",
         help="OPT-IN, on cost -- one pytest process per mutant, so a large "
@@ -184,6 +187,9 @@ def _build_parser() -> argparse.ArgumentParser:
                         help="restrict mutation to test files whose path contains this")
     parser.add_argument("--mutate-verbose", action="store_true",
                         help="also list killed mutants and candidates that could not be judged")
+
+
+def _add_branches_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--branches", action=argparse.BooleanOptionalAction, default=True,
         help="ON BY DEFAULT (--no-branches to skip). Flag local/remote-tracking branches with commits not reflected in the "
@@ -198,6 +204,9 @@ def _build_parser() -> argparse.ArgumentParser:
         help="base branch to compare against (default: first of origin/main, "
              "origin/master, main, master that resolves)",
     )
+
+
+def _add_trust_and_test_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--trust", action="store_true",
         help="record consent for this repository's code to run here (its test suite, and "
@@ -222,6 +231,9 @@ def _build_parser() -> argparse.ArgumentParser:
                              "at the project's own virtualenv to run with its dependencies")
     parser.add_argument("--tests-timeout", type=float, default=900.0, metavar="SECONDS",
                         help="timeout for each pytest invocation, the full run included (default 900)")
+
+
+def _add_secrets_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--secrets", action=argparse.BooleanOptionalAction, default=True,
         help="ON BY DEFAULT (--no-secrets to skip). Scans the checked-out branch's git history for committed secrets with "
@@ -233,6 +245,9 @@ def _build_parser() -> argparse.ArgumentParser:
                         help="path to the gitleaks executable (default: gitleaks on PATH)")
     parser.add_argument("--secrets-timeout", type=float, default=300.0, metavar="SECONDS",
                         help="timeout for the gitleaks run (default 300)")
+
+
+def _add_correlate_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--correlate-with", action="append", default=[], metavar="[LABEL=]FILE",
         help="another repository's --json output, optionally named "
@@ -242,6 +257,14 @@ def _build_parser() -> argparse.ArgumentParser:
              "unrelated findings. Correlation over this run's own findings "
              "always runs and needs no flag.",
     )
+    parser.add_argument(
+        "--no-correlate", action="store_true",
+        help="skip the correlation pass entirely (it reads findings already "
+             "computed, runs no new scan, and is normally free)",
+    )
+
+
+def _add_project_and_kernel_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--project", action=argparse.BooleanOptionalAction, default=True,
         help="ON BY DEFAULT (--no-project to skip). Repository-shaped facts no "
@@ -271,6 +294,9 @@ def _build_parser() -> argparse.ArgumentParser:
         "--single-repo", action="store_true",
         help="skip the joined-repository question and scan this repository alone",
     )
+
+
+def _add_structure_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--structure", action=argparse.BooleanOptionalAction, default=True,
         help="ON BY DEFAULT (--no-structure to skip). Build a structural model "
@@ -293,6 +319,9 @@ def _build_parser() -> argparse.ArgumentParser:
         "--structure-report", action="store_true",
         help="also print the full structural model in readable form",
     )
+
+
+def _add_ledger_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--ledger", action=argparse.BooleanOptionalAction, default=True,
         help="ON BY DEFAULT (--no-ledger to skip). Remember this run in "
@@ -314,11 +343,23 @@ def _build_parser() -> argparse.ArgumentParser:
         "--ledger-path", type=Path, default=None, metavar="FILE",
         help="where the ledger lives (default: <path>/.ghost_ledger.json)",
     )
-    parser.add_argument(
-        "--no-correlate", action="store_true",
-        help="skip the correlation pass entirely (it reads findings already "
-             "computed, runs no new scan, and is normally free)",
-    )
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    """Every flag in one place. Argument setup grouped by feature domain."""
+    parser = argparse.ArgumentParser(prog="ghost_buster")
+    _add_core_args(parser)
+    _add_operate_args(parser)
+    _add_report_args(parser)
+    _add_annotate_args(parser)
+    _add_mutate_args(parser)
+    _add_branches_args(parser)
+    _add_trust_and_test_args(parser)
+    _add_secrets_args(parser)
+    _add_correlate_args(parser)
+    _add_project_and_kernel_args(parser)
+    _add_structure_args(parser)
+    _add_ledger_args(parser)
     return parser
 
 

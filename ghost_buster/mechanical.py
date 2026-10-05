@@ -1217,6 +1217,15 @@ def _members_produced(parsed) -> Set[str]:
 # referenced anywhere else in the scanned file set.
 # ---------------------------------------------------------------------------
 
+def _is_protocol_or_abc_class(class_node: ast.ClassDef) -> bool:
+    """Check if a class declaration inherits from Protocol or ABC."""
+    for base in class_node.bases:
+        base_name = base.id if isinstance(base, ast.Name) else (
+            base.attr if isinstance(base, ast.Attribute) else None
+        )
+        if base_name in ("Protocol", "ABC"):
+            return True
+    return False
 def _is_collection(value) -> bool:
     """A literal collection, including one wrapped in frozenset()/set()/tuple().
 
@@ -1233,6 +1242,118 @@ def _is_collection(value) -> bool:
             return _is_collection(value.args[0]) or isinstance(
                 value.args[0], (ast.Set, ast.List, ast.Tuple))
     return False
+
+
+@register("dead_code")
+def detect_dead_code(files: List[Path]) -> List[Finding]:
+    """Flags a module-level def/class whose name never appears as an
+    identifier anywhere else in the scanned set.
+
+
+def _extract_definitions_and_exports(
+    files: List[Path],
+) -> tuple[Dict[str, List[Path]], Set[str], Dict[Path, ast.Module]]:
+    """Parse files and extract module-level definitions plus __all__ exports."""
+    definitions: Dict[str, List[Path]] = {}
+    exported_names: Set[str] = set()
+    parsed: Dict[Path, ast.Module] = {}
+
+    for path in files:
+        tree = _parse(path)
+        if tree is None:
+            continue
+        parsed[path] = tree
+
+    for path, tree in parsed.items():
+        for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                if node.name.startswith("__") and node.name.endswith("__"):
+                    continue
+                if node.name.startswith("test_") or node.name.startswith("Test"):
+                    continue
+                if isinstance(node, ast.ClassDef) and _is_protocol_or_abc_class(node):
+                    continue
+                definitions.setdefault(node.name, []).append(path)
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name) and target.id == "__all__":
+                        if isinstance(node.value, (ast.List, ast.Tuple)):
+                            for elt in node.value.elts:
+                                if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
+                                    exported_names.add(elt.value)
+
+    return definitions, exported_names, parsed
+
+
+def _collect_references(parsed: Dict[Path, ast.Module]) -> Set[str]:
+    """Walk all parsed trees and collect all referenced names."""
+    referenced_names: Set[str] = set()
+    for tree in parsed.values():
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name):
+                referenced_names.add(node.id)
+            elif isinstance(node, ast.Attribute):
+                referenced_names.add(node.attr)
+            elif isinstance(node, ast.Subscript):
+                key = node.slice
+                if isinstance(key, ast.Constant) and isinstance(key.value, str):
+                    referenced_names.add(key.value)
+    return referenced_names
+            # A DECORATOR IS A REFERENCE (v1.7.5).
+            #
+            # `@register("audit")` hands the function to something that keeps
+            # it. The name is then reached through that registry and never
+            # appears as an identifier again, so a scan for identifiers calls
+            # it dead.
+            #
+            # This was a DISCLOSED limitation rather than a hidden defect --
+            # the docstring above has named it, and named this tool's own
+            # `@register` as the example, since 0.1.1. Disclosure is enough
+            # for a report a human reads and stops being enough the moment
+            # autonomy is contemplated: measured on one real patient, 51 of
+            # 85 findings were this class, and a remedy authorised to delete
+            # dead code would have removed every command the tool has.
+            #
+            # Decorated definitions are treated as referenced. The cost is
+            # false negatives -- a genuinely dead decorated function stays
+            # unreported -- which is the direction this detector already
+            # chose everywhere else it had to choose.
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef,
+                                   ast.ClassDef)) and node.decorator_list:
+                referenced_names.add(node.name)
+
+
+def _build_dead_code_findings(
+    definitions: Dict[str, List[Path]],
+    exported_names: Set[str],
+    referenced_names: Set[str],
+) -> List[Finding]:
+    """Build findings for definitions that are neither exported nor referenced."""
+    findings: List[Finding] = []
+    for name, def_paths in definitions.items():
+        if name in exported_names:
+            continue
+        if name in referenced_names:
+            continue
+        for path in def_paths:
+            findings.append(Finding(
+                detector="dead_code",
+                category=Category.DEAD_CODE,
+                layer=Layer.MECHANICAL,
+                severity=Severity.MINOR,
+                status=Status.CONFIRMED,
+                summary=f"'{name}' is defined but never referenced anywhere in the scanned set",
+                detail=(
+                    "No ast.Name, ast.Attribute, or string-subscript-key node "
+                    "anywhere in the scanned files resolves to this identifier. "
+                    "Scope limit: getattr-by-string and decorator-based "
+                    "registration are still not traced, so this can false-"
+                    "positive on names only reached that way -- confirm before "
+                    "deleting."
+                ),
+                evidence=Evidence(file=str(path)),
+            ))
+    return findings
 
 
 @register("dead_code")
@@ -1280,102 +1401,9 @@ def detect_dead_code(files: List[Path]) -> List[Finding]:
       @register pattern is the concrete example -- it self-flags on
       ghost_buster's own codebase, see README) are still untraced.
     """
-    definitions: Dict[str, List[Path]] = {}
-    referenced_names: Set[str] = set()
-    exported_names: Set[str] = set()
-
-    def _is_protocol_or_abc(class_node: ast.ClassDef) -> bool:
-        for base in class_node.bases:
-            base_name = base.id if isinstance(base, ast.Name) else (
-                base.attr if isinstance(base, ast.Attribute) else None
-            )
-            if base_name in ("Protocol", "ABC"):
-                return True
-        return False
-
-    parsed = {}
-    for path in files:
-        tree = _parse(path)
-        if tree is None:
-            continue
-        parsed[path] = tree
-
-    for path, tree in parsed.items():
-        for node in tree.body:
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                if node.name.startswith("__") and node.name.endswith("__"):
-                    continue
-                if node.name.startswith("test_") or node.name.startswith("Test"):
-                    continue
-                if isinstance(node, ast.ClassDef) and _is_protocol_or_abc(node):
-                    continue
-                definitions.setdefault(node.name, []).append(path)
-            if isinstance(node, ast.Assign):
-                for target in node.targets:
-                    if isinstance(target, ast.Name) and target.id == "__all__":
-                        if isinstance(node.value, (ast.List, ast.Tuple)):
-                            for elt in node.value.elts:
-                                if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
-                                    exported_names.add(elt.value)
-
-    for path, tree in parsed.items():
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Name):
-                referenced_names.add(node.id)
-            elif isinstance(node, ast.Attribute):
-                referenced_names.add(node.attr)
-            elif isinstance(node, ast.Subscript):
-                key = node.slice
-                if isinstance(key, ast.Constant) and isinstance(key.value, str):
-                    referenced_names.add(key.value)
-            # A DECORATOR IS A REFERENCE (v1.7.5).
-            #
-            # `@register("audit")` hands the function to something that keeps
-            # it. The name is then reached through that registry and never
-            # appears as an identifier again, so a scan for identifiers calls
-            # it dead.
-            #
-            # This was a DISCLOSED limitation rather than a hidden defect --
-            # the docstring above has named it, and named this tool's own
-            # `@register` as the example, since 0.1.1. Disclosure is enough
-            # for a report a human reads and stops being enough the moment
-            # autonomy is contemplated: measured on one real patient, 51 of
-            # 85 findings were this class, and a remedy authorised to delete
-            # dead code would have removed every command the tool has.
-            #
-            # Decorated definitions are treated as referenced. The cost is
-            # false negatives -- a genuinely dead decorated function stays
-            # unreported -- which is the direction this detector already
-            # chose everywhere else it had to choose.
-            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef,
-                                   ast.ClassDef)) and node.decorator_list:
-                referenced_names.add(node.name)
-
-    findings: List[Finding] = []
-    for name, def_paths in definitions.items():
-        if name in exported_names:
-            continue
-        if name in referenced_names:
-            continue
-        for path in def_paths:
-            findings.append(Finding(
-                detector="dead_code",
-                category=Category.DEAD_CODE,
-                layer=Layer.MECHANICAL,
-                severity=Severity.MINOR,
-                status=Status.CONFIRMED,
-                summary=f"'{name}' is defined but never referenced anywhere in the scanned set",
-                detail=(
-                    "No ast.Name, ast.Attribute, or string-subscript-key node "
-                    "anywhere in the scanned files resolves to this identifier. "
-                    "Scope limit: getattr-by-string and decorator-based "
-                    "registration are still not traced, so this can false-"
-                    "positive on names only reached that way -- confirm before "
-                    "deleting."
-                ),
-                evidence=Evidence(file=str(path)),
-            ))
-    return findings
+    definitions, exported_names, parsed = _extract_definitions_and_exports(files)
+    referenced_names = _collect_references(parsed)
+    return _build_dead_code_findings(definitions, exported_names, referenced_names)
 
 
 # ---------------------------------------------------------------------------
@@ -1553,6 +1581,56 @@ def detect_duplicate_files(files: List[Path]) -> List[Finding]:
     return findings
 
 
+def _build_fingerprints(representatives: List[Path], min_lines: int) -> Dict[str, List[tuple]]:
+    """Build structural fingerprints for all functions in representative files."""
+    by_fingerprint: Dict[str, List[tuple]] = {}
+    for path in representatives:
+        tree = _parse(path)
+        if tree is None:
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if node.end_lineno is None or (node.end_lineno - node.lineno) < min_lines:
+                    continue
+                fp = _structural_fingerprint(node)
+                by_fingerprint.setdefault(fp, []).append((path, node))
+    return by_fingerprint
+
+
+def _build_duplicate_finding(fp: str, occurrences: List[tuple]) -> Finding:
+    """Build a Finding for a cluster of duplicate functions."""
+    names = [f"{p.name}:{n.lineno}:{n.name}" for p, n in occurrences]
+    primary_path, primary_node = occurrences[0]
+    if all(_is_test_file(p) for p, _ in occurrences):
+        severity = Severity.INFORMATIONAL
+    elif len(occurrences) > 2:
+        severity = Severity.MAJOR
+    else:
+        severity = Severity.MINOR
+    return Finding(
+        detector="near_duplicate_function",
+        category=Category.DUPLICATION,
+        layer=Layer.MECHANICAL,
+        severity=severity,
+        status=Status.CONFIRMED,
+        summary=(
+            f"{len(occurrences)} functions share identical AST structure "
+            f"(names/literals differ, control flow and shape don't): {', '.join(names)}"
+        ),
+        detail=(
+            "Structural fingerprint match, not textual diff -- this is the "
+            "'copy-pasted then renamed' shape specifically. Confirm these are "
+            "actually solving the same problem before merging; some structural "
+            "matches are coincidental (e.g. two unrelated simple validators)."
+        ),
+        evidence=Evidence(
+            file=str(primary_path), line_start=primary_node.lineno,
+            line_end=primary_node.end_lineno,
+            related_files=[str(p) for p, _ in occurrences[1:]],
+        ),
+    )
+
+
 @register("near_duplicate_function")
 def detect_near_duplicate_functions(files: List[Path], min_lines: int = 10) -> List[Finding]:
     """Groups functions by structural fingerprint; any group with 2+
@@ -1574,73 +1652,18 @@ def detect_near_duplicate_functions(files: List[Path], min_lines: int = 10) -> L
         suite looks like, and the README had already disclosed it as the
         detector's dominant noise. MAJOR findings went from 42 to 27.
     """
-    representatives: List[Path] = []
     seen_twins = set()
     for _digest, group in _identical_file_groups(files):
         for path in sorted(group)[1:]:
             seen_twins.add(path)
     representatives = [p for p in files if p not in seen_twins]
 
-    by_fingerprint: Dict[str, List[tuple]] = {}
-    for path in representatives:
-        tree = _parse(path)
-        if tree is None:
-            continue
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                if node.end_lineno is None:
-                    continue
-                if (node.end_lineno - node.lineno) < min_lines:
-                    continue
-                fp = _structural_fingerprint(node)
-                by_fingerprint.setdefault(fp, []).append((path, node))
+    by_fingerprint = _build_fingerprints(representatives, min_lines)
 
     findings: List[Finding] = []
     for fp, occurrences in by_fingerprint.items():
-        if len(occurrences) < 2:
-            continue
-        # One label per OCCURRENCE, not per unique (file, name) pair --
-        # v0.1.2 bug fix, found via a real run against HERALD's own test
-        # suite: two distinct nested functions both happened to be named
-        # `thread_b` in the same file (a legitimate, common pattern --
-        # multiple similarly-shaped test functions each defining their
-        # own locally-scoped helper of the same name). The original
-        # `{f"{p.name}:{n.name}"}` SET silently collapsed both into one
-        # identical string, producing a finding that claimed "2 functions
-        # share..." while naming only one -- correct occurrence count,
-        # misleading/incomplete label. Line numbers make every label
-        # unique by construction; a plain list (not a set) means no
-        # future case can silently lose an occurrence this way again.
-        names = [f"{p.name}:{n.lineno}:{n.name}" for p, n in occurrences]
-        primary_path, primary_node = occurrences[0]
-        if all(_is_test_file(p) for p, _ in occurrences):
-            severity = Severity.INFORMATIONAL
-        elif len(occurrences) > 2:
-            severity = Severity.MAJOR
-        else:
-            severity = Severity.MINOR
-        findings.append(Finding(
-            detector="near_duplicate_function",
-            category=Category.DUPLICATION,
-            layer=Layer.MECHANICAL,
-            severity=severity,
-            status=Status.CONFIRMED,
-            summary=(
-                f"{len(occurrences)} functions share identical AST structure "
-                f"(names/literals differ, control flow and shape don't): {', '.join(names)}"
-            ),
-            detail=(
-                "Structural fingerprint match, not textual diff -- this is the "
-                "'copy-pasted then renamed' shape specifically. Confirm these are "
-                "actually solving the same problem before merging; some structural "
-                "matches are coincidental (e.g. two unrelated simple validators)."
-            ),
-            evidence=Evidence(
-                file=str(primary_path), line_start=primary_node.lineno,
-                line_end=primary_node.end_lineno,
-                related_files=[str(p) for p, _ in occurrences[1:]],
-            ),
-        ))
+        if len(occurrences) >= 2:
+            findings.append(_build_duplicate_finding(fp, occurrences))
     return findings
 
 
@@ -1738,6 +1761,42 @@ def _stmt_candidates(
                 yield block_index, [stmt]
 
 
+def _build_intra_dup_finding(path: Path, func: ast.AST, fp: str, units: List[List[ast.stmt]], blocks_of: Dict[str, Set[int]]) -> Finding:
+    """Build a Finding for duplicate blocks within a function."""
+    spans = [f"{u[0].lineno}-{u[-1].lineno}" for u in units]
+    first = units[0]
+    shape_note = (
+        "single statement" if len(first) == 1
+        else f"{len(first)}-statement block"
+    )
+    return Finding(
+        detector="intra_function_duplicate_block",
+        category=Category.DUPLICATION,
+        layer=Layer.MECHANICAL,
+        severity=Severity.MAJOR if len(units) > 2 else Severity.MINOR,
+        status=Status.CONFIRMED,
+        summary=(
+            f"'{func.name}' repeats the same {shape_note} "
+            f"{len(units)} times (lines {', '.join(spans)}): "
+            "same shape, names/literals differ"
+        ),
+        detail=(
+            "Structural fingerprint match within one function, not a "
+            "whole-function match (near_duplicate_function's detection "
+            "is blind to this shape). Typical real cause: several "
+            "branches each hand-build the same kind of object or "
+            "perform the same sequence of calls -- worth a single "
+            "shared helper if the branches really are doing the same "
+            "thing, not just a coincidental resemblance."
+        ),
+        evidence=Evidence(
+            file=str(path), line_start=first[0].lineno,
+            line_end=first[-1].lineno,
+            related_files=[f"{path}:{s}" for s in spans[1:]],
+        ),
+    )
+
+
 @register("intra_function_duplicate_block")
 def detect_intra_function_duplicate_blocks(
     files: List[Path], min_statements: int = 3, min_complexity: int = 20
@@ -1804,39 +1863,8 @@ def detect_intra_function_duplicate_blocks(
                 if len(units) < 2:
                     continue
                 if len(units[0]) == 1 and len(blocks_of[fp]) < 2:
-                    continue  # one block repeating a statement is a list, not a ghost
-                spans = [f"{u[0].lineno}-{u[-1].lineno}" for u in units]
-                first = units[0]
-                shape_note = (
-                    "single statement" if len(first) == 1
-                    else f"{len(first)}-statement block"
-                )
-                findings.append(Finding(
-                    detector="intra_function_duplicate_block",
-                    category=Category.DUPLICATION,
-                    layer=Layer.MECHANICAL,
-                    severity=Severity.MAJOR if len(units) > 2 else Severity.MINOR,
-                    status=Status.CONFIRMED,
-                    summary=(
-                        f"'{func.name}' repeats the same {shape_note} "
-                        f"{len(units)} times (lines {', '.join(spans)}): "
-                        "same shape, names/literals differ"
-                    ),
-                    detail=(
-                        "Structural fingerprint match within one function, not a "
-                        "whole-function match (near_duplicate_function's detection "
-                        "is blind to this shape). Typical real cause: several "
-                        "branches each hand-build the same kind of object or "
-                        "perform the same sequence of calls -- worth a single "
-                        "shared helper if the branches really are doing the same "
-                        "thing, not just a coincidental resemblance."
-                    ),
-                    evidence=Evidence(
-                        file=str(path), line_start=first[0].lineno,
-                        line_end=first[-1].lineno,
-                        related_files=[f"{path}:{s}" for s in spans[1:]],
-                    ),
-                ))
+                    continue
+                findings.append(_build_intra_dup_finding(path, func, fp, units, blocks_of))
     return findings
 
 
@@ -2132,6 +2160,60 @@ def _count_test_functions(files: List[Path]) -> int:
     return count
 
 
+def _is_test_count_stale(documented: int, actual: int, min_growth_ratio: float, min_absolute_growth: int) -> bool:
+    """Check if documented test count is stale relative to actual count."""
+    if documented == 0:
+        return False
+    if actual < documented * min_growth_ratio:
+        return False
+    if actual - documented < min_absolute_growth:
+        return False
+    return True
+
+
+def _build_drift_finding(path: Path, text: str, match, documented: int, actual: int) -> Finding:
+    """Build a Finding for stale test count documentation."""
+    before = claim_context(text, match.start())
+    line = text.count("\n", 0, match.start()) + 1
+    refusal = why_not_writable(
+        path.name,
+        text[max(0, match.start() - _WRITABILITY_LOOKBACK):match.start()],
+        text[match.end():match.end() + _WRITABILITY_LOOKBACK])
+
+    return Finding(
+        detector="doc_test_count_drift",
+        category=Category.DOC_DRIFT,
+        layer=Layer.MECHANICAL,
+        severity=Severity.MINOR,
+        status=Status.CONFIRMED,
+        summary=(
+            f"'{path.name}' claims {documented} test(s), but at least "
+            f"{actual} test_* function(s) exist in the scanned .py files "
+            "-- this claim is stale"
+        ),
+        detail=(
+            "actual is a static AST lower bound (functions named test_*, "
+            "counted directly, no pytest run) -- the true collected count "
+            "can only be higher (pytest.mark.parametrize expands one "
+            "function into several cases), never lower, so this can only "
+            "under-flag, not over-flag. Confirm by running the real suite "
+            "and update the claim, or remove the specific number if it "
+            "will keep going stale."
+        ),
+        attributes={
+            "documented_count": str(documented),
+            "static_lower_bound": str(actual),
+            "writable": "no" if refusal else "yes",
+            "not_writable_because": refusal or "",
+            "claim_context": " ".join(before.split()),
+        },
+        evidence=Evidence(
+            file=str(path), line_start=line, line_end=line,
+            snippet=" ".join((before + match.group(0)).split())[-160:],
+        ),
+    )
+
+
 @register("doc_test_count_drift")
 def detect_doc_test_count_drift(
     files: List[Path], min_growth_ratio: float = 1.15, min_absolute_growth: int = 10
@@ -2167,15 +2249,12 @@ def detect_doc_test_count_drift(
             continue
         for match in _TEST_COUNT_CLAIM_RE.finditer(text):
             documented = int(match.group(1))
-            if documented == 0:
-                continue
             before = claim_context(text, match.start())
             if claim_shape(before) is not None:
                 continue
-            if actual < documented * min_growth_ratio:
+            if not _is_test_count_stale(documented, actual, min_growth_ratio, min_absolute_growth):
                 continue
-            if actual - documented < min_absolute_growth:
-                continue
+            findings.append(_build_drift_finding(path, text, match, documented, actual))
             line = text.count("\n", 0, match.start()) + 1
             refusal = why_not_writable(
                 path.name,

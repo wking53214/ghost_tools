@@ -402,20 +402,9 @@ def _model_kind(node: ast.ClassDef) -> bool:
     return False
 
 
-def analyse_module(path: Path, root: Path, package_roots: Set[str]) -> Optional[ModuleFacts]:
-    tree = corpus.parse(path)
-    if tree is None:
-        return None   # unassessable_file reports this; see mechanical.py
-
-    rel = path.relative_to(root)
-    dotted = ".".join(rel.with_suffix("").parts)
-    facts = ModuleFacts(
-        dotted=dotted, path=str(rel), is_package=(path.name == "__init__.py"),
-    )
-
+def _extract_top_level_bindings(tree: ast.Module, facts: ModuleFacts, dotted: str) -> None:
+    """Extract __all__, public/internal bindings, module state, and re-exports from tree.body."""
     for node in tree.body:
-        # __all__ is the only DECLARED public surface. Everything else is
-        # inference from a leading underscore, which is a convention.
         if isinstance(node, ast.Assign):
             for t in node.targets:
                 if isinstance(t, ast.Name) and t.id == "__all__":
@@ -426,24 +415,11 @@ def analyse_module(path: Path, root: Path, package_roots: Set[str]) -> Optional[
                 elif isinstance(t, ast.Name):
                     if _is_mutable_literal(node.value):
                         facts.module_state.append(t.id)
-                    # A public module-level constant is an export like any
-                    # other. Collecting only defs and classes reported
-                    # MINIMUM_MATCH_LENGTH as missing from a package that
-                    # exports it on line one of a real repository.
                     if not t.id.startswith("_"):
                         facts.bindings.append(t.id)
         if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
             if not node.target.id.startswith("_"):
                 facts.bindings.append(node.target.id)
-        # A NAME BOUND BY AN IMPORT IS IMPORTABLE FROM THIS MODULE. That is
-        # how a package presents a public surface: `__init__.py` pulls names
-        # up out of submodules and callers write `from pkg import Name`.
-        #
-        # Collecting only definitions made every re-export invisible.
-        # Measured 2026-09-10 joining two real repositories: four names that
-        # a package re-exports through its `__init__` -- two by an explicit
-        # line, two through a star-import -- were reported as a CRITICAL
-        # "does not export them" against an import that runs fine.
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             for alias in node.names:
                 if alias.name == "*":
@@ -453,7 +429,6 @@ def analyse_module(path: Path, root: Path, package_roots: Set[str]) -> Optional[
                 bound = alias.asname or alias.name.split(".", 1)[0]
                 if not bound.startswith("_"):
                     facts.reexports.append(bound)
-
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             (facts.internal if node.name.startswith("_") else facts.exported).append(node.name)
             if isinstance(node, ast.ClassDef) and _model_kind(node):
@@ -461,9 +436,9 @@ def analyse_module(path: Path, root: Path, package_roots: Set[str]) -> Optional[
             if node.name == "main":
                 facts.entry_points.append(f"{dotted}:main")
 
-    # An import written with a fallback is a boundary its author declared,
-    # not a name that might be invented. Recorded here so the slopsquat
-    # check can tell the two apart -- see derive_findings.
+
+def _extract_guarded_imports(tree: ast.Module, facts: ModuleFacts) -> None:
+    """Extract imports that are guarded by try-except handlers."""
     for node in ast.walk(tree):
         if isinstance(node, ast.Try) and any(
                 _catches_import(h) for h in node.handlers):
@@ -473,6 +448,9 @@ def analyse_module(path: Path, root: Path, package_roots: Set[str]) -> Optional[
                 elif isinstance(inner, ast.ImportFrom) and inner.module and not inner.level:
                     facts.guarded.append(inner.module.split(".", 1)[0])
 
+
+def _extract_module_usage(tree: ast.Module, facts: ModuleFacts, dotted: str, package_roots: Set[str]) -> None:
+    """Extract imports, boundary calls, exceptions, and special patterns."""
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
@@ -513,6 +491,22 @@ def analyse_module(path: Path, root: Path, package_roots: Set[str]) -> Optional[
             if (isinstance(test, ast.Compare) and isinstance(test.left, ast.Name)
                     and test.left.id == "__name__"):
                 facts.entry_points.append(f"{dotted}:__main__ guard")
+
+
+def analyse_module(path: Path, root: Path, package_roots: Set[str]) -> Optional[ModuleFacts]:
+    tree = corpus.parse(path)
+    if tree is None:
+        return None
+
+    rel = path.relative_to(root)
+    dotted = ".".join(rel.with_suffix("").parts)
+    facts = ModuleFacts(
+        dotted=dotted, path=str(rel), is_package=(path.name == "__init__.py"),
+    )
+
+    _extract_top_level_bindings(tree, facts, dotted)
+    _extract_guarded_imports(tree, facts)
+    _extract_module_usage(tree, facts, dotted, package_roots)
 
     facts.boundaries = sorted(set(facts.boundaries))
     facts.bindings = sorted(set(facts.bindings))
@@ -666,6 +660,9 @@ def _finding(model: StructuralModel, kind: str, severity: Severity, file: str,
     )
 
 
+def _check_entry_points(model: StructuralModel, by_dotted: Dict) -> List[Finding]:
+    """Check that console script targets exist."""
+    findings: List[Finding] = []
 def _external_imports(model: StructuralModel, stdlib: Set[str]) -> Dict[str, List[str]]:
     """package name -> the modules that import it, for everything the
     repository reaches for and does not provide.
@@ -799,7 +796,7 @@ def derive_findings(model: StructuralModel) -> List[Finding]:
             reason = f"module '{module}' defines no top-level '{symbol}'"
         else:
             continue
-        out.append(_finding(
+        findings.append(_finding(
             model, "entry point target missing", Severity.MAJOR,
             str(Path(model.root) / "pyproject.toml"),
             f"console script '{script}' points at '{target}', but {reason}",
@@ -812,6 +809,7 @@ def derive_findings(model: StructuralModel) -> List[Finding]:
             "would look identical. Check before deleting the declaration.",
             {"script": script, "target": target},
         ))
+    return findings
 
     # 2. Imported and never declared.
     declared = set(model.declared_dependencies)
@@ -820,26 +818,14 @@ def derive_findings(model: StructuralModel) -> List[Finding]:
 
     mapping = _import_to_distribution()
 
-    # 3. A name that refers to nothing real -- the slopsquat surface.
-    #
-    # The 2026 attack, and the one this toolkit was closest to catching
-    # without actually catching it. A model asked for working code emits an
-    # import for a package it has invented: USENIX tested 16 models over
-    # 576,000 samples and found 38% of hallucinated names are conflations
-    # of two real packages, 13% typo variants, 51% pure fabrication. The
-    # names are PREDICTABLE, so attackers register them and wait.
-    #
-    # `undeclared dependency` above asks whether an import is declared.
-    # This asks something harder and more useful: whether the name refers
-    # to anything at all. A package that is not standard library, not
-    # installed here, not provided by this repository or any joined one,
-    # and not declared anywhere is a name with nothing behind it. Today it
-    # is an ImportError. The day somebody registers it, it is theirs.
-    # Every package anyone reached for behind a fallback. Its author knew it
-    # might be absent and wrote code for that case, which is the opposite of
-    # a name a model invented believing it was real. boundary.py reports
-    # these as `boundary provider absent`; repeating them here at MAJOR
-    # would be the same fact twice, louder.
+def _check_unresolvable_dependencies(
+    model: StructuralModel,
+    imported: Dict[str, List[str]],
+    declared: set,
+    mapping: Dict[str, str],
+) -> List[Finding]:
+    """Check for imports with no resolution (invented names)."""
+    findings: List[Finding] = []
     guarded = {g.lower().replace("_", "-") for m in model.modules for g in m.guarded}
     local = {m.dotted.split(".", 1)[0] for m in model.modules}
     unresolvable = sorted(
@@ -848,6 +834,7 @@ def derive_findings(model: StructuralModel) -> List[Finding]:
         and pkg.replace("-", "_") not in local
     )
     for package in unresolvable:
+        findings.append(_finding(
         # A name somebody parked in a comment in a dependency file is still
         # undeclared -- nothing installs a comment -- but it is not the
         # invented name this finding's detail is mostly about, and the
@@ -891,38 +878,80 @@ def derive_findings(model: StructuralModel) -> List[Finding]:
                   "imported_by": ", ".join(sorted(imported[package])[:5])},
                  **({"commented_out_at": parked} if parked else {})),
         ))
+    return findings
 
-    if model.dependency_sources:
-        for package, users in sorted(imported.items()):
-            if package in declared:
-                continue
-            distribution = mapping.get(package)
-            if distribution is None:
-                # Undecidable, not undeclared. Recorded so the gap is
-                # visible instead of being reported as a fact.
-                model.unresolved.append(
-                    f"import '{package}' could not be mapped to a distribution "
-                    f"name (not installed in the scanning environment), so "
-                    f"whether it is declared cannot be established here"
-                )
-                continue
-            if distribution in declared:
-                continue
-            out.append(_finding(
-                model, "undeclared dependency", Severity.MAJOR,
-                str(Path(model.root) / (model.dependency_sources[0].split(":")[0])),
-                f"'{package}' (distribution '{distribution}') is imported by "
-                f"{len(users)} module(s) and appears in no dependency declaration",
-                "This is the works-on-my-machine failure: the package is installed "
-                "in the environment it was written in and nowhere else. A fresh "
-                "clone, a CI runner or a production image gets an ImportError at "
-                "the first import.\n\nScope limit: a package installed as a "
-                "transitive dependency of something declared will work by accident "
-                "until that intermediate drops it. That is still undeclared.",
-                {"package": package, "distribution": distribution, "imported_by": ", ".join(sorted(users)[:5])},
-            ))
 
-    return out
+def _check_undeclared_dependencies(
+    model: StructuralModel,
+    imported: Dict[str, List[str]],
+    declared: set,
+    mapping: Dict[str, str],
+) -> List[Finding]:
+    """Check for imports that should be in dependency declarations."""
+    findings: List[Finding] = []
+    if not model.dependency_sources:
+        return findings
+    for package, users in sorted(imported.items()):
+        if package in declared:
+            continue
+        distribution = mapping.get(package)
+        if distribution is None:
+            model.unresolved.append(
+                f"import '{package}' could not be mapped to a distribution "
+                f"name (not installed in the scanning environment), so "
+                f"whether it is declared cannot be established here"
+            )
+            continue
+        if distribution in declared:
+            continue
+        findings.append(_finding(
+            model, "undeclared dependency", Severity.MAJOR,
+            str(Path(model.root) / (model.dependency_sources[0].split(":")[0])),
+            f"'{package}' (distribution '{distribution}') is imported by "
+            f"{len(users)} module(s) and appears in no dependency declaration",
+            "This is the works-on-my-machine failure: the package is installed "
+            "in the environment it was written in and nowhere else. A fresh "
+            "clone, a CI runner or a production image gets an ImportError at "
+            "the first import.\n\nScope limit: a package installed as a "
+            "transitive dependency of something declared will work by accident "
+            "until that intermediate drops it. That is still undeclared.",
+            {"package": package, "distribution": distribution, "imported_by": ", ".join(sorted(users)[:5])},
+        ))
+    return findings
+
+
+def derive_findings(model: StructuralModel) -> List[Finding]:
+    """Only what the evidence establishes on its own. Nothing here is a
+    judgement about architecture; each is a contradiction between two
+    observed facts."""
+    if not model.ran:
+        return []
+    if not model.modules:
+        model.unresolved.append(
+            "no modules were scanned, so entry-point targets and dependency "
+            "usage could not be checked"
+        )
+        return []
+
+    by_dotted = {m.dotted: m for m in model.modules}
+    findings = _check_entry_points(model, by_dotted)
+
+    declared = set(model.declared_dependencies)
+    stdlib = _stdlib_names()
+    imported: Dict[str, List[str]] = {}
+    for facts in model.modules:
+        if facts.dotted in model.test_modules:
+            continue
+        for module in facts.imports_external:
+            top = module.split(".", 1)[0]
+            if top in stdlib or top.startswith("_"):
+                continue
+            imported.setdefault(top.lower().replace("_", "-"), []).append(facts.dotted)
+
+    mapping = _import_to_distribution()
+    findings.extend(_check_unresolvable_dependencies(model, imported, declared, mapping))
+    findings.extend(_check_undeclared_dependencies(model, imported, declared, mapping))
+    return findings
 
 
 def _stdlib_names() -> Set[str]:
