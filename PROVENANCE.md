@@ -39,8 +39,12 @@ Not copied: `README.md`, `pyproject.toml`, `.gitignore`, that repo's
   `empirical_filter` attribute is replaced with a wrapper that runs the
   same filter on the reasoning only. The pipeline's HMAC signature and
   latency fields have no consumer here; a per-process random signing key
-  is passed only so the vendored code does not log its default-key
-  warning on every proposal.
+  is passed only so the vendored code does not log its no-key warning on
+  every proposal.
+- **Changed 2026-09-24:** the upstream `DEFAULT_SIGNING_KEY` constant
+  (a key published in source) was removed from the vendored copy. With no
+  `signing_key`, the pipeline now uses a random per-instance key and
+  warns, so a signature can no longer be forged from the source.
 - **Verification at the time of vendoring:** the source suite (23) passed
   at commit `44bf225`; the ported suite passes here; ghost_tools went from
   167 to 220 tests (23 ported, 15 gate tests, 15 mutant checks).
