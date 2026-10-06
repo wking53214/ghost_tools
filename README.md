@@ -22,6 +22,15 @@ Seven rules (each from a real defect): silence is the defect; fail-closed; say w
 
 ~185 Python files, ~1926 functions, ~86 TODOs. Stdlib-oriented CLI. Kernel scan measures duplication/drift against private `CNS` schema when present.
 
+## 2b. Optional CNS adapter
+
+`ghost_buster.cns_adapter` maps `Status` → `cns.gate` outcomes when the private
+`CNS` package is installed. It is **optional**: ghost_tools imports and runs
+without CNS. When CNS is absent the adapter returns an advisory translation
+(`authority=advisory_only`) with no `subject_digest`. When CNS is present,
+`subject_digest` comes only from `cns.gate.subject_digest`. CNS is never
+modified by this package.
+
 ## 3. What It Does NOT Do / Non-Goals
 
 - Does not govern runtime decisions.
