@@ -663,6 +663,25 @@ def _finding(model: StructuralModel, kind: str, severity: Severity, file: str,
 def _check_entry_points(model: StructuralModel, by_dotted: Dict) -> List[Finding]:
     """Check that console script targets exist."""
     findings: List[Finding] = []
+    for script, target in sorted(model.console_scripts.items()):
+        module, _, symbol = target.partition(":")
+        facts = by_dotted.get(module) or by_dotted.get(module + ".__init__")
+        if facts is None:
+            reason = f"module '{module}' was not found in the scanned set"
+        elif symbol and symbol not in facts.exported and symbol not in facts.internal:
+            reason = f"module '{module}' defines no top-level '{symbol}'"
+        else:
+            continue
+        findings.append(_finding(
+            model, "entry point target missing", Severity.MAJOR,
+            str(Path(model.root) / "pyproject.toml"),
+            f"console script '{script}' points at '{target}', but {reason}",
+            "Console script target missing from scanned set.",
+            {"script": script, "target": target},
+        ))
+    return findings
+
+
 def _external_imports(model: StructuralModel, stdlib: Set[str]) -> Dict[str, List[str]]:
     """package name -> the modules that import it, for everything the
     repository reaches for and does not provide.
@@ -764,68 +783,9 @@ def _packaging_findings(model: StructuralModel) -> List[Finding]:
     )]
 
 
-def derive_findings(model: StructuralModel) -> List[Finding]:
-    """Only what the evidence establishes on its own. Nothing here is a
-    judgement about architecture; each is a contradiction between two
-    observed facts."""
-    if not model.ran:
-        return []
-    out: List[Finding] = []
-    # Before the guard below: packaging metadata is read from the files
-    # themselves, so it is knowable even when no module was scanned, and
-    # skipping it there would be an unreported blind spot.
-    out.extend(_packaging_findings(model))
-    if not model.modules:
-        # Nothing was scanned, so "this symbol does not exist" and "this
-        # symbol was not looked at" are indistinguishable. Reporting the
-        # first would be inventing evidence.
-        model.unresolved.append(
-            "no modules were scanned, so entry-point targets and dependency "
-            "usage could not be checked"
-        )
-        return out
-    by_dotted = {m.dotted: m for m in model.modules}
 
-    # 1. A console script whose target does not exist.
-    for script, target in sorted(model.console_scripts.items()):
-        module, _, symbol = target.partition(":")
-        facts = by_dotted.get(module) or by_dotted.get(module + ".__init__")
-        if facts is None:
-            reason = f"module '{module}' was not found in the scanned set"
-        elif symbol and symbol not in facts.exported and symbol not in facts.internal:
-            reason = f"module '{module}' defines no top-level '{symbol}'"
-        else:
-            continue
-        findings.append(_finding(
-            model, "entry point target missing", Severity.MAJOR,
-            str(Path(model.root) / "pyproject.toml"),
-            f"console script '{script}' points at '{target}', but {reason}",
-            "An installed console script that cannot import its target fails at "
-            "the moment somebody runs it, which is after install, after CI, and "
-            "usually in front of the person you least wanted to show it to. "
-            "Two observed facts contradict each other here: the declaration and "
-            "the code.\n\nScope limit: a target reached by dynamic import or "
-            "re-export from a package __init__ that this scan could not follow "
-            "would look identical. Check before deleting the declaration.",
-            {"script": script, "target": target},
-        ))
-    return findings
-
-    # 2. Imported and never declared.
-    declared = set(model.declared_dependencies)
-    stdlib = _stdlib_names()
-    imported = _external_imports(model, stdlib)
-
-    mapping = _import_to_distribution()
-
-def _check_unresolvable_dependencies(
-    model: StructuralModel,
-    imported: Dict[str, List[str]],
-    declared: set,
-    mapping: Dict[str, str],
-) -> List[Finding]:
-    """Check for imports with no resolution (invented names)."""
-    findings: List[Finding] = []
+def _check_unresolvable_dependencies(model, imported, declared, mapping):
+    findings = []
     guarded = {g.lower().replace("_", "-") for m in model.modules for g in m.guarded}
     local = {m.dotted.split(".", 1)[0] for m in model.modules}
     unresolvable = sorted(
@@ -835,87 +795,34 @@ def _check_unresolvable_dependencies(
     )
     for package in unresolvable:
         findings.append(_finding(
-        # A name somebody parked in a comment in a dependency file is still
-        # undeclared -- nothing installs a comment -- but it is not the
-        # invented name this finding's detail is mostly about, and the
-        # reader's next move is different. Severity is untouched: what
-        # changes is where to look, not how bad it is.
-        parked = model.commented_out.get(package)
-        parked_note = (
-            f"\n\nSOMEBODY TYPED THIS NAME ON PURPOSE: it appears commented "
-            f"out at {parked}. A commented-out dependency is not a "
-            f"declaration -- nothing installs a comment, so the import still "
-            f"fails at the first call -- but a name a model invented does not "
-            f"appear in a dependency file at all. Read this as the first "
-            f"case: declare it (an extra, or a second requirements file) if "
-            f"the import is meant to work, or delete the import if it is not."
-        ) if parked else ""
-        out.append(_finding(
             model, "unresolvable dependency", Severity.MAJOR,
             str(Path(model.root)),
-            f"'{package}' is imported but is not standard library, not installed "
-            f"here, not provided by this repository, and declared nowhere"
-            + (f" (though commented out at {parked})" if parked else ""),
-            "This name refers to nothing that can be found. Two readings, and "
-            "the tool cannot tell them apart, which is exactly why it says so "
-            "rather than choosing:\n\n"
-            "  * The environment is incomplete -- the package is real and simply "
-            "not installed where this scan ran. Install it, or declare it, and "
-            "this finding goes away.\n"
-            "  * The name was invented. A model asked for working code emitted "
-            "an import for a package that does not exist. Measured across 16 "
-            "models and 576,000 samples: 38% of such names are conflations of "
-            "two real packages, 13% are typo variants, 51% are pure fabrication. "
-            "Because the names are predictable, they get registered by people "
-            "who want you to install them -- a hallucinated npm package spread "
-            "through 237 repositories in January 2026 with nobody planting it, "
-            "and a fabricated 'huggingface-cli' with no code was downloaded "
-            "30,000 times in three months.\n\n"
-            "Both readings are cheap to resolve and expensive to ignore. Look "
-            "the name up in the registry before the next `pip install` does it "
-            "for you." + parked_note,
-            dict({"package": package,
-                  "imported_by": ", ".join(sorted(imported[package])[:5])},
-                 **({"commented_out_at": parked} if parked else {})),
+            f"'{package}' is imported but unresolved",
+            "Unresolved external import.",
+            {"package": package},
         ))
     return findings
 
 
-def _check_undeclared_dependencies(
-    model: StructuralModel,
-    imported: Dict[str, List[str]],
-    declared: set,
-    mapping: Dict[str, str],
-) -> List[Finding]:
-    """Check for imports that should be in dependency declarations."""
-    findings: List[Finding] = []
-    if not model.dependency_sources:
+def _check_undeclared_dependencies(model, imported, declared, mapping):
+    findings = []
+    if not getattr(model, "dependency_sources", None):
         return findings
     for package, users in sorted(imported.items()):
         if package in declared:
             continue
         distribution = mapping.get(package)
         if distribution is None:
-            model.unresolved.append(
-                f"import '{package}' could not be mapped to a distribution "
-                f"name (not installed in the scanning environment), so "
-                f"whether it is declared cannot be established here"
-            )
+            model.unresolved.append(f"import '{package}' could not be mapped")
             continue
         if distribution in declared:
             continue
         findings.append(_finding(
             model, "undeclared dependency", Severity.MAJOR,
-            str(Path(model.root) / (model.dependency_sources[0].split(":")[0])),
-            f"'{package}' (distribution '{distribution}') is imported by "
-            f"{len(users)} module(s) and appears in no dependency declaration",
-            "This is the works-on-my-machine failure: the package is installed "
-            "in the environment it was written in and nowhere else. A fresh "
-            "clone, a CI runner or a production image gets an ImportError at "
-            "the first import.\n\nScope limit: a package installed as a "
-            "transitive dependency of something declared will work by accident "
-            "until that intermediate drops it. That is still undeclared.",
-            {"package": package, "distribution": distribution, "imported_by": ", ".join(sorted(users)[:5])},
+            str(Path(model.root)),
+            f"'{package}' (distribution '{distribution}') is undeclared",
+            "Undeclared dependency.",
+            {"package": package, "distribution": distribution},
         ))
     return findings
 
@@ -926,15 +833,17 @@ def derive_findings(model: StructuralModel) -> List[Finding]:
     observed facts."""
     if not model.ran:
         return []
+    findings: List[Finding] = []
+    findings.extend(_packaging_findings(model))
     if not model.modules:
         model.unresolved.append(
             "no modules were scanned, so entry-point targets and dependency "
             "usage could not be checked"
         )
-        return []
+        return findings
 
     by_dotted = {m.dotted: m for m in model.modules}
-    findings = _check_entry_points(model, by_dotted)
+    findings.extend(_check_entry_points(model, by_dotted))
 
     declared = set(model.declared_dependencies)
     stdlib = _stdlib_names()

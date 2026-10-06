@@ -1244,12 +1244,6 @@ def _is_collection(value) -> bool:
     return False
 
 
-@register("dead_code")
-def detect_dead_code(files: List[Path]) -> List[Finding]:
-    """Flags a module-level def/class whose name never appears as an
-    identifier anywhere else in the scanned set.
-
-
 def _extract_definitions_and_exports(
     files: List[Path],
 ) -> tuple[Dict[str, List[Path]], Set[str], Dict[Path, ast.Module]]:
@@ -1298,7 +1292,6 @@ def _collect_references(parsed: Dict[Path, ast.Module]) -> Set[str]:
                 key = node.slice
                 if isinstance(key, ast.Constant) and isinstance(key.value, str):
                     referenced_names.add(key.value)
-    return referenced_names
             # A DECORATOR IS A REFERENCE (v1.7.5).
             #
             # `@register("audit")` hands the function to something that keeps
@@ -1321,6 +1314,7 @@ def _collect_references(parsed: Dict[Path, ast.Module]) -> Set[str]:
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef,
                                    ast.ClassDef)) and node.decorator_list:
                 referenced_names.add(node.name)
+    return referenced_names
 
 
 def _build_dead_code_findings(
