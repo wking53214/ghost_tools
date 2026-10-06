@@ -1613,6 +1613,49 @@ def _next_matching(lines: List[str], pattern: "re.Pattern[str]", start: int) -> 
     return next((j for j in range(start, len(lines)) if pattern.match(lines[j])), None)
 
 
+def _conflict_findings(path: Path) -> List[Finding]:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return []
+    lines = text.splitlines()
+    findings: List[Finding] = []
+    i = 0
+    while i < len(lines):
+        if not _CONFLICT_OURS.match(lines[i]):
+            i += 1
+            continue
+        ours_line = i
+        sep_line = _next_matching(lines, _CONFLICT_SEP, ours_line + 1)
+        theirs_line = (
+            _next_matching(lines, _CONFLICT_THEIRS, sep_line + 1)
+            if sep_line is not None else None
+        )
+        if sep_line is None or theirs_line is None:
+            i = ours_line + 1
+            continue
+        findings.append(Finding(
+            detector="merge_conflict_marker",
+            category=Category.MERGE_CONFLICT_MARKER,
+            layer=Layer.MECHANICAL,
+            severity=Severity.CRITICAL,
+            status=Status.CONFIRMED,
+            summary=f"unresolved merge conflict marker in {path.name}",
+            detail=(
+                f"lines {ours_line + 1}-{theirs_line + 1}: a <<<<<<< / ======= / "
+                ">>>>>>> triplet is still in this file. Whatever is between the "
+                "markers is almost certainly not the intended content, and in a "
+                ".py file this line shape alone is very likely a syntax error."
+            ),
+            evidence=Evidence(
+                file=str(path), line_start=ours_line + 1, line_end=theirs_line + 1,
+                snippet=lines[ours_line][:200],
+            ),
+        ))
+        i = theirs_line + 1
+    return findings
+
+
 @register("merge_conflict_marker")
 def detect_merge_conflict_markers(files: List[Path]) -> List[Finding]:
     """Flags an unresolved conflict-marker triplet: a `<<<<<<<` line,
@@ -1660,44 +1703,7 @@ def detect_merge_conflict_markers(files: List[Path]) -> List[Finding]:
     """
     findings: List[Finding] = []
     for path in files:
-        try:
-            text = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            continue
-        lines = text.splitlines()
-        i = 0
-        while i < len(lines):
-            if not _CONFLICT_OURS.match(lines[i]):
-                i += 1
-                continue
-            ours_line = i
-            sep_line = _next_matching(lines, _CONFLICT_SEP, ours_line + 1)
-            theirs_line = (
-                _next_matching(lines, _CONFLICT_THEIRS, sep_line + 1)
-                if sep_line is not None else None
-            )
-            if sep_line is None or theirs_line is None:
-                i = ours_line + 1
-                continue
-            findings.append(Finding(
-                detector="merge_conflict_marker",
-                category=Category.MERGE_CONFLICT_MARKER,
-                layer=Layer.MECHANICAL,
-                severity=Severity.CRITICAL,
-                status=Status.CONFIRMED,
-                summary=f"unresolved merge conflict marker in {path.name}",
-                detail=(
-                    f"lines {ours_line + 1}-{theirs_line + 1}: a <<<<<<< / ======= / "
-                    ">>>>>>> triplet is still in this file. Whatever is between the "
-                    "markers is almost certainly not the intended content, and in a "
-                    ".py file this line shape alone is very likely a syntax error."
-                ),
-                evidence=Evidence(
-                    file=str(path), line_start=ours_line + 1, line_end=theirs_line + 1,
-                    snippet=lines[ours_line][:200],
-                ),
-            ))
-            i = theirs_line + 1
+        findings.extend(_conflict_findings(path))
     return findings
 
 
