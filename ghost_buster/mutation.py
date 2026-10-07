@@ -605,38 +605,6 @@ def _write_tree(path: Path, tree: ast.Module) -> None:
     path.write_text(ast.unparse(tree) + "\n", encoding="utf-8")
 
 
-def _test_mutant(scratch: "_Scratch", mutant: Mutant, cand: Candidate, timeout: float) -> bool:
-    """Test a single mutant. Parse, apply mutation, run test, and set outcome.
-    Returns True if mutant survived (is a proof of vacuity), False otherwise."""
-    original = mutant.target_file if mutant.target_file else cand.test_file
-    tree = _safe_parse(original)
-    if tree is None:
-        mutant.outcome = "error"
-        mutant.output_tail = "could not parse target"
-        return False
-    applied, description = _apply(mutant, tree)
-    if not applied:
-        return False
-    mutant.description = description
-    _write_tree(scratch.path_for(original), tree)
-    try:
-        outcome, tail = _run_test(scratch, cand, timeout)
-    finally:
-        scratch.restore(original)
-    mutant.output_tail = tail
-    if cand.shape == "guarded_assertion":
-        some_case_passed = " passed" in (mutant.output_tail or "").splitlines()[-1:][0] if mutant.output_tail else False
-        if outcome == "failed" and GUARD_MARKER in (mutant.output_tail or "") and not some_case_passed:
-            mutant.outcome = "survived"
-        elif outcome in ("passed", "failed"):
-            mutant.outcome = "killed"
-        else:
-            mutant.outcome = "error"
-    else:
-        mutant.outcome = "survived" if outcome == "passed" else ("killed" if outcome == "failed" else "error")
-    return mutant.outcome == "survived"
-
-
 def run_mutations(
     root: Path,
     files: Iterable[Path],
@@ -671,7 +639,7 @@ def run_mutations(
                 run.unjudged.append((cand, f"test does not pass unmutated ({outcome}): {tail[-120:]}"))
                 continue
 
-            mutants = _plan_mutants(cand, root, file_list, operators, max_mutants_per_candidate)
+            mutants = _plan_mutants(cand, root, file_list, operators, max_mutants_per_candidate)  # ghost_buster: name-disagreement -- `max_mutants_per_candidate` is `cap` in the signature
             if not mutants:
                 reason = (
                     "no enum or literal collection in the project defines these values; nothing to extend"
@@ -682,11 +650,42 @@ def run_mutations(
                 continue
 
             for mutant in mutants:
-                survived = _test_mutant(scratch, mutant, cand, timeout)
+                original = mutant.target_file if mutant.target_file else cand.test_file
+                tree = _safe_parse(original)
+                if tree is None:
+                    mutant.outcome = "error"
+                    mutant.output_tail = "could not parse target"
+                    run.mutants.append(mutant)
+                    continue
+                applied, description = _apply(mutant, tree)
+                if not applied:
+                    continue          # operator did not apply to this target; not a mutant
+                mutant.description = description
+                _write_tree(scratch.path_for(original), tree)
+                try:
+                    outcome, tail = _run_test(scratch, cand, timeout)
+                finally:
+                    scratch.restore(original)
+                mutant.output_tail = tail
+                if cand.shape == "guarded_assertion":
+                    # The instrumented test fails with the marker only when the
+                    # guarded assertions never ran. Any other failure is noise.
+                    # For a parametrized test the marker fires per case; the
+                    # guard counts as never taken only if NO case took it,
+                    # which pytest's summary shows as no "passed" at all.
+                    some_case_passed = " passed" in (mutant.output_tail or "").splitlines()[-1:][0] if mutant.output_tail else False
+                    if outcome == "failed" and GUARD_MARKER in (mutant.output_tail or "") and not some_case_passed:
+                        mutant.outcome = "survived"
+                    elif outcome in ("passed", "failed"):
+                        mutant.outcome = "killed"
+                    else:
+                        mutant.outcome = "error"
+                else:
+                    mutant.outcome = "survived" if outcome == "passed" else ("killed" if outcome == "failed" else "error")
                 run.mutants.append(mutant)
-                if survived:
+                if mutant.outcome == "survived":
                     run.findings.append(_finding_for(root, mutant))
-                    break
+                    break             # one proof is enough; do not pile on
     finally:
         scratch.close()
     return run
