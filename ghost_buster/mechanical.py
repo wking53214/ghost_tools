@@ -2339,6 +2339,12 @@ def detect_merge_conflict_markers(files: List[Path]) -> List[Finding]:
 # Both abstain rather than guess: the vestigial check needs at least two
 # cassettes to tell a domain's vocabulary from the engine's, and returns
 # nothing at all when a tree has no seam to check against.
+from .buried import DETECTOR as COMMENTED_OUT_DETECTOR         # noqa: E402
+from .buried import detect_commented_out_modules              # noqa: E402
+from .flattened import DETECTOR as FLATTENED_COPY_DETECTOR     # noqa: E402
+from .flattened import detect_flattened_copies                 # noqa: E402
+from .selfcall import DETECTOR as UNDEFINED_SELF_DETECTOR      # noqa: E402
+from .selfcall import detect_undefined_self_methods            # noqa: E402
 from .copies import DETECTOR as DRIFTED_COPY_DETECTOR          # noqa: E402
 from .copies import detect_drifted_copies                      # noqa: E402
 from .deadend import DETECTOR as DEAD_END_DETECTOR             # noqa: E402
@@ -2361,6 +2367,12 @@ register(DISAGREEMENT_DETECTOR)(detect_name_disagreements)
 register(DEAD_END_DETECTOR)(detect_dead_end_calls)
 register(DRIFTED_COPY_DETECTOR)(detect_drifted_copies)
 register(SWALLOWED_DETECTOR)(detect_swallowed_exceptions)
+# The three TOUCHSTONE blind spots, 2026-10-07: a module whose code is all
+# in comments (the silent pass), an unreadable file that is a flattened copy
+# of a readable one, and a call on self to a name the class cannot have.
+register(COMMENTED_OUT_DETECTOR)(detect_commented_out_modules)
+register(FLATTENED_COPY_DETECTOR)(detect_flattened_copies)
+register(UNDEFINED_SELF_DETECTOR)(detect_undefined_self_methods)
 # One registration produces two detector names; the registry keys on
 # the name the finding carries, so both must be visible to a baseline.
 register(LIST_IN_LOOP)(lambda files: [f for f in detect_pitstops(files) if f.detector == LIST_IN_LOOP])
