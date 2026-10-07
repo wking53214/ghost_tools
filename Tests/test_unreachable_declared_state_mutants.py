@@ -76,8 +76,8 @@ MUTANTS = [
      "               if not _looks_like_a_test(path)}",
      "               if True}"),
     ("the finding stops saying the production was a test", _M,
-     '                     if only_tests else "no code ever puts anything into it")',
-     '                     if False else "no code ever puts anything into it")'),
+     '             if only_tests else "no code ever puts anything into it")',
+     '             if False else "no code ever puts anything into it")'),
     # --- evidence that costs nothing does not buy a lower severity (1.7.8) ---
     #
     # The mutant IS version 1.7.7. It reported a test-only state at
@@ -87,9 +87,9 @@ MUTANTS = [
     # graded willingness to type and handed an adversary a free way to quiet
     # this detector.
     ("a test producing the state buys a lower severity, as in 1.7.7", _M,
-     "                severity=_HISTORY_SEVERITY[provenance],",
-     "                severity=(Severity.INFORMATIONAL if only_tests\n"
-     "                          else _HISTORY_SEVERITY[provenance]),"),
+     "        severity=_HISTORY_SEVERITY[provenance],",
+     "        severity=(Severity.INFORMATIONAL if only_tests\n"
+     "                  else _HISTORY_SEVERITY[provenance]),"),
     # "history does not change the severity at all" lives in
     # test_forensics_mutants.py: every fixture here runs in a temporary
     # directory that is not a repository, so provenance is UNKNOWN and the
@@ -119,8 +119,8 @@ MUTANTS = [
      "            if reachable and claims:\n                continue",
      "            if False:\n                continue"),
     ("a claim the code does not back is quieted instead of escalated", _M,
-     "                    severity=Severity.CRITICAL,",
-     "                    severity=Severity.INFORMATIONAL,"),
+     "        severity=Severity.CRITICAL,  # a claim the code does not back",
+     "        severity=Severity.INFORMATIONAL,  # a claim the code does not back"),
     ("a bare claim suppresses the finding", _M,
      "            if claims:\n"
      "                # A claim the code does not back. Worse than saying nothing,",
@@ -137,12 +137,12 @@ MUTANTS = [
      "        if not _CLAIMS_FROM_DATA.search(line):\n            continue",
      ""),
     ("a state arriving only from data is filed as informational", _M,
-     "                    severity=Severity.MINOR,\n"
-     "                    status=Status.CONFIRMED,\n"
-     "                    summary=(f\"'{enum}.{member}' is produced only by reading \"",
-     "                    severity=Severity.INFORMATIONAL,\n"
-     "                    status=Status.CONFIRMED,\n"
-     "                    summary=(f\"'{enum}.{member}' is produced only by reading \""),
+     "        severity=Severity.MINOR,\n"
+     "        status=Status.CONFIRMED,\n"
+     "        summary=(f\"'{enum}.{member}' is produced only by reading \"",
+     "        severity=Severity.INFORMATIONAL,\n"
+     "        status=Status.CONFIRMED,\n"
+     "        summary=(f\"'{enum}.{member}' is produced only by reading \""),
     # --- flagging what is fine ---
     ("an enum nobody names is reported member by member", _M,
      "        if not live:\n            continue",
@@ -155,8 +155,8 @@ MUTANTS = [
      "                    if isinstance(target, ast.Name):"),
     # --- what the finding says ---
     ("the finding stops saying it is not a reachability claim", _M,
-     '                    + "It does not claim the state is unreachable. What is "',
-     '                    + "This state is unreachable. What is "'),
+     '            + "It does not claim the state is unreachable. What is "',
+     '            + "This state is unreachable. What is "'),
     # Not "substitute an empty tree": an empty tree contributes nothing, so
     # that mutant was behaviourally identical to skipping and survived. What
     # the guard actually buys is not walking None.

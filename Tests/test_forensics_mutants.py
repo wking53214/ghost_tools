@@ -76,8 +76,8 @@ MUTANTS = [
      '        if False:\n            return []'),
     # --- what the detector does with the answer ---
     ("history does not change the severity at all", _M,
-     "                severity=_HISTORY_SEVERITY[provenance],",
-     "                severity=Severity.MINOR,"),
+     "        severity=_HISTORY_SEVERITY[provenance],",
+     "        severity=Severity.MINOR,"),
     ("a removal is graded no higher than an oversight", _M,
      "    forensics.Provenance.REMOVED_FROM_LIBRARY: Severity.MAJOR,",
      "    forensics.Provenance.REMOVED_FROM_LIBRARY: Severity.MINOR,"),
