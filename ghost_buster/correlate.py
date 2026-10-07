@@ -242,43 +242,6 @@ def correlate_secret_in_duplicated_file(data: CorrelationInput) -> List[Finding]
 # Connector: secret_in_multiple_repositories
 # ---------------------------------------------------------------------------
 
-def _build_secret_cross_repo_finding(secret: Finding, fingerprint: str, elsewhere: List[Tuple[str, Finding]]) -> Finding:
-    """Build a Finding for a secret appearing in multiple repositories."""
-    labels = ", ".join(label for label, _ in elsewhere)
-    return Finding(
-        detector="secret_in_multiple_repositories",
-        category=Category.COMMITTED_SECRET,
-        layer=Layer.MECHANICAL,
-        severity=Severity.CRITICAL,
-        status=Status.CONFIRMED,
-        summary=(
-            f"the '{secret.attributes.get('rule', 'unknown-rule')}' secret in "
-            f"{secret.evidence.file} is the same leak as one in: {labels}"
-        ),
-        detail=(
-            "Matched on gitleaks' own fingerprint (commit:file:rule:line), so this "
-            "is the same commit carrying the same secret in more than one "
-            "repository -- a fork, a vendored copy, or a directory copied with its "
-            "history. A single-repository scan cannot see this: each repository "
-            "reports its own leak with nothing to say they are one credential. "
-            "Rotate once; purge history in every repository listed, or the "
-            "rotation is the only thing that happened.\n"
-            f"Fingerprint: {fingerprint}\n"
-            f"Built from findings: {_ids([secret] + [f for _, f in elsewhere])}."
-        ),
-        attributes={
-            "fingerprint": fingerprint,
-            "repositories": str(len(elsewhere) + 1),
-            "also_in": labels,
-        },
-        evidence=Evidence(
-            file=secret.evidence.absolute_file or secret.evidence.file,
-            line_start=secret.evidence.line_start,
-            line_end=secret.evidence.line_end,
-        ),
-    )
-
-
 @connector("secret_in_multiple_repositories")
 def correlate_secret_across_repositories(data: CorrelationInput) -> List[Finding]:
     """The same leak, by gitleaks' own fingerprint, in more than one
@@ -319,12 +282,48 @@ def correlate_secret_across_repositories(data: CorrelationInput) -> List[Finding
             for other in prior.findings:
                 if other.detector != "committed_secret":
                     continue
+                # Same default on both sides. With one side defaulting to
+                # None and the other to "", two findings that both lack a
+                # fingerprint could never collide -- which quietly made the
+                # empty-key guard above unreachable rather than unnecessary.
                 if other.attributes.get("fingerprint", "") == fingerprint:
                     elsewhere.append((prior.label, other))
                     break
         if not elsewhere:
             continue
-        out.append(_build_secret_cross_repo_finding(secret, fingerprint, elsewhere))
+        labels = ", ".join(label for label, _ in elsewhere)
+        out.append(Finding(
+            detector="secret_in_multiple_repositories",
+            category=Category.COMMITTED_SECRET,
+            layer=Layer.MECHANICAL,
+            severity=Severity.CRITICAL,
+            status=Status.CONFIRMED,
+            summary=(
+                f"the '{secret.attributes.get('rule', 'unknown-rule')}' secret in "
+                f"{secret.evidence.file} is the same leak as one in: {labels}"
+            ),
+            detail=(
+                "Matched on gitleaks' own fingerprint (commit:file:rule:line), so this "
+                "is the same commit carrying the same secret in more than one "
+                "repository -- a fork, a vendored copy, or a directory copied with its "
+                "history. A single-repository scan cannot see this: each repository "
+                "reports its own leak with nothing to say they are one credential. "
+                "Rotate once; purge history in every repository listed, or the "
+                "rotation is the only thing that happened.\n"
+                f"Fingerprint: {fingerprint}\n"
+                f"Built from findings: {_ids([secret] + [f for _, f in elsewhere])}."
+            ),
+            attributes={
+                "fingerprint": fingerprint,
+                "repositories": str(len(elsewhere) + 1),
+                "also_in": labels,
+            },
+            evidence=Evidence(
+                file=secret.evidence.absolute_file or secret.evidence.file,
+                line_start=secret.evidence.line_start,
+                line_end=secret.evidence.line_end,
+            ),
+        ))
     return out
 
 
@@ -406,46 +405,6 @@ def correlate_conflict_marker_breaks_tests(data: CorrelationInput) -> List[Findi
 # Connector: doc_count_contradicted_by_run
 # ---------------------------------------------------------------------------
 
-def _build_doc_count_finding(drift: Finding, documented: str, static: str, collected: int, passed: int, not_passing: int) -> Finding:
-    """Build a Finding when documented test count contradicts actual run."""
-    return Finding(
-        detector="doc_count_contradicted_by_run",
-        category=Category.DOC_DRIFT,
-        layer=Layer.MECHANICAL,
-        severity=Severity.MINOR if not_passing == 0 else Severity.MAJOR,
-        status=Status.CONFIRMED,
-        summary=(
-            f"'{drift.evidence.file}' claims {documented} test(s); the suite "
-            f"actually collects {collected} and {passed} pass"
-            + ("" if not_passing == 0 else f" ({not_passing} do not)")
-        ),
-        detail=(
-            "The static count is a lower bound and says so; this is the measured "
-            f"number from the run that just happened. Write {collected} into the "
-            "doc, not the static bound of "
-            f"{static or 'the AST scan'}."
-            + ("" if not_passing == 0 else
-               f" Note also that {not_passing} collected test(s) did not pass, so a "
-               "sentence claiming this suite is green is wrong independently of the "
-               "number.")
-            + f"\nBuilt from findings: {_ids([drift])} plus the --tests run."
-        ),
-        attributes={
-            "drift_finding": drift.id,
-            "documented_count": documented,
-            "collected": str(collected),
-            "passed": str(passed),
-            "writable": drift.attributes.get("writable", "no"),
-            "not_writable_because": drift.attributes.get("not_writable_because", ""),
-        },
-        evidence=Evidence(
-            file=drift.evidence.absolute_file or drift.evidence.file,
-            line_start=drift.evidence.line_start,
-            line_end=drift.evidence.line_end,
-        ),
-    )
-
-
 @connector("doc_count_contradicted_by_run")
 def correlate_doc_count_against_run(data: CorrelationInput) -> List[Finding]:
     """A documented test count, checked against the suite actually running.
@@ -505,10 +464,21 @@ def correlate_doc_count_against_run(data: CorrelationInput) -> List[Finding]:
         static = drift.attributes.get("static_lower_bound", "")
         if not documented:
             continue
+        # Re-check the claim's shape rather than trusting that the detector
+        # filtered it. This connector does not merely repeat its input, it
+        # tells the reader to write a specific number into a specific file,
+        # and that instruction is wrong unless the number really is a claim
+        # about the current suite. "gained 13 tests" is a delta, "went from
+        # 255 to 272 tests" a recorded transition, and a quoted count
+        # belongs to whoever was quoted -- writing today's total over any of
+        # them replaces something true with something false.
+        #
+        # Measured on ghost_tools itself: before the detector learned these
+        # shapes, all three of its drift findings were one of them, and this
+        # connector confidently recommended overwriting all three.
         shape = claim_shape(drift.attributes.get("claim_context", ""))
         if shape is not None:
             continue
-        out.append(_build_doc_count_finding(drift, documented, static, collected, passed, not_passing))
         out.append(Finding(
             detector="doc_count_contradicted_by_run",
             category=Category.DOC_DRIFT,

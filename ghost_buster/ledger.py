@@ -448,39 +448,6 @@ class Ledger:
 
     # ---------------------------------------------------------------- record
 
-    def _update_finding_histories(
-        self, findings_by_id: Dict[str, Finding], seen_now: set, at: str, commit: str,
-    ) -> None:
-        """Update finding history for findings seen in this run and mark absent ones."""
-        for fid, hist in self.findings.items():
-            if fid in seen_now:
-                continue
-            hist.consecutive = 0
-            hist.absent_last_run = True
-
-        for fid in sorted(seen_now):
-            f = findings_by_id[fid]
-            hist = self.findings.get(fid)
-            if hist is None:
-                hist = FindingHistory(finding_id=fid, first_seen=at, first_commit=commit)
-                self.findings[fid] = hist
-            elif hist.absent_last_run:
-                hist.returns += 1
-            hist.detector = f.detector
-            hist.file = f.evidence.file
-            hist.summary = f.summary
-            hist.severity = f.severity.value if hasattr(f.severity, "value") else str(f.severity)
-            hist.last_seen = at
-            hist.last_commit = commit
-            hist.runs_seen += 1
-            hist.consecutive += 1
-            hist.absent_last_run = False
-            if f.disposition:
-                hist.dispositions.append({
-                    "at": at, "state": str(f.disposition),
-                    "note": f.disposition_note or "",
-                })
-
     def record(
         self, findings: Sequence[Finding], *, checks: Dict[str, str],
         commit: str, tool_version: str, at: Optional[str] = None,
@@ -506,6 +473,19 @@ class Ledger:
             records=dict(records or {}),
         )
 
+        # The ledger never remembers its own output. Without this, a
+        # `regressed_finding` becomes a finding that can itself regress,
+        # and history compounds on history -- the same trap correlate.py
+        # closes by refusing to correlate correlations.
+        # And never remembers a claim as though it were a measurement. A
+        # FindingHistory has no status field, so a REASONED finding folded
+        # in here would be indistinguishable from a detector's output on
+        # every future read. See schema.authoritative.
+        #
+        # Both filters change what is REMEMBERED, never what the run is
+        # reported to have found: `counts["found"]` above is the scan's own
+        # number, and a ledger that quietly counted fewer findings than the
+        # report printed would be its own drift.
         findings = authoritative(f for f in findings if f.detector != DETECTOR)
         run.counts["found_remembered"] = len(findings)
         if scanned is not None:
@@ -514,7 +494,6 @@ class Ledger:
         seen_now = {f.id for f in findings}
         by_id = {f.id: f for f in findings}
 
-        self._update_finding_histories(by_id, seen_now, at, commit)
         # A file that moved is not a defect that was fixed. Run BEFORE the
         # absence loop below: it re-keys a carried history onto the id the
         # finding has now, which is in `seen_now`, so the loop passes over
@@ -555,10 +534,17 @@ class Ledger:
                     "note": f.disposition_note or "",
                 })
 
+        # The link is computed LAST, over the run exactly as it will be
+        # written: every count is set by now. Computing it at construction
+        # meant the stored link described a run that no longer existed by
+        # the time it was saved, and every link read back as broken.
         run.link = attest.link(self.runs[-1].link if self.runs else "", run.to_dict())
         self.runs.append(run)
         self.totals["runs"] = self.run_count + 1
         if len(self.runs) > MAX_RUNS_KEPT:
+            # Aged-out runs survive as counters, never as nothing: the
+            # blind-spot streak below counts over kept runs, so the cap is
+            # also the ceiling on how far back a streak can be proven.
             for old in self.runs[:-MAX_RUNS_KEPT]:
                 for name, state in old.checks.items():
                     key = f"check.{name}.{state}"
