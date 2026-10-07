@@ -59,4 +59,4 @@ observe-perceive       ✗ does not import
 swizzle-gate CI        replays SWIZZLE cases against this tool
 ```
 
-Proprietary. Copyright (c) 2026 William N. King. All rights reserved. See LICENSE. Prefer this README plus `CHANGELOG.md` over folklore.
+Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). Copyright 2026 William N. King. Prefer this README plus `CHANGELOG.md` over folklore.
