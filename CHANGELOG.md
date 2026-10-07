@@ -2,6 +2,39 @@
 
 ## Unreleased
 
+**Three detectors for TOUCHSTONE failure modes ghost_buster used to miss.**
+
+`swizzle touchstone` scores ghost_buster against TOUCHSTONE's MANIFEST, real
+damage with the correct answers written down. On 2026-10-07 it named 0 of 5
+failure modes. Three were visible to a syntax-tree scanner and now have a
+detector each; with them it names 3 of 5, and still accepts 7 of 7 working
+reference implementations.
+
+- `commented_out_module` (MAJOR): a file that parses and defines nothing
+  because every def/class is inside a comment. TOUCHSTONE 3.1, the silent
+  pass: it imports cleanly, so `unassessable_file` never fired.
+- `undefined_self_method` (MAJOR): `self.name()` where the class, its
+  same-file bases and its `self.X =` assignments have no `name`. Abstains on
+  any class it cannot see whole (outside base, metaclass, decorator,
+  `__getattr__`, setattr/`__dict__`). TOUCHSTONE 3.2, the overclaim.
+- `flattened_copy` (MAJOR): an unparseable file whose tokens, ignoring
+  whitespace, match a readable file at 90% or more. Names the readable twin.
+  TOUCHSTONE 3.3, the flattening duplicate.
+
+Measured on 42 public repositories of this library (1,765 .py files), pinned
+in each calibration record: 1, 1 and 5 findings, all read and confirmed true.
+`undefined_self_method` judged 1,499 of 3,875 classes and abstained on the
+rest. The ghost_tools self-scan, SWIZZLE's seed and regression diffs, and the
+warp catalogue are unchanged.
+
+Not attempted, and why: TOUCHSTONE 3.4 (a branch unreachable because of how
+two computed scores relate numerically) and 3.5 (one formula written two
+different ways) need value-range or semantic reasoning, not a syntax tree.
+SWIZZLE now labels those two escapes "beyond syntax" rather than counting
+them as a missing detector.
+
+**Earlier in this release:**
+
 **The SWIZZLE integration layer, removed; a SWIZZLE regression gate, added.**
 
 Arrived together on 2026-09-18, removed together:

@@ -1209,6 +1209,585 @@
         },
         "note": null
       }
+    },
+    {
+      "name": "commented_out_module",
+      "kind": "detector",
+      "date": "2026-10-07",
+      "corpus": "2026-10-07: 42 public repositories of this library (1,765 .py files, 19 unparseable), at the commits in the manifest below; first case TOUCHSTONE's MANIFEST section 3.1 (the silent pass).",
+      "before": "0 findings on TOUCHSTONE's silent-pass specimen: it parses, so unassessable_file is silent, and every structural detector sees an empty module",
+      "after": "1 finding across the corpus: the specimen itself. 0 elsewhere, including every licence-header and docstring-only __init__.py",
+      "exclusions": [
+        "a module with any live statement beyond a docstring",
+        "fewer than 2 def/class signatures in comments"
+      ],
+      "disclosed": [
+        "precision 1 of 1 and recall 1 of 1 on a corpus that holds exactly one known case; a larger corpus may find commented-out modules this rule calls ordinary, or the reverse",
+        "the signature regex requires a capitalised class name; a buried module containing only lower-case classes and no defs is missed"
+      ],
+      "source": "ghost_buster/buried.py docstring; CHANGELOG Unreleased",
+      "reproduce": {
+        "command": "python -I measure.py <ghost_tools> <repo>... : calls the detector function directly on every .py file under each repository (skipping .git, __pycache__, venvs), corpus.reset() per repository, and lists every finding",
+        "tool_version": "1.9.1+touchstone-blind-spots",
+        "corpus_manifest": {
+          "AC-HCCSE": {
+            "branch": "main",
+            "commit": "b3cac9e9dd"
+          },
+          "CCC": {
+            "branch": "main",
+            "commit": "3389d52e53"
+          },
+          "CCCb": {
+            "branch": "main",
+            "commit": "9d922a3708"
+          },
+          "CNS": {
+            "branch": "main",
+            "commit": "658695c121"
+          },
+          "Conservation_Kernel": {
+            "branch": "main",
+            "commit": "16479cc1ac"
+          },
+          "DGK": {
+            "branch": "main",
+            "commit": "8ee5a31a1f"
+          },
+          "DIT": {
+            "branch": "main",
+            "commit": "a690dc3e31"
+          },
+          "Ecology": {
+            "branch": "main",
+            "commit": "df6d4ba3bf"
+          },
+          "GEMS": {
+            "branch": "main",
+            "commit": "974adeeafe"
+          },
+          "GSA": {
+            "branch": "main",
+            "commit": "02063bafc2"
+          },
+          "GSA-815": {
+            "branch": "main",
+            "commit": "2a12482057"
+          },
+          "Governance_Gateway": {
+            "branch": "main",
+            "commit": "e579366ca1"
+          },
+          "Graveyard": {
+            "branch": "main",
+            "commit": "d93f1df032"
+          },
+          "HERALD": {
+            "branch": "main",
+            "commit": "ecd386c50e"
+          },
+          "HTTP": {
+            "branch": "main",
+            "commit": "2cfb08a0c1"
+          },
+          "ICEBURG": {
+            "branch": "main",
+            "commit": "3cc5752132"
+          },
+          "OBSERVE": {
+            "branch": "main",
+            "commit": "250d41409e"
+          },
+          "PERCEIVE": {
+            "branch": "main",
+            "commit": "294e691cfa"
+          },
+          "Reporting": {
+            "branch": "claude/lean-technical-review-9n6xwk",
+            "commit": "09172a0249"
+          },
+          "STACK-Kernel": {
+            "branch": "main",
+            "commit": "efc79380fb"
+          },
+          "TIE": {
+            "branch": "main",
+            "commit": "bab7c249e9"
+          },
+          "Triad-42": {
+            "branch": "main",
+            "commit": "e5791c811f"
+          },
+          "URE": {
+            "branch": "main",
+            "commit": "d568871986"
+          },
+          "VANGUARD": {
+            "branch": "main",
+            "commit": "8df86a79a7"
+          },
+          "ZTGKT": {
+            "branch": "main",
+            "commit": "7dbcf05157"
+          },
+          "ZTS": {
+            "branch": "main",
+            "commit": "28a4490eaf"
+          },
+          "composition-engine": {
+            "branch": "main",
+            "commit": "c85efbbeb5"
+          },
+          "constitution": {
+            "branch": "main",
+            "commit": "c1069b613e"
+          },
+          "content-polish-pipeline": {
+            "branch": "main",
+            "commit": "5f1cad835c"
+          },
+          "experimental": {
+            "branch": "main",
+            "commit": "a58d1873cb"
+          },
+          "fortress-kernel": {
+            "branch": "Main",
+            "commit": "5f70a1ae20"
+          },
+          "interconnected_alpha": {
+            "branch": "main",
+            "commit": "3123b792ab"
+          },
+          "interconnected_beta": {
+            "branch": "main",
+            "commit": "b605c2d63c"
+          },
+          "interconnected_delta": {
+            "branch": "main",
+            "commit": "b9cb4695c5"
+          },
+          "interconnected_zeta": {
+            "branch": "main",
+            "commit": "c32bc3cc35"
+          },
+          "observe-perceive": {
+            "branch": "main",
+            "commit": "5a7b9ff498"
+          },
+          "p3-2-governance-research": {
+            "branch": "main",
+            "commit": "217ea81c26"
+          },
+          "sentinel_os": {
+            "branch": "main",
+            "commit": "5029ff6e07"
+          },
+          "SWIZZLE": {
+            "branch": "main",
+            "commit": "fd0a72b4d9"
+          },
+          "Elegant": {
+            "branch": "main",
+            "commit": "8a43c851ef"
+          },
+          "TOUCHSTONE": {
+            "branch": "main",
+            "commit": "f11b482b32"
+          },
+          "ghost_tools": {
+            "branch": "main",
+            "commit": "c6eedd99fb"
+          }
+        },
+        "note": null
+      }
+    },
+    {
+      "name": "flattened_copy",
+      "kind": "detector",
+      "date": "2026-10-07",
+      "corpus": "2026-10-07: 42 public repositories of this library (1,765 .py files, 19 unparseable), at the commits in the manifest below; first case TOUCHSTONE's MANIFEST section 3.3 (the flattening duplicate).",
+      "before": "19 unparseable files reported only as unassessable_file; none connected to a readable copy",
+      "after": "5 of the 19 named with a readable twin, all 5 read and confirmed: TOUCHSTONE secure/artifact_1.py -> wrapper/artifact_3.py (MANIFEST 3.3), TOUCHSTONE solvar_stability_governance_source.py -> _cleanup.py (MANIFEST section 1, faithful), and three GSA archive artifact_N.py files -> their artifact_N.recovered.py",
+      "exclusions": [
+        "pairs where both files parse (duplicate_file and drifted_copy own those)",
+        "candidates sharing fewer than 60% of the unreadable file's distinctive identifiers are never compared",
+        "token similarity below 0.90"
+      ],
+      "disclosed": [
+        "false positives measured 0 of 5 on this corpus; false negatives were not measured: nobody has listed which of the other 14 unparseable files have a readable twin",
+        "difflib sequence matching is quadratic in the worst case; bounded here by the identifier prefilter and only run for unparseable files"
+      ],
+      "source": "ghost_buster/flattened.py docstring; CHANGELOG Unreleased",
+      "reproduce": {
+        "command": "python -I measure.py <ghost_tools> <repo>... : calls the detector function directly on every .py file under each repository (skipping .git, __pycache__, venvs), corpus.reset() per repository, and lists every finding",
+        "tool_version": "1.9.1+touchstone-blind-spots",
+        "corpus_manifest": {
+          "AC-HCCSE": {
+            "branch": "main",
+            "commit": "b3cac9e9dd"
+          },
+          "CCC": {
+            "branch": "main",
+            "commit": "3389d52e53"
+          },
+          "CCCb": {
+            "branch": "main",
+            "commit": "9d922a3708"
+          },
+          "CNS": {
+            "branch": "main",
+            "commit": "658695c121"
+          },
+          "Conservation_Kernel": {
+            "branch": "main",
+            "commit": "16479cc1ac"
+          },
+          "DGK": {
+            "branch": "main",
+            "commit": "8ee5a31a1f"
+          },
+          "DIT": {
+            "branch": "main",
+            "commit": "a690dc3e31"
+          },
+          "Ecology": {
+            "branch": "main",
+            "commit": "df6d4ba3bf"
+          },
+          "GEMS": {
+            "branch": "main",
+            "commit": "974adeeafe"
+          },
+          "GSA": {
+            "branch": "main",
+            "commit": "02063bafc2"
+          },
+          "GSA-815": {
+            "branch": "main",
+            "commit": "2a12482057"
+          },
+          "Governance_Gateway": {
+            "branch": "main",
+            "commit": "e579366ca1"
+          },
+          "Graveyard": {
+            "branch": "main",
+            "commit": "d93f1df032"
+          },
+          "HERALD": {
+            "branch": "main",
+            "commit": "ecd386c50e"
+          },
+          "HTTP": {
+            "branch": "main",
+            "commit": "2cfb08a0c1"
+          },
+          "ICEBURG": {
+            "branch": "main",
+            "commit": "3cc5752132"
+          },
+          "OBSERVE": {
+            "branch": "main",
+            "commit": "250d41409e"
+          },
+          "PERCEIVE": {
+            "branch": "main",
+            "commit": "294e691cfa"
+          },
+          "Reporting": {
+            "branch": "claude/lean-technical-review-9n6xwk",
+            "commit": "09172a0249"
+          },
+          "STACK-Kernel": {
+            "branch": "main",
+            "commit": "efc79380fb"
+          },
+          "TIE": {
+            "branch": "main",
+            "commit": "bab7c249e9"
+          },
+          "Triad-42": {
+            "branch": "main",
+            "commit": "e5791c811f"
+          },
+          "URE": {
+            "branch": "main",
+            "commit": "d568871986"
+          },
+          "VANGUARD": {
+            "branch": "main",
+            "commit": "8df86a79a7"
+          },
+          "ZTGKT": {
+            "branch": "main",
+            "commit": "7dbcf05157"
+          },
+          "ZTS": {
+            "branch": "main",
+            "commit": "28a4490eaf"
+          },
+          "composition-engine": {
+            "branch": "main",
+            "commit": "c85efbbeb5"
+          },
+          "constitution": {
+            "branch": "main",
+            "commit": "c1069b613e"
+          },
+          "content-polish-pipeline": {
+            "branch": "main",
+            "commit": "5f1cad835c"
+          },
+          "experimental": {
+            "branch": "main",
+            "commit": "a58d1873cb"
+          },
+          "fortress-kernel": {
+            "branch": "Main",
+            "commit": "5f70a1ae20"
+          },
+          "interconnected_alpha": {
+            "branch": "main",
+            "commit": "3123b792ab"
+          },
+          "interconnected_beta": {
+            "branch": "main",
+            "commit": "b605c2d63c"
+          },
+          "interconnected_delta": {
+            "branch": "main",
+            "commit": "b9cb4695c5"
+          },
+          "interconnected_zeta": {
+            "branch": "main",
+            "commit": "c32bc3cc35"
+          },
+          "observe-perceive": {
+            "branch": "main",
+            "commit": "5a7b9ff498"
+          },
+          "p3-2-governance-research": {
+            "branch": "main",
+            "commit": "217ea81c26"
+          },
+          "sentinel_os": {
+            "branch": "main",
+            "commit": "5029ff6e07"
+          },
+          "SWIZZLE": {
+            "branch": "main",
+            "commit": "fd0a72b4d9"
+          },
+          "Elegant": {
+            "branch": "main",
+            "commit": "8a43c851ef"
+          },
+          "TOUCHSTONE": {
+            "branch": "main",
+            "commit": "f11b482b32"
+          },
+          "ghost_tools": {
+            "branch": "main",
+            "commit": "c6eedd99fb"
+          }
+        },
+        "note": null
+      }
+    },
+    {
+      "name": "undefined_self_method",
+      "kind": "detector",
+      "date": "2026-10-07",
+      "corpus": "2026-10-07: 42 public repositories of this library (1,765 .py files, 19 unparseable), at the commits in the manifest below; first case TOUCHSTONE's MANIFEST section 3.2 (the overclaim).",
+      "before": "0 findings on TOUCHSTONE's overclaim specimen; dead_code fired on the class for being unreferenced, which is true and is not the defect",
+      "after": "1 finding across the corpus, the specimen itself. 3,875 top-level classes seen; 1,499 (39%) fully visible and judged; 1,122 self-calls checked; 1 reported",
+      "exclusions": [
+        "any class with a base not defined in the same file (other than object)",
+        "metaclass, class decorator, __getattr__/__getattribute__, setattr/getattr/delattr or __dict__ in the class",
+        "two classes with one name in a file",
+        "dunder calls"
+      ],
+      "disclosed": [
+        "abstains on 61% of classes by design: it only speaks about classes whose whole vocabulary is on the page",
+        "precision 1 of 1 on this corpus; a call reached through a base defined in ANOTHER file is never checked"
+      ],
+      "source": "ghost_buster/selfcall.py docstring; CHANGELOG Unreleased",
+      "reproduce": {
+        "command": "python -I measure.py <ghost_tools> <repo>... : calls the detector function directly on every .py file under each repository (skipping .git, __pycache__, venvs), corpus.reset() per repository, and lists every finding",
+        "tool_version": "1.9.1+touchstone-blind-spots",
+        "corpus_manifest": {
+          "AC-HCCSE": {
+            "branch": "main",
+            "commit": "b3cac9e9dd"
+          },
+          "CCC": {
+            "branch": "main",
+            "commit": "3389d52e53"
+          },
+          "CCCb": {
+            "branch": "main",
+            "commit": "9d922a3708"
+          },
+          "CNS": {
+            "branch": "main",
+            "commit": "658695c121"
+          },
+          "Conservation_Kernel": {
+            "branch": "main",
+            "commit": "16479cc1ac"
+          },
+          "DGK": {
+            "branch": "main",
+            "commit": "8ee5a31a1f"
+          },
+          "DIT": {
+            "branch": "main",
+            "commit": "a690dc3e31"
+          },
+          "Ecology": {
+            "branch": "main",
+            "commit": "df6d4ba3bf"
+          },
+          "GEMS": {
+            "branch": "main",
+            "commit": "974adeeafe"
+          },
+          "GSA": {
+            "branch": "main",
+            "commit": "02063bafc2"
+          },
+          "GSA-815": {
+            "branch": "main",
+            "commit": "2a12482057"
+          },
+          "Governance_Gateway": {
+            "branch": "main",
+            "commit": "e579366ca1"
+          },
+          "Graveyard": {
+            "branch": "main",
+            "commit": "d93f1df032"
+          },
+          "HERALD": {
+            "branch": "main",
+            "commit": "ecd386c50e"
+          },
+          "HTTP": {
+            "branch": "main",
+            "commit": "2cfb08a0c1"
+          },
+          "ICEBURG": {
+            "branch": "main",
+            "commit": "3cc5752132"
+          },
+          "OBSERVE": {
+            "branch": "main",
+            "commit": "250d41409e"
+          },
+          "PERCEIVE": {
+            "branch": "main",
+            "commit": "294e691cfa"
+          },
+          "Reporting": {
+            "branch": "claude/lean-technical-review-9n6xwk",
+            "commit": "09172a0249"
+          },
+          "STACK-Kernel": {
+            "branch": "main",
+            "commit": "efc79380fb"
+          },
+          "TIE": {
+            "branch": "main",
+            "commit": "bab7c249e9"
+          },
+          "Triad-42": {
+            "branch": "main",
+            "commit": "e5791c811f"
+          },
+          "URE": {
+            "branch": "main",
+            "commit": "d568871986"
+          },
+          "VANGUARD": {
+            "branch": "main",
+            "commit": "8df86a79a7"
+          },
+          "ZTGKT": {
+            "branch": "main",
+            "commit": "7dbcf05157"
+          },
+          "ZTS": {
+            "branch": "main",
+            "commit": "28a4490eaf"
+          },
+          "composition-engine": {
+            "branch": "main",
+            "commit": "c85efbbeb5"
+          },
+          "constitution": {
+            "branch": "main",
+            "commit": "c1069b613e"
+          },
+          "content-polish-pipeline": {
+            "branch": "main",
+            "commit": "5f1cad835c"
+          },
+          "experimental": {
+            "branch": "main",
+            "commit": "a58d1873cb"
+          },
+          "fortress-kernel": {
+            "branch": "Main",
+            "commit": "5f70a1ae20"
+          },
+          "interconnected_alpha": {
+            "branch": "main",
+            "commit": "3123b792ab"
+          },
+          "interconnected_beta": {
+            "branch": "main",
+            "commit": "b605c2d63c"
+          },
+          "interconnected_delta": {
+            "branch": "main",
+            "commit": "b9cb4695c5"
+          },
+          "interconnected_zeta": {
+            "branch": "main",
+            "commit": "c32bc3cc35"
+          },
+          "observe-perceive": {
+            "branch": "main",
+            "commit": "5a7b9ff498"
+          },
+          "p3-2-governance-research": {
+            "branch": "main",
+            "commit": "217ea81c26"
+          },
+          "sentinel_os": {
+            "branch": "main",
+            "commit": "5029ff6e07"
+          },
+          "SWIZZLE": {
+            "branch": "main",
+            "commit": "fd0a72b4d9"
+          },
+          "Elegant": {
+            "branch": "main",
+            "commit": "8a43c851ef"
+          },
+          "TOUCHSTONE": {
+            "branch": "main",
+            "commit": "f11b482b32"
+          },
+          "ghost_tools": {
+            "branch": "main",
+            "commit": "c6eedd99fb"
+          }
+        },
+        "note": null
+      }
     }
   ]
 }
