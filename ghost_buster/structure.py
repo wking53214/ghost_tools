@@ -57,6 +57,13 @@ _BOUNDARIES: Dict[str, Tuple[str, ...]] = {
                  "asyncpg", "redis", "pymongo"),
     "randomness": ("random", "secrets"),
     "serialization": ("pickle", "marshal", "shelve"),
+    # Keys, signatures and message authentication. `hashlib` is left out on
+    # purpose, for the reason `pathlib` is left out of filesystem below:
+    # measured 2026-10-07, 253 of 2,026 Python files across a 49-repository
+    # library import it, almost all to fingerprint content. A digest is not
+    # a secret, and a boundary that lights up one module in eight cannot be
+    # acted on. `hmac` takes a key, so its import is the evidence.
+    "cryptography": ("hmac", "cryptography", "nacl", "Crypto", "Cryptodome"),
 }
 
 #: Boundaries whose modules are imported far more often than they are
@@ -111,6 +118,14 @@ class ModuleFacts:
     data_models: List[str] = field(default_factory=list)
     entry_points: List[str] = field(default_factory=list)   # main(), __main__ guard
     raises: List[str] = field(default_factory=list)
+    #: Numbers written into the code where they can be changed: a top-level
+    #: name bound to a number, and a number given as a parameter default on
+    #: a module-level function or a method of a module-level class. Each
+    #: entry carries its value and line, e.g. "MAX_RETRIES = 3 (line 12)"
+    #: or "Guard.__init__(max_unchanged=3) (line 40)". Whether a number is
+    #: a threshold or a limit is not decided here; the name is the author's
+    #: claim and is reported as written.
+    settings: List[str] = field(default_factory=list)
     unresolved: List[str] = field(default_factory=list)
 
 
@@ -382,6 +397,35 @@ def _boundary_for(module: str) -> Optional[str]:
     return None
 
 
+def _number(node) -> Optional[str]:
+    """The source text of a number literal, sign included, or None. A bool
+    is an int to Python and a switch to a reader, so it is not a number
+    here."""
+    sign = ""
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd)):
+        sign = "-" if isinstance(node.op, ast.USub) else ""
+        node = node.operand
+    if (isinstance(node, ast.Constant) and isinstance(node.value, (int, float))
+            and not isinstance(node.value, bool)):
+        return f"{sign}{node.value!r}"
+    return None
+
+
+def _default_settings(func, owner: str = "") -> List[str]:
+    """Number defaults on one function's parameters."""
+    a = func.args
+    positional = a.posonlyargs + a.args
+    pairs = list(zip(positional[len(positional) - len(a.defaults):], a.defaults))
+    pairs += [(arg, d) for arg, d in zip(a.kwonlyargs, a.kw_defaults) if d is not None]
+    name = f"{owner}.{func.name}" if owner else func.name
+    out = []
+    for arg, default in pairs:
+        value = _number(default)
+        if value is not None:
+            out.append(f"{name}({arg.arg}={value}) (line {default.lineno})")
+    return out
+
+
 def _is_mutable_literal(node) -> bool:
     """A top-level binding to a container is state anything can reach and
     change. A binding to a string, number or tuple is a constant."""
@@ -432,9 +476,21 @@ def analyse_module(path: Path, root: Path, package_roots: Set[str]) -> Optional[
                     # exports it on line one of a real repository.
                     if not t.id.startswith("_"):
                         facts.bindings.append(t.id)
+                    value = _number(node.value)
+                    if value is not None:
+                        facts.settings.append(f"{t.id} = {value} (line {node.lineno})")
         if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
             if not node.target.id.startswith("_"):
                 facts.bindings.append(node.target.id)
+            value = _number(node.value) if node.value is not None else None
+            if value is not None:
+                facts.settings.append(f"{node.target.id} = {value} (line {node.lineno})")
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            facts.settings.extend(_default_settings(node))
+        elif isinstance(node, ast.ClassDef):
+            for member in node.body:
+                if isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    facts.settings.extend(_default_settings(member, node.name))
         # A NAME BOUND BY AN IMPORT IS IMPORTABLE FROM THIS MODULE. That is
         # how a package presents a public surface: `__init__.py` pulls names
         # up out of submodules and callers write `from pkg import Name`.
@@ -998,6 +1054,17 @@ def render_model(model: StructuralModel) -> str:
     for m in stateful[:10]:
         L.append(f"  {m.dotted}: {', '.join(m.module_state)}")
     if not stateful:
+        L.append("  (none observed)")
+    L.append("")
+
+    with_settings = [m for m in model.modules if m.settings]
+    L.append(f"NUMBERS SET IN CODE ({sum(len(m.settings) for m in with_settings)} "
+             f"in {len(with_settings)} module(s))")
+    for m in with_settings[:10]:
+        shown = ", ".join(m.settings[:4])
+        more = f" ... and {len(m.settings) - 4} more" if len(m.settings) > 4 else ""
+        L.append(f"  {m.dotted}: {shown}{more}")
+    if not with_settings:
         L.append("  (none observed)")
     L.append("")
 

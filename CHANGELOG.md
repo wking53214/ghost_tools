@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+**The structural model records numbers set in code, and a cryptography
+boundary.**
+
+- `ModuleFacts.settings`: every top-level name bound to a number, and every
+  number given as a parameter default on a module-level function or a method
+  of a module-level class, with its value and line
+  (`ResubmissionGuard.__init__(max_unchanged=3) (line 112)`). Booleans,
+  strings and nested functions are left out. `render_model` lists them under
+  NUMBERS SET IN CODE. A number is not called a threshold or a limit; the name
+  is the author's claim and is reported as written.
+- A `cryptography` boundary for `hmac`, `cryptography`, `nacl`, `Crypto` and
+  `Cryptodome` imports. `hashlib` is excluded on purpose: 253 of 2,026 Python
+  files across the library import it, nearly all to fingerprint content, the
+  same reason `pathlib` is not filesystem evidence.
+
+Both come from innovation_os's fingerprint extractor
+(`tools/fingerprint/extract_signature.py`), which is being retired. It found
+tunables by matching names (threshold, limit, max, window, decay); this
+records the numbers instead. Five new mutants in `test_structure_mutants`
+cover them.
+
 **Three detectors for TOUCHSTONE failure modes ghost_buster used to miss.**
 
 `swizzle touchstone` scores ghost_buster against TOUCHSTONE's MANIFEST, real
