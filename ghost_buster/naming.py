@@ -158,7 +158,18 @@ def _generic_vocabulary() -> Set[str]:
     fail, and it is why this is not the only signal.
     """
     here = Path(__file__).resolve().parent
-    return set(_vocabulary(sorted(here.glob("*.py"))))
+    return set(_vocabulary(sorted(p for p in here.glob("*.py")
+                                  if p.name not in FOREIGN_VOCABULARY)))
+
+
+#: Modules whose identifiers are another system's vocabulary by contract,
+#: not ghost_buster's. cns_adapter.py must spell CNS's names exactly
+#: (`subject`, `subject_digest`, `GateResult`): CNS is the single source of
+#: truth for them. Counting them as "just Python" put `subject` into the
+#: reference corpus on 2026-10-06, which hid it from the cassette rule and
+#: let a naming mutant survive. Excluding the module keeps CNS's words out
+#: of this tool's idea of generic Python without renaming anything CNS owns.
+FOREIGN_VOCABULARY = frozenset({"cns_adapter.py"})
 
 
 def find_cassettes(files: Sequence[Path]) -> Tuple[List[Path], Path | None]:

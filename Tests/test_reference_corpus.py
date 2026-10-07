@@ -31,7 +31,7 @@ import ast
 import pathlib
 import re
 
-from ghost_buster.naming import _identifiers
+from ghost_buster.naming import FOREIGN_VOCABULARY, _identifiers
 
 PACKAGE = pathlib.Path(__file__).resolve().parent.parent / "ghost_buster"
 _SPLIT = re.compile(r"[_\W]+|(?<=[a-z0-9])(?=[A-Z])")
@@ -59,6 +59,8 @@ SHARED_BY_BOTH_CASSETTES = {"subject", "reading"}
 def _reference_corpus() -> set[str]:
     words = set()
     for path in sorted(PACKAGE.glob("*.py")):
+        if path.name in FOREIGN_VOCABULARY:
+            continue  # another system's names by contract; see naming.FOREIGN_VOCABULARY
         for name in _identifiers(ast.parse(path.read_text(encoding="utf-8"))):
             words.update(part.lower() for part in _SPLIT.split(name) if part)
     return words
@@ -91,3 +93,9 @@ def test_prose_is_not_part_of_the_corpus():
     only identifiers do."""
     assert "patient" in (PACKAGE / "operate.py").read_text(encoding="utf-8")
     assert "patient" not in _reference_corpus()
+
+
+def test_foreign_vocabulary_is_named_files_that_exist():
+    """An exclusion that names nothing would quietly widen the corpus again."""
+    for name in FOREIGN_VOCABULARY:
+        assert (PACKAGE / name).is_file(), name
