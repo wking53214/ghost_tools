@@ -1,8 +1,9 @@
 """Production signing — refuses default keys in production."""
 from __future__ import annotations
-import hashlib, hmac, os
+import hashlib
+import hmac
+import os
 from dataclasses import dataclass
-from typing import Optional
 
 class SigningError(Exception):
     pass

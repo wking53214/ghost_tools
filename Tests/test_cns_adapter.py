@@ -1,7 +1,6 @@
 """Optional CNS adapter — works with or without cns installed."""
 from __future__ import annotations
 
-import importlib
 
 import pytest
 

@@ -41,7 +41,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set
 
 from . import corpus
-from .schema import Category, Evidence, Finding, Layer, Severity, Status, _portable_path
+from .schema import Category, Evidence, Finding, Layer, Severity, Status
 
 DETECTOR = "undefined_self_method"
 

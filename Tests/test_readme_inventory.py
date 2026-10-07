@@ -1,5 +1,6 @@
-"""README.md makes two mechanical claims about itself, and both are checked
-here rather than promised:
+"""The documentation makes mechanical claims about the tool, and they are
+checked here rather than promised. Since the 2026-09-28 README rewrite the
+inventory lives in docs/REFERENCE.md, linked from the README:
 
   * the table under "What it checks" lists every registered detector, by
     name, and nothing that is not one;
@@ -20,11 +21,12 @@ from ghost_buster.mechanical import registered_detectors
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 README = (ROOT / "README.md").read_text()
+REFERENCE = (ROOT / "docs" / "REFERENCE.md").read_text()
 
 
 def _section(title: str, until: str) -> str:
-    start = README.index(f"## {title}")
-    return README[start:README.index(f"## {until}", start)]
+    start = REFERENCE.index(f"## {title}")
+    return REFERENCE[start:REFERENCE.index(f"## {until}", start)]
 
 
 def test_the_inventory_table_names_every_registered_detector_and_no_other():
@@ -71,8 +73,12 @@ _FOREIGN = {
 }
 
 
+def test_the_readme_links_the_reference():
+    assert "docs/REFERENCE.md" in README, "README no longer points at the checked inventory"
+
+
 def test_every_flag_the_ghost_buster_section_mentions_exists():
-    section = README[: README.index("## ghost_writer")]
+    section = README + REFERENCE
     mentioned = set(re.findall(r"`(--[a-z][a-z0-9-]*)", section))
     unknown = mentioned - _cli_flags() - _FOREIGN
     assert not unknown, f"README mentions flags the CLI does not have: {sorted(unknown)}"
