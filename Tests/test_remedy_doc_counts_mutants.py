@@ -22,8 +22,8 @@ MUTANTS = [
      '    "doc_counts": _remedy_doc_counts,\n',
      ""),
     ("the detector's refusal is ignored and every claim is written", _OP,
-     '        if finding.attributes.get("writable") != "yes":',
-     "        if False:"),
+     '    if finding.attributes.get("writable") != "yes":',
+     "    if False:"),
     ("a report counts as a current-state document", "ghost_buster/mechanical.py",
      '    if filename.lower() not in WRITABLE_DOCUMENTS:\n'
      '        return "not a current-state document"\n',
@@ -53,17 +53,16 @@ MUTANTS = [
     # file missing from it, so this is the guard that stops "N tests, all
     # passing" being written over a suite that did not run.
     ("a suite that did not finish running is certified as green anyway", _OP,
-     '        unexamined = finding.attributes.get("unexamined", "")\n'
-     '        if unexamined.isdigit() and int(unexamined) > 0:\n',
-     '        unexamined = finding.attributes.get("unexamined", "")\n'
-     '        if False:\n'),
+     '    unexamined = finding.attributes.get("unexamined", "")\n'
+     '    if unexamined.isdigit() and int(unexamined) > 0:\n',
+     '    unexamined = finding.attributes.get("unexamined", "")\n'
+     '    if False:\n'),
     ("every claim is declined as unexamined, closing the remedy", _OP,
-     '        if unexamined.isdigit() and int(unexamined) > 0:',
-     "        if True:"),
+     '    if unexamined.isdigit() and int(unexamined) > 0:',
+     "    if True:"),
     ("a suite that is not green is rewritten anyway", _OP,
-     '        if passed != collected:\n'
-     '            declined.append("a suite that is not green")\n'
-     '            continue\n',
+     '    if passed != collected:\n'
+     '        return "a suite that is not green"\n',
      ""),
     ("a delta or a quotation is overwritten with today's total", _OP,
      '        if claim_shape(claim_context(text, claim_at)) is not None:\n'
@@ -85,12 +84,12 @@ MUTANTS = [
      '    claims = [f for f in findings if f.detector == "doc_count_contradicted_by_run"]',
      '    claims = [f for f in findings if f.detector.startswith("doc_")]'),
     ("the number is never checked after writing", _OP,
-     "        if not any(m.group(1) == collected\n"
-     "                   for m in _TEST_COUNT_CLAIM_RE.finditer(line_now)):",
-     "        if False:"),
+     "    if not any(m.group(1) == collected\n"
+     "               for m in _TEST_COUNT_CLAIM_RE.finditer(line_now)):",
+     "    if False:"),
     ("the rest of the file is allowed to move", _OP,
-     "        if written[:start] != text[:start] or written[start + len(collected):] != text[end:]:",
-     "        if False:"),
+     "    if written[:start] != text[:start] or written[start + len(collected):] != text[end:]:",
+     "    if False:"),
     ("a count attributed to another project reads as ours", "ghost_buster/mechanical.py",
      "    named = _NAMED_OWNER.search(before)\n"
      "    if named and named.group(1).lower() not in _COUNT_LEAD_INS:\n"

@@ -274,6 +274,71 @@ def _resolve(root: Path, finding: Finding) -> Optional[Path]:
     return None
 
 
+def _declined_by_the_run(finding: Finding) -> Optional[str]:
+    """Why this claim is left for a human before its file is even opened.
+
+    None means go on to the file. Every reason here is decided from what
+    the run measured, so none of them depends on the document's text.
+    """
+    collected = finding.attributes.get("collected", "")
+    passed = finding.attributes.get("passed", "")
+    if finding.attributes.get("writable") != "yes":
+        # The detector read the document and the sentence around the
+        # claim and said a machine must not rewrite this one. Measured
+        # on the 38-repository library: this declines all 65.
+        return (finding.attributes.get("not_writable_because")
+                or "a claim the detector did not mark writable")
+    if passed != collected:
+        return "a suite that is not green"
+    # WHAT NEVER RAN IS NOT IN EITHER NUMBER (v1.7.3).
+    #
+    # `passed == collected` is satisfied by a suite with a whole file
+    # missing from it. A module that cannot be imported contributes
+    # nothing to either side, so the subtraction says green and the
+    # sentence this remedy writes says "all passing".
+    #
+    # The tool knew. The same run reported the blocked module as a
+    # finding of its own, named the missing import, and then certified
+    # the suite anyway. That is the one failure a reader cannot catch
+    # by looking at the diff: every byte is in a permitted place and
+    # the document is now false.
+    #
+    # Absent attribute reads as zero, so a finding from an older run,
+    # or from a connector that does not publish it, behaves exactly as
+    # before rather than being declined on a number nobody supplied.
+    unexamined = finding.attributes.get("unexamined", "")
+    if unexamined.isdigit() and int(unexamined) > 0:
+        return ("a suite that did not finish running: %s test file(s) could "
+                "not be collected, so the measured total is not a total"
+                % unexamined)
+    return None
+
+
+def _check_written(path: Path, line_no: int, text: str, start: int, end: int,
+                   collected: str) -> None:
+    """Read the file back and prove only the number changed, or raise RemedyFailed.
+
+    Two checks, and they are deliberately not three. A first draft also
+    compared the whole file against what was meant and compared the length
+    delta against the digits. Both were redundant with these, which mutation
+    testing showed by killing neither: every failure one caught, another
+    caught too. Two guards that cannot each be made to fail alone are one
+    guard and some decoration.
+    """
+    written = path.read_text(encoding="utf-8")
+    after_lines = written.splitlines()
+    line_now = after_lines[line_no - 1] if line_no <= len(after_lines) else ""
+    if not any(m.group(1) == collected
+               for m in _TEST_COUNT_CLAIM_RE.finditer(line_now)):
+        # The write did not land, or it landed somewhere other than the
+        # span this finding named.
+        raise RemedyFailed(
+            f"{path}:{line_no}: after writing, the claim does not read {collected}")
+    if written[:start] != text[:start] or written[start + len(collected):] != text[end:]:
+        # Everything outside the number is the author's, byte for byte.
+        raise RemedyFailed(f"{path}: text outside the claim changed")
+
+
 def _remedy_doc_counts(root: Path, files: Sequence[Path],
                        findings: Sequence[Finding]) -> tuple[int, str]:
     """Write the measured test count over a documented one that contradicts it.
@@ -329,41 +394,11 @@ def _remedy_doc_counts(root: Path, files: Sequence[Path],
     for finding in claims:
         documented = finding.attributes.get("documented_count", "")
         collected = finding.attributes.get("collected", "")
-        passed = finding.attributes.get("passed", "")
         if not (documented and collected):
             continue
-        if finding.attributes.get("writable") != "yes":
-            # The detector read the document and the sentence around the
-            # claim and said a machine must not rewrite this one. Measured
-            # on the 38-repository library: this declines all 65.
-            declined.append(finding.attributes.get("not_writable_because")
-                            or "a claim the detector did not mark writable")
-            continue
-        if passed != collected:
-            declined.append("a suite that is not green")
-            continue
-        # WHAT NEVER RAN IS NOT IN EITHER NUMBER (v1.7.3).
-        #
-        # `passed == collected` is satisfied by a suite with a whole file
-        # missing from it. A module that cannot be imported contributes
-        # nothing to either side, so the subtraction says green and the
-        # sentence this remedy writes says "all passing".
-        #
-        # The tool knew. The same run reported the blocked module as a
-        # finding of its own, named the missing import, and then certified
-        # the suite anyway. That is the one failure a reader cannot catch
-        # by looking at the diff: every byte is in a permitted place and
-        # the document is now false.
-        #
-        # Absent attribute reads as zero, so a finding from an older run,
-        # or from a connector that does not publish it, behaves exactly as
-        # before rather than being declined on a number nobody supplied.
-        unexamined = finding.attributes.get("unexamined", "")
-        if unexamined.isdigit() and int(unexamined) > 0:
-            declined.append(
-                "a suite that did not finish running: %s test file(s) could "
-                "not be collected, so the measured total is not a total"
-                % unexamined)
+        refused = _declined_by_the_run(finding)
+        if refused is not None:
+            declined.append(refused)
             continue
         path = _resolve(root, finding)
         line_no = finding.evidence.line_start
@@ -432,24 +467,7 @@ def _remedy_doc_counts(root: Path, files: Sequence[Path],
         meant = text[:start] + collected + text[end:]
         path.write_text(meant, encoding="utf-8")
 
-        # Two checks, and they are deliberately not three. A first draft
-        # also compared the whole file against what was meant and compared
-        # the length delta against the digits. Both were redundant with
-        # these, which mutation testing showed by killing neither: every
-        # failure one caught, another caught too. Two guards that cannot
-        # each be made to fail alone are one guard and some decoration.
-        written = path.read_text(encoding="utf-8")
-        after_lines = written.splitlines()
-        line_now = after_lines[line_no - 1] if line_no <= len(after_lines) else ""
-        if not any(m.group(1) == collected
-                   for m in _TEST_COUNT_CLAIM_RE.finditer(line_now)):
-            # The write did not land, or it landed somewhere other than the
-            # span this finding named.
-            raise RemedyFailed(
-                f"{path}:{line_no}: after writing, the claim does not read {collected}")
-        if written[:start] != text[:start] or written[start + len(collected):] != text[end:]:
-            # Everything outside the number is the author's, byte for byte.
-            raise RemedyFailed(f"{path}: text outside the claim changed")
+        _check_written(path, line_no, text, start, end, collected)
         changed += 1
 
     if changed:
