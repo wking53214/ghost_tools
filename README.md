@@ -20,6 +20,8 @@ blackhole-extrapolator    ones that went up in smoke
 
 Seven rules (each from a real defect): silence is the defect; fail-closed; say what was established (`CONFIRMED` vs `REASONED`); measured before built (`ghost_buster/calibration.json`); memory only adds (ledger never suppresses); tree unmodified except declared comment surgery; a human decides.
 
+Defaults, all 24 detectors and the mutant census: [docs/REFERENCE.md](docs/REFERENCE.md), checked by the test suite.
+
 ~185 Python files, ~1926 functions, ~86 TODOs. Stdlib-oriented CLI. Kernel scan measures duplication/drift against private `CNS` schema when present.
 
 ## 2b. Optional CNS adapter
