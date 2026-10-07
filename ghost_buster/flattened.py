@@ -38,7 +38,7 @@ from __future__ import annotations
 import difflib
 import re
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import List, Optional, Set, Tuple
 
 from . import corpus
 from .schema import Category, Evidence, Finding, Layer, Severity, Status, _portable_path
