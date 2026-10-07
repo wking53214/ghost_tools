@@ -9,7 +9,7 @@ description = "Codebase integrity toolkit: finds structural ghosts, proves vacuo
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Proprietary" }
-authors = [{ name = "William King" }]
+authors = [{ name = "William N. King" }]
 keywords = ["code-quality", "mutation-testing", "dead-code", "documentation-drift", "ai-generated-code", "static-analysis"]
 classifiers = [
     "Development Status :: 4 - Beta",
