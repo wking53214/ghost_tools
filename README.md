@@ -53,10 +53,11 @@ CLI over a git work tree. Findings: severity, `CONFIRMED`/`REASONED`, evidence. 
 
 ```text
 SWIZZLE attack worlds  →  ghost_buster  →  findings
-TOUCHSTONE specimens   →  known-damage corpus
+TOUCHSTONE specimens   →  known-damage corpus; `swizzle touchstone` scores this tool against it
+Elegant                →  runs ghost_buster to observe, then re-inspect after an authorized change
 composition-engine     →  GhostToolsAdapter (one adapter, optional)
 observe-perceive       ✗ does not import
-swizzle-gate CI        replays SWIZZLE cases against this tool
+swizzle-gate CI        replays SWIZZLE cases and TOUCHSTONE specimens against this tool (no secret needed)
 ```
 
 Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). Copyright 2026 William N. King. Prefer this README plus `CHANGELOG.md` over folklore.
