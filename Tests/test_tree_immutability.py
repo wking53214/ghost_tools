@@ -9,7 +9,6 @@ The claim was in 35 docstrings and in no test until this file existed.
 """
 from __future__ import annotations
 
-import ast
 import json
 import textwrap
 
@@ -105,36 +104,19 @@ def test_accept_creates_a_baseline_and_nothing_else(tree, capsys):
     assert (tree / ".ghost_baseline.json").exists()
 
 
-# --------------------------------------------- the one deliberate exception
+# ------------------------------------------- there is no writing mode left
 
-def test_annotate_names_changes_only_sources(tree, capsys):
-    """`--annotate-names` is the documented exception: it writes into the
-    tree on purpose. The guard is not switched off for it, it is made
-    specific -- only .py files may change, the README never, nothing may be
-    deleted, and every source change must be comment-only."""
-    before = snapshot(tree)
-    buster_cli.main([str(tree), *QUIET, "--annotate-names"])
-    changes = compare(before, snapshot(tree))
-
-    assert not changes.deleted
-    assert not changes.created
-    assert changes.modified, "the fixture has a disagreement in it; this must change something"
-    for path in changes.modified:
-        assert path.endswith(".py"), path
-
-    for path in changes.modified:
-        if not path.endswith(".py"):
-            continue
-        # Same program before and after: the annotation is a comment.
-        was = ast.dump(ast.parse((tree / path).read_text().replace(
-            "  # ghost_buster: name-disagreement", "  # x")))
-        assert was  # parses at all
-    assert (tree / "README.md").read_text() == "# repo\n\nA repository.\n"
+@pytest.mark.parametrize("flag", ["--annotate-names", "--operate"])
+def test_the_writing_flags_no_longer_exist(tree, flag):
+    """Ghost reports. Changing a tree is Elegant's job, so the flags that once
+    wrote into it are refused as unknown, and the tree is untouched."""
+    with unchanged(tree):
+        with pytest.raises(SystemExit) as stopped:
+            buster_cli.main([str(tree), *QUIET, flag])
+    assert stopped.value.code == 2
 
 
-def test_without_the_flag_the_same_scan_writes_nothing(tree, capsys):
-    """The pair that makes the test above mean something: the sources only
-    change when the flag asks them to."""
+def test_a_plain_scan_writes_nothing(tree, capsys):
     with unchanged(tree):
         buster_cli.main([str(tree), *QUIET])
 

@@ -2,7 +2,7 @@
 
 **ASSURANCE (not the live decision path).**
 
-Codebase integrity toolkit: structural ghosts, documentation drift, duplication, dead code, parallel implementations; optional branch surgeon. Human triage required for fixes.
+Codebase integrity toolkit: structural ghosts, documentation drift, duplication, dead code, parallel implementations. Human triage required for fixes.
 
 | Related | Role |
 |---------|------|

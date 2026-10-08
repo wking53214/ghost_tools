@@ -10,7 +10,6 @@ Codebase **integrity toolkit**: things that are present and wrong, documentation
 
 ```
 ghost-buster              present-and-wrong
-ghost-buster --operate    surgeon: heal comments on a branch, re-examine, learn
 ghost-buster --profile    repeated work
 ghost-buster --mutate     tests that pass with the named thing broken
 ghost-triage              human decision, recorded
@@ -36,7 +35,7 @@ modified by this package.
 ## 3. What It Does NOT Do / Non-Goals
 
 - Does not govern runtime decisions.
-- Surgeon edits **comments only**, on a branch it opened, syntax-tree identity checked. It is not an autonomous refactorer.
+- Writes nothing into the code it scans. Ghost reports; changing a tree is the job of Elegant (the governor), proposing fixes is Proposer's, and the final tidy and README are Streamline's. The `--operate` surgeon, `--annotate-names` and `ghost_writer/correct.py` were removed so no two repositories do the same job.
 - Model claims stay `REASONED` and never self-promote.
 
 ## 4. Brutally Honest Current Status & Gaps

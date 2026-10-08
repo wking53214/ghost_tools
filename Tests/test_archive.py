@@ -1,5 +1,5 @@
 """An archive is not a patient (ghost_buster/archive.py). The scan runs;
-candidacy is not assessed; the surgeon refuses; the receipt says why."""
+candidacy is not assessed; the receipt says why."""
 from __future__ import annotations
 
 from ghost_buster.archive import MARKER, marked
@@ -42,14 +42,6 @@ def test_findings_are_still_reported_and_candidacy_is_not_assessed(tmp_path, cap
     assert "dead_code" in out or "unused" in out
     assert "serum candidacy: not assessed (archive: specimens kept flattened on purpose)" in out
     assert "CANDIDATE" not in out and "parses completely" not in out
-
-
-def test_the_surgeon_refuses_an_archive(tmp_path, capsys):
-    repo = _repo(tmp_path, "history")
-    rc = main([str(repo), *QUIET, "--operate", "--operate-dry-run", "--baseline", str(tmp_path / "b.json")])
-    _, err = capsys.readouterr()
-    assert rc == 2
-    assert "refused: an archive is not a patient" in err
 
 
 def test_a_repository_without_the_marker_is_assessed_as_before(tmp_path, capsys):

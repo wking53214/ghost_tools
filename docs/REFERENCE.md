@@ -139,6 +139,6 @@ flapping and persistent findings, blind spots, and trajectory. See
 
 ## Tests
 
-`test_mutation.py` and the 52 `Tests/*_mutants.py` files run pytest in
+`test_mutation.py` and the 45 `Tests/*_mutants.py` files run pytest in
 scratch copies with one piece of the code broken at a time, and fail if the
 suite still passes: each test file is held to catching the defect it names.

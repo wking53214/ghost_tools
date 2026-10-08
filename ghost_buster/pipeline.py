@@ -32,7 +32,6 @@ from typing import Callable, Dict, Iterable, List, Optional
 
 from . import attest
 from . import __version__
-from .annotate import annotate
 from .boundary import (
     build_joined_model, derive_findings as derive_boundary_findings,
     render_report as render_boundary_report, render_single_repo_notice,
@@ -471,11 +470,6 @@ def gather(args, say: Callable[[str], None] = to_stderr) -> Evidence:
         profile_seconds = time.perf_counter() - started
     else:
         findings = run_all(files)
-
-    if args.annotate_names:
-        disagreements, changed = annotate(files, root=args.path)
-        say(f"ghost_buster: {len(disagreements)} name disagreement(s); "
-              f"annotated {len(changed)} file(s)")
 
     mutation_run = _run_opt_in_analyses(args, files, findings, checks, say)
 
