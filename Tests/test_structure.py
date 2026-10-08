@@ -182,6 +182,85 @@ def test_an_unmappable_import_is_unresolved_not_a_finding(tmp_path):
     assert any("could not be mapped" in u for u in m.unresolved)
 
 
+
+# ------------------------------------- numbers set in code, and keys (1.10)
+
+SETTINGS = (
+    "MAX_RETRIES = 3\n"
+    "DECAY: float = 0.25\n"
+    "FLOOR = -1\n"
+    "ENABLED = True\n"
+    "NAME = 'x'\n"
+    "\n\n"
+    "def scan(path, limit=50, *, window=7.5, strict=False, label=None):\n"
+    "    def inner(depth=9):\n"
+    "        return depth\n"
+    "    return inner()\n"
+    "\n\n"
+    "class Guard:\n"
+    "    def __init__(self, max_unchanged=3, name='g'):\n"
+    "        self.max_unchanged = max_unchanged\n"
+)
+
+
+def _facts(root, dotted):
+    return next(m for m in _model(root).modules if m.dotted == dotted)
+
+
+def test_numbers_set_in_code_are_recorded_with_value_and_line(tmp_path):
+    """innovation_os's fingerprint extractor listed tunables by guessing
+    from their names. A name is the author's claim; the number and where
+    it sits are the evidence, so those are what is recorded."""
+    settings = _facts(_repo(tmp_path, files={"demo/knobs.py": SETTINGS}), "demo.knobs").settings
+    assert "MAX_RETRIES = 3 (line 1)" in settings
+    assert "DECAY = 0.25 (line 2)" in settings
+    assert "FLOOR = -1 (line 3)" in settings
+    assert "scan(limit=50) (line 8)" in settings
+    assert "scan(window=7.5) (line 8)" in settings
+    assert "Guard.__init__(max_unchanged=3) (line 15)" in settings
+
+
+def test_switches_text_and_nested_functions_are_not_settings(tmp_path):
+    settings = _facts(_repo(tmp_path, files={"demo/knobs.py": SETTINGS}), "demo.knobs").settings
+    joined = " ".join(settings)
+    for absent in ("ENABLED", "NAME", "strict", "label", "path", "name=", "depth"):
+        assert absent not in joined
+    assert len(settings) == 6
+
+
+def test_settings_are_in_the_model_and_the_json(tmp_path):
+    root = _repo(tmp_path, files={"demo/knobs.py": SETTINGS})
+    text = render_model(_model(root))
+    assert "NUMBERS SET IN CODE (6 in 1 module(s))" in text
+    assert "demo.knobs: MAX_RETRIES = 3 (line 1)" in text
+    payload = json.loads(_model(root).to_json())
+    knobs = next(m for m in payload["modules"] if m["dotted"] == "demo.knobs")
+    assert "MAX_RETRIES = 3 (line 1)" in knobs["settings"]
+
+
+def test_a_module_with_no_numbers_says_so(tmp_path):
+    assert "NUMBERS SET IN CODE (0 in 0 module(s))" in render_model(_model(_repo(tmp_path)))
+
+
+@pytest.mark.parametrize("line", [
+    "import hmac\n", "from cryptography.fernet import Fernet\n",
+    "import nacl.signing\n", "from Crypto.Cipher import AES\n",
+])
+def test_a_keyed_crypto_import_is_the_cryptography_boundary(tmp_path, line):
+    root = _repo(tmp_path, files={"demo/keys.py": line})
+    assert "cryptography" in _facts(root, "demo.keys").boundaries
+    assert "demo.keys" in _model(root).boundaries["cryptography"]
+
+
+def test_hashlib_alone_is_not_cryptography(tmp_path):
+    """A content digest is not a secret. Measured across a 49-repository
+    library, one Python file in eight imports hashlib, nearly all to
+    fingerprint content; counting that as cryptography would make the
+    boundary as useless as counting every pathlib import as disk access."""
+    root = _repo(tmp_path, files={
+        "demo/digest.py": "import hashlib\n\n\ndef d(b):\n    return hashlib.sha256(b).hexdigest()\n"})
+    assert "cryptography" not in _facts(root, "demo.digest").boundaries
+
 # -------------------------------------------- the slopsquat surface (v0.17)
 
 def test_an_invented_package_is_reported(tmp_path):

@@ -157,6 +157,23 @@ MUTANTS = [
      "    model.commented_out = commented_out_dependencies(root)\n",
      "    model.commented_out = commented_out_dependencies(root)\n"
      "    model.declared_dependencies = sorted(set(model.declared_dependencies) | set(model.commented_out))\n"),
+    # --- numbers set in code and the cryptography boundary (1.10): a
+    # --- switch is not a number, and a digest is not a key.
+    ("a bare hashlib import counts as cryptography", _S,
+     '    "cryptography": ("hmac", "cryptography", "nacl", "Crypto", "Cryptodome"),\n',
+     '    "cryptography": ("hmac", "hashlib", "cryptography", "nacl", "Crypto", "Cryptodome"),\n'),
+    ("a True/False switch is reported as a number", _S,
+     "            and not isinstance(node.value, bool)):\n",
+     "            ):\n"),
+    ("a negative number loses its sign", _S,
+     '        sign = "-" if isinstance(node.op, ast.USub) else ""\n',
+     '        sign = ""\n'),
+    ("keyword-only defaults are missed", _S,
+     "    pairs += [(arg, d) for arg, d in zip(a.kwonlyargs, a.kw_defaults) if d is not None]\n",
+     "    pass\n"),
+    ("method defaults are missed", _S,
+     "                    facts.settings.extend(_default_settings(member, node.name))\n",
+     "                    pass\n"),
 ]
 
 
