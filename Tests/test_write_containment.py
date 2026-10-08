@@ -1,68 +1,34 @@
 """Where a write is allowed to land, and where the decision is made.
 
-THREE HOLES, ONE SHAPE
+ONE HOLE, ONE SHAPE
 
-Each of these was found by pointing an adversarial harness at the operating
-mode, and all three are the same mistake wearing different clothes: a
-decision made about one thing, applied to another.
+Found by pointing an adversarial harness at the operating mode: a decision
+made about one thing, applied to another. The scan judged a file by the name
+it walked, and the bytes went to whatever that name resolved to.
 
-  the path        writability was judged from the name the scan walked, and
-                  the bytes went to whatever that name resolved to
-  the tree        `root / "README.md"` was composed and written without
-                  asking whether it was still inside `root`
-  the moment      writability was decided during the workup and never
-                  re-asked, though the repository's own suite runs inside
-                  the window and can change the sentence
+The fix is to re-derive the decision from the file about to be written, as it
+is now. The README writers that once shared this hole were removed; only
+Streamline writes READMEs, so the one remaining writer here is the comment
+annotator.
 
-The fix in all three is the same: re-derive the decision from the file
-about to be written, as it is now.
-
-The last two live in `test_remedy_doc_counts.py` rather than here, because
-that is the file the mutant harness runs when it deletes the re-derivation:
-a guard whose test sits in a file the mutant never runs is a guard nothing
-proves.
-
-WHAT THESE TESTS DO NOT ASSERT, AND WHY
+WHAT THESE TESTS DO NOT ASSERT
 
 That the refusal is reported. A remedy returns `(changed, note)` and the
-operation discards the note when nothing changed -- no cut, no note. So a
-run in which every claim was declined says nothing about why, and these
-tests assert only that nothing was written. The reason IS carried when the
-remedy took at least one cut (`test_a_dated_document_is_reported_beside_a_real_cut`).
-Closing the rest of that gap means changing what an operation does with a
-remedy that declined everything, which is a change to the operation flow
-rather than to a write, and is not what these fixes are.
+operation discards the note when nothing changed, so these tests assert only
+that nothing was written.
 """
 from __future__ import annotations
 
 import subprocess
 
 
-from ghost_buster.annotate import (Disagreement, annotate_files, refuses,
-                                   update_readme)
-from ghost_buster.operate import _remedy_doc_counts
-from ghost_buster.schema import (Category, Evidence, Finding, Layer, Severity,
-                                 Status)
+from ghost_buster.annotate import Disagreement, annotate_files, refuses
 
 
 def _repo(root):
     root.mkdir(parents=True, exist_ok=True)
     subprocess.run(["git", "init", "-q", "."], cwd=root, check=True)
     return root
-
-
-def _claim(file="README.md", line=5, documented="390", collected="1727",
-           writable="yes"):
-    return Finding(
-        detector="doc_count_contradicted_by_run",
-        category=Category.DOC_DRIFT, layer=Layer.MECHANICAL,
-        severity=Severity.MINOR, status=Status.CONFIRMED,
-        summary="measured", detail="",
-        attributes={"documented_count": documented, "collected": collected,
-                    "passed": collected, "writable": writable,
-                    "not_writable_because": ""},
-        evidence=Evidence(file=file, line_start=line, line_end=line),
-    )
 
 
 # --------------------------------------------------------------- the tree
@@ -84,7 +50,6 @@ def test_a_link_out_of_the_repository_is_refused(tmp_path):
     (root / "README.md").symlink_to(victim)
 
     assert refuses(root / "README.md", root) is not None
-    assert update_readme(root / "README.md", [], root=root) is False
     assert victim.read_text() == "# not part of any repository\n"
 
 
@@ -109,62 +74,15 @@ def test_no_root_makes_no_containment_claim(tmp_path):
     assert refuses(tmp_path / "anywhere.md", None) is None
 
 
-# ------------------------------------------------------- uninvited markup
-
-def test_a_section_recording_nothing_is_not_created(tmp_path):
-    """The count-block remedy states the principle -- a scanner that inserts
-    its own markup uninvited has decided something that was not its to
-    decide -- and this module was doing exactly that, with a table reading
-    `_none_`."""
-    root = _repo(tmp_path / "repo")
-    readme = root / "README.md"
-    readme.write_text("# thing\n\nNothing else.\n")
-    assert update_readme(readme, [], root=root) is False
-    assert readme.read_text() == "# thing\n\nNothing else.\n"
-
-
-def test_an_existing_block_is_still_maintained_when_empty(tmp_path):
-    """A repository carrying the block opted in, and "no disagreements, this
-    block records that the check ran" is then a fact somebody asked for."""
-    from ghost_buster.annotate import BEGIN, END
-    root = _repo(tmp_path / "repo")
-    readme = root / "README.md"
-    readme.write_text(f"# thing\n\n{BEGIN}\nstale contents\n{END}\n")
-    assert update_readme(readme, [], root=root) is True
-    assert "records that the check ran" in readme.read_text()
-
-
 def _disagreement(path, line=1):
-    """One name disagreement, enough to give the writers something to say.
+    """One name disagreement, enough to give the writer something to do.
 
-    Every containment test below needs real work pending. With nothing to
-    write, `update_readme` declines for having nothing to record and the
-    containment guard can be deleted with the test still green -- measured,
-    the mutant survived.
+    Every containment test below needs real work pending, or the guard can be
+    deleted with the test still green.
     """
     return Disagreement(param="count", arg="total",
                         definitions=((str(path), line),),
                         call_sites=((str(path), line + 1),))
-
-
-def test_a_link_out_of_the_repository_is_refused_with_work_pending(tmp_path):
-    """The severe one, with something to write.
-
-    Containment is the only thing standing between this and a write outside
-    the tree -- beyond the branch an operation opened, so beyond anything it
-    can revert, and beyond the commit it then tries to make, which fails
-    with nothing to commit and reports a symptom after the damage.
-    """
-    root = _repo(tmp_path / "repo")
-    victim = tmp_path / "outside" / "NOTES.md"
-    victim.parent.mkdir()
-    victim.write_text("# theirs\n")
-    (root / "README.md").symlink_to(victim)
-    (root / "a.py").write_text("def f(count):\n    return count\n")
-
-    assert update_readme(root / "README.md",
-                         [_disagreement(root / "a.py")], root=root) is False
-    assert victim.read_text() == "# theirs\n"
 
 
 def test_a_source_file_outside_the_repository_is_refused(tmp_path):
@@ -245,51 +163,29 @@ def test_an_ordinary_tree_is_unchanged(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# The surface, not the case. (v1.7.2)
+# The surface, not the case.
 #
-# 1.7.1 fixed containment in two writers and missed the third, and the case
-# that found the hole did not exercise it -- so the case passed and the class
-# stayed open. An adversarial variant one dimension away (the same world with
-# a maintained block in it) walked straight back out of the repository.
-#
-# This test therefore runs EVERY writer over ONE world. A guard added to one
-# path and not another fails here rather than in six weeks.
+# This runs the writer over a world where the README is a symlink out of the
+# repository. A guard added to one path and not another fails here.
 # ---------------------------------------------------------------------------
 
 def _linked_out_world(tmp_path):
-    """A repository whose README is a symlink to a file outside it, carrying
-    everything each of the three writers looks for."""
-    from ghost_buster.operate import COUNT_BLOCK_CLOSE, COUNT_BLOCK_OPEN
+    """A repository whose README is a symlink to a file outside it."""
     root = _repo(tmp_path / "repo")
     victim = tmp_path / "outside" / "NOTES.md"
     victim.parent.mkdir()
-    victim.write_text(
-        "# theirs\n\n"
-        "The test suite has 390 tests, all passing.\n\n"
-        f"{COUNT_BLOCK_OPEN}\n390 tests, all passing.\n{COUNT_BLOCK_CLOSE}\n")
+    victim.write_text("# theirs\n\nThe test suite has 390 tests, all passing.\n")
     (root / "README.md").symlink_to(victim)
     (root / "a.py").write_text("def f(count):\n    return count\n")
     return root, victim
 
 
 def test_no_writer_follows_a_link_out_of_the_repository(tmp_path):
-    """All three, over one world."""
-    from ghost_buster.operate import (_remedy_annotate, _remedy_count_block)
+    """The one remaining writer, over one world."""
+    from ghost_buster.operate import _remedy_annotate
     root, victim = _linked_out_world(tmp_path)
     before = victim.read_text()
     files = [root / "README.md", root / "a.py"]
 
-    for remedy in (_remedy_annotate, _remedy_count_block, _remedy_doc_counts):
-        remedy(root, files, [_claim(file="README.md", line=3)])
-        assert victim.read_text() == before, (
-            "%s wrote outside the repository" % remedy.__name__)
-
-
-def test_the_block_remedy_declines_a_link_out_of_the_repository(tmp_path):
-    """The specific hole 1.7.1 left, named so a regression is readable."""
-    from ghost_buster.operate import _remedy_count_block
-    root, victim = _linked_out_world(tmp_path)
-    changed, _ = _remedy_count_block(root, [root / "README.md"],
-                                     [_claim(file="README.md", line=3)])
-    assert changed == 0
-    assert "390 tests" in victim.read_text()
+    _remedy_annotate(root, files, [])
+    assert victim.read_text() == before, "annotate wrote outside the repository"

@@ -107,10 +107,10 @@ def test_accept_creates_a_baseline_and_nothing_else(tree, capsys):
 
 # --------------------------------------------- the one deliberate exception
 
-def test_annotate_names_changes_only_sources_and_the_readme(tree, capsys):
+def test_annotate_names_changes_only_sources(tree, capsys):
     """`--annotate-names` is the documented exception: it writes into the
     tree on purpose. The guard is not switched off for it, it is made
-    specific -- only .py files and the README may change, nothing may be
+    specific -- only .py files may change, the README never, nothing may be
     deleted, and every source change must be comment-only."""
     before = snapshot(tree)
     buster_cli.main([str(tree), *QUIET, "--annotate-names"])
@@ -120,7 +120,7 @@ def test_annotate_names_changes_only_sources_and_the_readme(tree, capsys):
     assert not changes.created
     assert changes.modified, "the fixture has a disagreement in it; this must change something"
     for path in changes.modified:
-        assert path.endswith(".py") or path == "README.md", path
+        assert path.endswith(".py"), path
 
     for path in changes.modified:
         if not path.endswith(".py"):
@@ -129,7 +129,7 @@ def test_annotate_names_changes_only_sources_and_the_readme(tree, capsys):
         was = ast.dump(ast.parse((tree / path).read_text().replace(
             "  # ghost_buster: name-disagreement", "  # x")))
         assert was  # parses at all
-    assert "name-disagreement" in (tree / "README.md").read_text()
+    assert (tree / "README.md").read_text() == "# repo\n\nA repository.\n"
 
 
 def test_without_the_flag_the_same_scan_writes_nothing(tree, capsys):

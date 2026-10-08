@@ -473,11 +473,9 @@ def gather(args, say: Callable[[str], None] = to_stderr) -> Evidence:
         findings = run_all(files)
 
     if args.annotate_names:
-        readme = args.annotate_readme or (args.path / "README.md")
-        disagreements, changed, wrote_readme = annotate(files, readme, root=args.path)
+        disagreements, changed = annotate(files, root=args.path)
         say(f"ghost_buster: {len(disagreements)} name disagreement(s); "
-              f"annotated {len(changed)} file(s); "
-              f"{'updated' if wrote_readme else 'no change to'} {readme}")
+              f"annotated {len(changed)} file(s)")
 
     mutation_run = _run_opt_in_analyses(args, files, findings, checks, say)
 

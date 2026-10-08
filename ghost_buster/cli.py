@@ -153,19 +153,14 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--annotate-names", action="store_true",
         help="OPT-IN, and the only thing ghost_buster does that writes to the "
-             "scanned tree. Records every 1:1 name disagreement in the two "
-             "places somebody looks: a regenerated table in the README, and a "
-             "trailing comment on each signature and each call site. Comments "
+             "scanned tree. Records every 1:1 name disagreement in the one "
+             "place somebody looks: a trailing comment on each signature and "
+             "each call site. It never touches a README. Comments "
              "only -- every edit is parsed before and after and discarded "
              "unless the syntax tree is identical, so it cannot change what a "
              "program means. Idempotent: the notes are stripped and rewritten "
              "whole on each run, so they follow a rename instead of piling up "
              "behind one, and a run that finds nothing new produces no diff.",
-    )
-    parser.add_argument(
-        "--annotate-readme", type=Path, default=None, metavar="PATH",
-        help="README to write the name-disagreement table into "
-             "(default: <path>/README.md)",
     )
     parser.add_argument(
         "--mutate", action="store_true",
