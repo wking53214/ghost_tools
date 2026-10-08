@@ -300,6 +300,21 @@ def _read_setup_py(root: Path) -> Optional[Dict[str, str]]:
     return out or None
 
 
+def _setup_py_unreadable(root: Path) -> Optional[str]:
+    """A note when setup.py exists but cannot be parsed, so the packaging
+    comparison did not run. None when setup.py is absent or parses. Without
+    this note, a broken setup.py reads the same as a missing one."""
+    p = root / "setup.py"
+    if not p.is_file():
+        return None
+    try:
+        ast.parse(p.read_text(encoding="utf-8", errors="replace"))
+    except (OSError, SyntaxError, ValueError) as exc:
+        return (f"setup.py could not be parsed ({exc.__class__.__name__}), so its "
+                "declarations were not compared with pyproject.toml")
+    return None
+
+
 def _requirements_files(root: Path) -> List[Path]:
     return sorted(p for p in root.glob("requirements*.txt") if p.is_file())
 
@@ -659,6 +674,10 @@ def build_model(root, files) -> StructuralModel:
     setup_declarations = _read_setup_py(root)
     if setup_declarations is not None:
         model.packaging_declarations["setup.py"] = setup_declarations
+    else:
+        unreadable = _setup_py_unreadable(root)
+        if unreadable:
+            model.unresolved.append(unreadable)
     if deps:
         model.dependency_sources.append("pyproject.toml:project.dependencies")
     req_files = _requirements_files(root)

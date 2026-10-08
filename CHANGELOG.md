@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+**A setup.py that cannot be parsed is now recorded.** The packaging comparison used to treat it
+the same as a missing file, so no disagreement was checked and nothing said so. The structural
+model now leaves a note in `unresolved` saying the comparison did not run.
+
 **Ghost Tools now only reports.** Elegant is the only thing that applies changes.
 
 - Removed `--operate` (the surgeon), `--operate-branch`, `--operate-dry-run`,
