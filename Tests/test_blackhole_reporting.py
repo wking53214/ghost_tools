@@ -147,7 +147,7 @@ def test_a_clean_scan_with_siblings_prints_no_hint_block(tmp_path, capsys):
 # ------------------------------- specimen corpora and retired repositories
 
 def test_a_specimen_corpus_is_not_a_system_with_holes(tmp_path, capsys):
-    """TOUCHSTONE opens "A specimen corpus. Not a system." Its flattened
+    """ASSAY opens "A specimen corpus. Not a system." Its flattened
     files are fixtures; five of the six highest-confidence voids in a
     37-repository scan came from reading them as losses."""
     # The broken file sits at the ROOT, not under specimens/, so only the

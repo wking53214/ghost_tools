@@ -6,7 +6,7 @@ A class whose method calls `self._check_node_compliance(...)`, where no
 `_check_node_compliance` is defined on the class, on any base class, or
 assigned to `self` anywhere. The call raises AttributeError the first time
 it runs. Until then the class imports, instantiates and reads as finished:
-an overclaim. TOUCHSTONE keeps the specimen
+an overclaim. ASSAY keeps the specimen
 (`specimens/progressions/uztc/uztc-construct-v1.2-validated.py`, described
 as "a 7-layer registry", whose only method makes exactly this call; MANIFEST
 section 3.2).

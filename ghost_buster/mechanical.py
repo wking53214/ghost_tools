@@ -2395,7 +2395,7 @@ register(DISAGREEMENT_DETECTOR)(detect_name_disagreements)
 register(DEAD_END_DETECTOR)(detect_dead_end_calls)
 register(DRIFTED_COPY_DETECTOR)(detect_drifted_copies)
 register(SWALLOWED_DETECTOR)(detect_swallowed_exceptions)
-# The three TOUCHSTONE blind spots, 2026-10-07: a module whose code is all
+# The three ASSAY blind spots, 2026-10-07: a module whose code is all
 # in comments (the silent pass), an unreadable file that is a flattened copy
 # of a readable one, and a call on self to a name the class cannot have.
 register(COMMENTED_OUT_DETECTOR)(detect_commented_out_modules)

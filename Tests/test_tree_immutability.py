@@ -108,7 +108,7 @@ def test_accept_creates_a_baseline_and_nothing_else(tree, capsys):
 
 @pytest.mark.parametrize("flag", ["--annotate-names", "--operate"])
 def test_the_writing_flags_no_longer_exist(tree, flag):
-    """Ghost reports. Changing a tree is Elegant's job, so the flags that once
+    """Ghost reports. Changing a tree is Warden's job, so the flags that once
     wrote into it are refused as unknown, and the tree is untouched."""
     with unchanged(tree):
         with pytest.raises(SystemExit) as stopped:

@@ -1,8 +1,8 @@
-"""Three TOUCHSTONE failure modes ghost_buster used to miss.
+"""Three ASSAY failure modes ghost_buster used to miss.
 
 WHERE THIS CAME FROM
 
-`swizzle touchstone` scores ghost_buster against TOUCHSTONE's MANIFEST, real
+`swizzle assay` scores ghost_buster against ASSAY's MANIFEST, real
 damage with the correct answers written down. On 2026-10-07 it named 0 of 5
 failure modes. Three of the five are visible to a syntax-tree scanner:
 

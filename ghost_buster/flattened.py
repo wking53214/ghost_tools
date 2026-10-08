@@ -10,7 +10,7 @@ that still exists, intact, somewhere else in the tree. `duplicate_file`
 misses it because the bytes differ; `drifted_copy` misses it because one
 side has no syntax tree to read names from.
 
-TOUCHSTONE keeps the specimen: `reference/secure/artifact_1.py` is
+ASSAY keeps the specimen: `reference/secure/artifact_1.py` is
 `reference/wrapper/artifact_3.py` with every line break removed. MANIFEST
 section 3.3: "the same content. A matcher that calls these two unrelated
 has failed."
@@ -45,7 +45,7 @@ from .schema import Category, Evidence, Finding, Layer, Severity, Status, _porta
 
 DETECTOR = "flattened_copy"
 
-#: Measured on TOUCHSTONE's pair: 0.99. Unrelated files sharing a framework
+#: Measured on ASSAY's pair: 0.99. Unrelated files sharing a framework
 #: vocabulary sit far below; see the calibration record for the corpus.
 SIMILARITY = 0.90
 #: Fraction of the unreadable file's distinctive identifiers a candidate
