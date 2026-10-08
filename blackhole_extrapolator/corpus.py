@@ -35,10 +35,10 @@ does.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Sequence
 
 # Directory names that mean "this code was taken out of somewhere else".
 # Each was observed in the measured library; none is a name a working
@@ -77,12 +77,12 @@ _RETIRED_PHRASES = ("(archived)", "(retired)", "archived.", "retired ")
 _FORWARDING = re.compile(
     r"(?:folded into|moved to|superseded by|now lives (?:in|at)|"
     r"canonical home for this content)[\s\S]{0,40}?\[?([A-Za-z0-9_.-]{3,})\]?",
-    re.I)
+    re.IGNORECASE)
 README_LINES = 12
 
 # `artifact_1.py`, `report_3.py`: a numbered dump of turn N, not a module
 # anybody imports by name.
-_NUMBERED_ARTIFACT = re.compile(r"^(artifact|report|turn|cell|extract)_\d+\.py$", re.I)
+_NUMBERED_ARTIFACT = re.compile(r"^(artifact|report|turn|cell|extract)_\d+\.py$", re.IGNORECASE)
 
 # Below this share of Python-under-archive-paths a tree is source, whatever
 # else it holds. Two thirds, not a bare majority: a working repository that

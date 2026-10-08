@@ -36,8 +36,8 @@ def test_every_baselined_finding_has_a_recorded_reason():
 
 def test_no_baseline_entry_is_stale():
     from ghost_buster.baseline import Baseline
-    from ghost_buster.pipeline import _collect_files
     from ghost_buster.mechanical import run_all
+    from ghost_buster.pipeline import _collect_files
 
     current = run_all(_collect_files(ROOT))
     stale = Baseline(BASELINE).stale(current)

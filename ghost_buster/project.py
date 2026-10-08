@@ -50,7 +50,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional, Tuple
 
 from .schema import Category, Evidence, Finding, Layer, Severity, Status
 
@@ -107,8 +106,8 @@ _PYTEST_CONFIG_FILES = ("pytest.ini", "pyproject.toml", "tox.ini", "setup.cfg")
 class TestConfig:
     """`testpaths` as configured, and which of them exist on disk."""
     source: str = ""                                    # the file it came from
-    paths: List[str] = field(default_factory=list)      # as written
-    missing: List[str] = field(default_factory=list)    # of those, not on disk
+    paths: list[str] = field(default_factory=list)      # as written
+    missing: list[str] = field(default_factory=list)    # of those, not on disk
 
     @property
     def collects_nothing(self) -> bool:
@@ -122,10 +121,10 @@ class TestConfig:
 class ProjectReport:
     ran: bool = False
     reason: str = ""
-    ci_config: Optional[str] = None     # the file/dir that counts as CI, if any
-    deploy_artifacts: List[str] = field(default_factory=list)
+    ci_config: str | None = None     # the file/dir that counts as CI, if any
+    deploy_artifacts: list[str] = field(default_factory=list)
     test_files: int = 0
-    test_config: Optional[TestConfig] = None
+    test_config: TestConfig | None = None
 
     @property
     def has_ci(self) -> bool:
@@ -136,7 +135,7 @@ def _clean(path: Path) -> bool:
     return _SKIP_PARTS.isdisjoint(path.parts)
 
 
-def find_ci_config(root: Path) -> Optional[str]:
+def find_ci_config(root: Path) -> str | None:
     """The first thing that genuinely configures CI, or None.
 
     A directory only counts when it holds at least one config file: an
@@ -157,7 +156,7 @@ def find_ci_config(root: Path) -> Optional[str]:
     return None
 
 
-def find_deploy_artifacts(root: Path) -> List[str]:
+def find_deploy_artifacts(root: Path) -> list[str]:
     return [name for name in _DEPLOY_ARTIFACTS if (root / name).is_file()]
 
 
@@ -170,7 +169,7 @@ def count_test_files(root: Path) -> int:
     return len(seen)
 
 
-def _testpaths_from_ini(text: str, section: str) -> Optional[List[str]]:
+def _testpaths_from_ini(text: str, section: str) -> list[str] | None:
     """`testpaths` out of an ini-style file, or None when the section is
     absent. None and [] are different answers: no section means pytest
     reads no testpaths from this file at all, an empty value means it was
@@ -187,7 +186,7 @@ def _testpaths_from_ini(text: str, section: str) -> Optional[List[str]]:
     return parser.get(section, "testpaths").split()
 
 
-def read_test_config(root: Path) -> Optional[TestConfig]:
+def read_test_config(root: Path) -> TestConfig | None:
     """pytest's `testpaths`, from the first file that declares it.
 
     Returns None when no file configures testpaths, which is the common
@@ -202,7 +201,7 @@ def read_test_config(root: Path) -> Optional[TestConfig]:
             text = path.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
-        paths: Optional[List[str]] = None
+        paths: list[str] | None = None
         if name == "pyproject.toml":
             import tomllib
             try:
@@ -242,7 +241,7 @@ def _finding(root: Path, kind: str, severity: Severity, summary: str, detail: st
     )
 
 
-def _test_config_findings(root: Path, report: ProjectReport) -> List[Finding]:
+def _test_config_findings(root: Path, report: ProjectReport) -> list[Finding]:
     config = report.test_config
     if config is None or not config.missing:
         return []
@@ -295,7 +294,7 @@ def _test_config_findings(root: Path, report: ProjectReport) -> List[Finding]:
     )]
 
 
-def scan(root) -> Tuple[List[Finding], ProjectReport]:
+def scan(root) -> tuple[list[Finding], ProjectReport]:
     root = Path(root).resolve()
     report = ProjectReport()
     if not root.is_dir():
@@ -308,7 +307,7 @@ def scan(root) -> Tuple[List[Finding], ProjectReport]:
     report.test_files = count_test_files(root)
     report.test_config = read_test_config(root)
 
-    findings: List[Finding] = _test_config_findings(root, report)
+    findings: list[Finding] = _test_config_findings(root, report)
 
     if report.has_ci:
         # Whether the pipeline is any good is a different question and not

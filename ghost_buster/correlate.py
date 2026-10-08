@@ -72,16 +72,16 @@ per-connector docstrings name the specific joins each one cannot make.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import PurePath
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from .mechanical import claim_shape
 from .schema import Category, Evidence, Finding, Layer, Severity, Status
 
-ConnectorFn = Callable[["CorrelationInput"], List[Finding]]
+ConnectorFn = Callable[["CorrelationInput"], list[Finding]]
 
-_REGISTRY: Dict[str, ConnectorFn] = {}
+_REGISTRY: dict[str, ConnectorFn] = {}
 
 
 def connector(name: str):
@@ -94,7 +94,7 @@ def connector(name: str):
     return decorator
 
 
-def registered_connectors() -> Dict[str, ConnectorFn]:
+def registered_connectors() -> dict[str, ConnectorFn]:
     return dict(_REGISTRY)
 
 
@@ -105,7 +105,7 @@ class PriorRun:
     reader -- the file's stem, unless the caller knows better."""
 
     label: str
-    findings: List[Finding] = field(default_factory=list)
+    findings: list[Finding] = field(default_factory=list)
 
 
 @dataclass
@@ -114,13 +114,13 @@ class CorrelationInput:
     connector that needs something not in here needs a detector, not a
     correlation."""
 
-    findings: List[Finding] = field(default_factory=list)
-    prior_runs: List[PriorRun] = field(default_factory=list)
+    findings: list[Finding] = field(default_factory=list)
+    prior_runs: list[PriorRun] = field(default_factory=list)
     # testsuite.TestStatusReport when --tests ran, else None. Typed loosely
     # so correlate.py does not import testsuite.py just for an annotation.
     test_report: object = None
 
-    def by_detector(self, name: str) -> List[Finding]:
+    def by_detector(self, name: str) -> list[Finding]:
         return [f for f in self.findings if f.detector == name]
 
 
@@ -152,7 +152,7 @@ def _ids(findings: Sequence[Finding]) -> str:
     detector, same project-relative path, same summary), so listing them
     raw printed one id twice and read like a bug rather than like the
     signal it is."""
-    seen: List[str] = []
+    seen: list[str] = []
     for f in findings:
         if f.id not in seen:
             seen.append(f.id)
@@ -164,7 +164,7 @@ def _ids(findings: Sequence[Finding]) -> str:
 # ---------------------------------------------------------------------------
 
 @connector("secret_in_duplicated_file")
-def correlate_secret_in_duplicated_file(data: CorrelationInput) -> List[Finding]:
+def correlate_secret_in_duplicated_file(data: CorrelationInput) -> list[Finding]:
     """A committed secret sitting in a file that has byte-identical twins.
 
     `committed_secret` reports one leak, at one path. `duplicate_file`
@@ -186,7 +186,7 @@ def correlate_secret_in_duplicated_file(data: CorrelationInput) -> List[Finding]
     if not secrets or not duplicates:
         return []
 
-    out: List[Finding] = []
+    out: list[Finding] = []
     for secret in secrets:
         for dup in duplicates:
             copies = [dup.evidence.file, *dup.evidence.related_files]
@@ -243,7 +243,7 @@ def correlate_secret_in_duplicated_file(data: CorrelationInput) -> List[Finding]
 # ---------------------------------------------------------------------------
 
 @connector("secret_in_multiple_repositories")
-def correlate_secret_across_repositories(data: CorrelationInput) -> List[Finding]:
+def correlate_secret_across_repositories(data: CorrelationInput) -> list[Finding]:
     """The same leak, by gitleaks' own fingerprint, in more than one
     repository.
 
@@ -272,12 +272,12 @@ def correlate_secret_across_repositories(data: CorrelationInput) -> List[Finding
     if not secrets:
         return []
 
-    out: List[Finding] = []
+    out: list[Finding] = []
     for secret in secrets:
         fingerprint = secret.attributes.get("fingerprint", "")
         if not fingerprint:
             continue
-        elsewhere: List[Tuple[str, Finding]] = []
+        elsewhere: list[tuple[str, Finding]] = []
         for prior in data.prior_runs:
             for other in prior.findings:
                 if other.detector != "committed_secret":
@@ -332,7 +332,7 @@ def correlate_secret_across_repositories(data: CorrelationInput) -> List[Finding
 # ---------------------------------------------------------------------------
 
 @connector("conflict_marker_breaks_tests")
-def correlate_conflict_marker_breaks_tests(data: CorrelationInput) -> List[Finding]:
+def correlate_conflict_marker_breaks_tests(data: CorrelationInput) -> list[Finding]:
     """An unresolved conflict marker in the same file as tests that could
     not run.
 
@@ -354,7 +354,7 @@ def correlate_conflict_marker_breaks_tests(data: CorrelationInput) -> List[Findi
     if not markers or not tests:
         return []
 
-    out: List[Finding] = []
+    out: list[Finding] = []
     for marker in markers:
         blocked = [
             t for t in tests
@@ -406,7 +406,7 @@ def correlate_conflict_marker_breaks_tests(data: CorrelationInput) -> List[Findi
 # ---------------------------------------------------------------------------
 
 @connector("doc_count_contradicted_by_run")
-def correlate_doc_count_against_run(data: CorrelationInput) -> List[Finding]:
+def correlate_doc_count_against_run(data: CorrelationInput) -> list[Finding]:
     """A documented test count, checked against the suite actually running.
 
     `doc_test_count_drift` counts `test_*` functions in the AST and says so
@@ -458,7 +458,7 @@ def correlate_doc_count_against_run(data: CorrelationInput) -> List[Finding]:
     blocked = int(getattr(report, "blocked", 0) or 0)
     unexamined = max(errored, blocked)
 
-    out: List[Finding] = []
+    out: list[Finding] = []
     for drift in drifts:
         documented = drift.attributes.get("documented_count", "")
         static = drift.attributes.get("static_lower_bound", "")
@@ -546,7 +546,7 @@ def correlate_doc_count_against_run(data: CorrelationInput) -> List[Finding]:
 
 # ---------------------------------------------------------------------------
 
-def eligible_findings(findings: Sequence[Finding]) -> List[Finding]:
+def eligible_findings(findings: Sequence[Finding]) -> list[Finding]:
     """The findings a connector is allowed to read: deterministic ones a
     detector produced. Excludes anything a connector itself produced (no
     correlations of correlations) and anything not `Status.CONFIRMED` (no
@@ -558,8 +558,8 @@ def eligible_findings(findings: Sequence[Finding]) -> List[Finding]:
     ]
 
 
-def run_connectors(findings: Sequence[Finding], *, prior_runs: Optional[List[PriorRun]] = None,
-                   test_report: object = None) -> List[Finding]:
+def run_connectors(findings: Sequence[Finding], *, prior_runs: list[PriorRun] | None = None,
+                   test_report: object = None) -> list[Finding]:
     """Run every registered connector over one scan's findings.
 
     Only `Status.CONFIRMED` findings are eligible, and correlations are
@@ -572,7 +572,7 @@ def run_connectors(findings: Sequence[Finding], *, prior_runs: Optional[List[Pri
         prior_runs=list(prior_runs or []),
         test_report=test_report,
     )
-    out: List[Finding] = []
+    out: list[Finding] = []
     for _name, fn in registered_connectors().items():
         out.extend(fn(data))
     return out
@@ -617,7 +617,7 @@ def load_prior_run(path) -> PriorRun:
 def render_report(correlations: Sequence[Finding]) -> str:
     if not correlations:
         return "ghost_buster: correlation found nothing to connect"
-    by_detector: Dict[str, int] = {}
+    by_detector: dict[str, int] = {}
     for f in correlations:
         by_detector[f.detector] = by_detector.get(f.detector, 0) + 1
     parts = ", ".join(f"{n} {name}" for name, n in sorted(by_detector.items()))

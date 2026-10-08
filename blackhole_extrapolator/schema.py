@@ -40,7 +40,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 class EvidenceKind(str, Enum):
@@ -165,10 +165,10 @@ class NegativeEvidence:
     kind: EvidenceKind
     detail: str
     file: str
-    line: Optional[int] = None
+    line: int | None = None
     observed: str = ""     # the literal text that shows the mark
 
-    def as_dict(self) -> Dict[str, Any]:
+    def as_dict(self) -> dict[str, Any]:
         out = asdict(self)
         out["kind"] = self.kind.value
         return out
@@ -189,7 +189,7 @@ class Anchor:
     provides: tuple[str, ...] = ()   # names/shapes it exposes toward the void
     requires: tuple[str, ...] = ()   # names/shapes it needs from the void
 
-    def as_dict(self) -> Dict[str, Any]:
+    def as_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
@@ -251,7 +251,7 @@ class Void:
         return bool(self.must_define or self.must_accept
                     or self.must_return or self.invariants)
 
-    def as_dict(self) -> Dict[str, Any]:
+    def as_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "kind": self.kind.value,

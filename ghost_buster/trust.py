@@ -60,9 +60,8 @@ import json
 import os
 import subprocess
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Dict, Optional
 
 ENV = "GHOST_TOOLS_TRUST"
 TRUST_ALL = "-"
@@ -86,8 +85,7 @@ def _normalise_remote(url: str) -> str:
         if u.startswith(prefix):
             u = u[len(prefix):]
             break
-    if u.endswith(".git"):
-        u = u[:-4]
+    u = u.removesuffix(".git")
     return u.rstrip("/").lower()
 
 
@@ -109,11 +107,11 @@ class Trust:
     """The verdict, with the reason on it so the receipt can say why."""
     trusted: bool
     identity: str
-    store: Optional[Path]
+    store: Path | None
     reason: str
 
 
-def _load(store: Path) -> Dict[str, dict]:
+def _load(store: Path) -> dict[str, dict]:
     try:
         data = json.loads(store.read_text())
     except (OSError, ValueError):
@@ -138,7 +136,7 @@ def grant(root: Path) -> Trust:
     store = store_path()
     ident = identity(root)
     data = _load(store)
-    data[ident] = {"granted": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    data[ident] = {"granted": datetime.now(UTC).isoformat(timespec="seconds"),
                    "path": str(Path(root).resolve())}
     store.parent.mkdir(parents=True, exist_ok=True)
     tmp = store.with_suffix(store.suffix + ".tmp")

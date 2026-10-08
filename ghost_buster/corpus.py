@@ -56,11 +56,11 @@ from __future__ import annotations
 import ast
 import io
 import tokenize
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple
 
-Stamp = Tuple[int, int]
+Stamp = tuple[int, int]
 
 
 @dataclass(frozen=True)
@@ -68,21 +68,21 @@ class Source:
     """One file, as the scan will see it. Every field is evidence."""
 
     path: Path
-    text: Optional[str]
-    tree: Optional[ast.Module]
-    failure: Optional[str]
-    stamp: Optional[Stamp]
+    text: str | None
+    tree: ast.Module | None
+    failure: str | None
+    stamp: Stamp | None
 
     @property
     def parsed(self) -> bool:
         return self.tree is not None
 
 
-_CACHE: Dict[Path, Source] = {}
+_CACHE: dict[Path, Source] = {}
 _STATS = {"reads": 0, "hits": 0}
 
 
-def _stamp(path: Path) -> Optional[Stamp]:
+def _stamp(path: Path) -> Stamp | None:
     try:
         st = path.stat()
     except OSError:
@@ -130,21 +130,21 @@ def read(path: Path) -> Source:
     return source
 
 
-def parse(path: Path) -> Optional[ast.Module]:
+def parse(path: Path) -> ast.Module | None:
     """The tree, shared and read-only. None means the file could not be
     assessed -- see `failure` for why -- and never means it is clean."""
     return read(path).tree
 
 
-def text(path: Path) -> Optional[str]:
+def text(path: Path) -> str | None:
     return read(path).text
 
 
-def failure(path: Path) -> Optional[str]:
+def failure(path: Path) -> str | None:
     return read(path).failure
 
 
-def fresh(path: Path) -> Optional[ast.Module]:
+def fresh(path: Path) -> ast.Module | None:
     """An UNCACHED tree, for the one caller that will mutate it.
 
     Not a deepcopy of the cached tree: a fresh parse is cheaper than a deep
@@ -153,7 +153,7 @@ def fresh(path: Path) -> Optional[ast.Module]:
     return _read(path).tree
 
 
-def unparsed(files: Iterable[Path]) -> List[Tuple[Path, str]]:
+def unparsed(files: Iterable[Path]) -> list[tuple[Path, str]]:
     """Every file in `files` the scan could not assess, with the reason.
     This is the blind-spot list, and it is the same list for every
     detector."""
@@ -171,7 +171,7 @@ def reset() -> None:
     _STATS["hits"] = 0
 
 
-def stats() -> Dict[str, int]:
+def stats() -> dict[str, int]:
     """How much work the cache saved. `hits / reads` is the share of parse
     requests that did not touch the parser."""
     return dict(_STATS, cached=len(_CACHE))

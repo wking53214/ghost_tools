@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 from ghost_buster.schema import Category, Evidence, Finding, Layer, Severity, Status
 from ghost_writer.report import dispositioned_for_documentation, render_ghost_report
 

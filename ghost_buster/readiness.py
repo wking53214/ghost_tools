@@ -72,8 +72,8 @@ with the library in view.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 from .ledger import RAN
 from .schema import Finding, Severity, authoritative
@@ -91,7 +91,7 @@ HOLLOW = "no hollow contracts"
 @dataclass(frozen=True)
 class Criterion:
     name: str
-    met: Optional[bool]          # None: the scan could not assess this
+    met: bool | None          # None: the scan could not assess this
     evidence: str
     carried: bool = False        # established before an intervention, not after it
 
@@ -102,7 +102,7 @@ class Criterion:
 
 @dataclass(frozen=True)
 class Readiness:
-    criteria: Tuple[Criterion, ...]
+    criteria: tuple[Criterion, ...]
 
     @property
     def candidate(self) -> bool:
@@ -110,11 +110,11 @@ class Readiness:
         return all(c.met is True for c in self.criteria)
 
     @property
-    def failing(self) -> List[Criterion]:
+    def failing(self) -> list[Criterion]:
         return [c for c in self.criteria if c.met is False]
 
     @property
-    def unknown(self) -> List[Criterion]:
+    def unknown(self) -> list[Criterion]:
         return [c for c in self.criteria if c.met is None]
 
     def render(self) -> str:
@@ -133,11 +133,11 @@ class Readiness:
         return "\n".join(lines)
 
     @property
-    def carried(self) -> List[Criterion]:
+    def carried(self) -> list[Criterion]:
         return [c for c in self.criteria if c.carried]
 
 
-def _name_tests(findings: List[Finding], limit: int = 4) -> str:
+def _name_tests(findings: list[Finding], limit: int = 4) -> str:
     """The test ids behind a count. A number sends the reader back to the
     report; a name sends them to the test. The first patient reported
     "2 failing or flaky test(s)" and nothing on the page said which."""
@@ -151,13 +151,13 @@ def _name_tests(findings: List[Finding], limit: int = 4) -> str:
 
 
 def _count(findings: Iterable[Finding], detector: str,
-           severity: Optional[Severity] = None) -> int:
+           severity: Severity | None = None) -> int:
     return sum(1 for f in findings
                if f.detector == detector and (severity is None or f.severity is severity))
 
 
-def assess(findings: Iterable[Finding], checks: Dict[str, str],
-           retired: Optional[Set[str]] = None,
+def assess(findings: Iterable[Finding], checks: dict[str, str],
+           retired: set[str] | None = None,
            carried: Iterable[str] = ()) -> Readiness:
     """Read candidacy off what the scan already found and what it ran.
 
@@ -173,7 +173,7 @@ def assess(findings: Iterable[Finding], checks: Dict[str, str],
     findings = authoritative(findings)
     retired = retired or set()
     carried = set(carried)
-    criteria: List[Criterion] = []
+    criteria: list[Criterion] = []
 
     n = _count(findings, "unassessable_file")
     criteria.append(Criterion(PARSES, n == 0,

@@ -57,7 +57,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Protocol, Tuple
+from typing import Any, Protocol
 from xml.sax.saxutils import escape as _xml_escape
 
 from .schema import Category, Evidence, Finding, Layer, Severity, Status
@@ -97,7 +97,7 @@ class AnthropicModelClient:
     this whole tool must be importable and testable) in any environment
     without a key, which includes CI and every offline dev machine."""
 
-    def __init__(self, api_key: Optional[str] = None, model: str = DEFAULT_MODEL):
+    def __init__(self, api_key: str | None = None, model: str = DEFAULT_MODEL):
         import anthropic  # deferred: don't require the SDK to import this module at all
 
         self._client = anthropic.Anthropic(api_key=api_key) if api_key else None
@@ -124,7 +124,7 @@ class StubModelClient:
 
     def __init__(self, response: str):
         self._response = response
-        self.calls: List[Tuple[str, str]] = []
+        self.calls: list[tuple[str, str]] = []
 
     def complete(self, system: str, user: str) -> str:
         self.calls.append((system, user))
@@ -139,11 +139,11 @@ class SemanticRunReport:
 
     ran: bool
     reason: str = ""
-    raw_response: Optional[str] = None
-    parse_error: Optional[str] = None
+    raw_response: str | None = None
+    parse_error: str | None = None
 
 
-def _render_data_block(sections: Dict[str, str]) -> str:
+def _render_data_block(sections: dict[str, str]) -> str:
     lines = [f"<{_DATA_TAG}>"]
     for name in sorted(sections):
         lines.append(f'  <section name="{_xml_escape(name)}">')
@@ -156,9 +156,9 @@ def _render_data_block(sections: Dict[str, str]) -> str:
 def _run_json_check(
     client: ModelClient,
     system_instruction: str,
-    sections: Dict[str, str],
+    sections: dict[str, str],
     task_and_format: str,
-) -> Tuple[List[Dict[str, Any]], SemanticRunReport]:
+) -> tuple[list[dict[str, Any]], SemanticRunReport]:
     """Shared plumbing every semantic detector below uses: build the
     fenced call, run it, parse strictly, fail closed. Returns the raw
     list of finding-dicts the model proposed (still un-shaped into
@@ -220,8 +220,8 @@ _PARALLEL_IMPL_FORMAT = (
 
 
 def detect_parallel_implementations(
-    client: ModelClient, module_summaries: Dict[str, str],
-) -> Tuple[List[Finding], SemanticRunReport]:
+    client: ModelClient, module_summaries: dict[str, str],
+) -> tuple[list[Finding], SemanticRunReport]:
     """module_summaries: path -> a short description of what the module
     does (its docstring, or a human/detector-supplied summary -- NOT
     necessarily the full file, to keep token cost bounded and predictable
@@ -234,7 +234,7 @@ def detect_parallel_implementations(
         module_summaries,
         _PARALLEL_IMPL_FORMAT,
     )
-    findings: List[Finding] = []
+    findings: list[Finding] = []
     for item in raw_findings:
         modules = item.get("modules")
         reasoning = item.get("reasoning", "")
@@ -281,14 +281,14 @@ _DOC_DRIFT_FORMAT = (
 
 def detect_doc_drift(
     client: ModelClient, doc_path: str, doc_text: str, code_summary: str,
-) -> Tuple[List[Finding], SemanticRunReport]:
+) -> tuple[list[Finding], SemanticRunReport]:
     raw_findings, report = _run_json_check(
         client,
         _DOC_DRIFT_SYSTEM,
         {"documentation": doc_text, "code_summary": code_summary},
         _DOC_DRIFT_FORMAT,
     )
-    findings: List[Finding] = []
+    findings: list[Finding] = []
     for item in raw_findings:
         claim = item.get("claim")
         conflict = item.get("conflict", "")

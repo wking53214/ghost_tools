@@ -1,22 +1,23 @@
 """Dependency graph. Zero static refs → DEAD_CANDIDATE."""
 from __future__ import annotations
+
 import ast
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Set
+
 
 @dataclass
 class DeadCandidate:
     path: str
     static_refs: int
-    dynamic_hints: List[str] = field(default_factory=list)
+    dynamic_hints: list[str] = field(default_factory=list)
     reason: str = "zero static references"
 
 class DependencyGraph:
     def __init__(self):
-        self.file_imports: Dict[str, Set[str]] = {}
-        self.referenced_by: Dict[str, Set[str]] = {}
-        self.files: Set[str] = set()
+        self.file_imports: dict[str, set[str]] = {}
+        self.referenced_by: dict[str, set[str]] = {}
+        self.files: set[str] = set()
     def analyze_file(self, path: Path):
         key = str(path)
         self.files.add(key)
@@ -40,7 +41,7 @@ class DependencyGraph:
                 self.analyze_file(p)
     def static_ref_count(self, name: str) -> int:
         return len(self.referenced_by.get(name, set()))
-    def dead_candidates(self, module_names: List[str]):
+    def dead_candidates(self, module_names: list[str]):
         out = []
         for name in module_names:
             if self.static_ref_count(name) == 0:

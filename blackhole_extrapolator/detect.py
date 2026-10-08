@@ -27,10 +27,10 @@ from __future__ import annotations
 import ast
 import builtins
 import importlib.util
-import sys
 import re
+import sys
+from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
-from typing import Iterable, Iterator, Sequence
 
 from .schema import EvidenceKind, NegativeEvidence
 
@@ -198,10 +198,10 @@ def _declared_dependencies(root: Path) -> set[str]:
         text = pyproject.read_text(errors="replace")
         # `dependencies = [...]` plus every list in [project.optional-dependencies]:
         # an optional extra is still a declared provider, not a lost module.
-        blocks = re.findall(r"dependencies\s*=\s*\[(.*?)\]", text, re.S)
-        optional = re.search(r"\[project\.optional-dependencies\](.*?)(?:\n\[|\Z)", text, re.S)
+        blocks = re.findall(r"dependencies\s*=\s*\[(.*?)\]", text, re.DOTALL)
+        optional = re.search(r"\[project\.optional-dependencies\](.*?)(?:\n\[|\Z)", text, re.DOTALL)
         if optional:
-            blocks += re.findall(r"=\s*\[(.*?)\]", optional.group(1), re.S)
+            blocks += re.findall(r"=\s*\[(.*?)\]", optional.group(1), re.DOTALL)
         for block in blocks:
             for token in re.findall(r"[\"']([A-Za-z0-9_.\-]+)", block):
                 names |= _import_names(token)  # ghost_buster: name-disagreement -- `token` is `dist` in the signature
@@ -214,7 +214,7 @@ def _submodules(root: Path) -> list[tuple[str, bool]]:
     if not modules_file.is_file():
         return []
     out = []
-    for path in re.findall(r"^\s*path\s*=\s*(\S+)", modules_file.read_text(errors="replace"), re.M):
+    for path in re.findall(r"^\s*path\s*=\s*(\S+)", modules_file.read_text(errors="replace"), re.MULTILINE):
         target = root / path
         initialised = target.is_dir() and any(target.rglob("*.py"))
         out.append((path, initialised))

@@ -1,14 +1,20 @@
 """Direction, surprise, and the three things it refuses to assess."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from ghost_buster.ledger import RunRecord
 from ghost_buster.trajectory import (
-    SURPRISE_Z, WARMUP_RUNS, adverse_rate_for, assess, comparable, derive, render_report,
+    SURPRISE_Z,
+    WARMUP_RUNS,
+    adverse_rate_for,
+    assess,
+    comparable,
+    derive,
+    render_report,
 )
 
-BASE = datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc)
+BASE = datetime(2026, 9, 1, 12, 0, tzinfo=UTC)
 FULL = {"mechanical": "ran", "tests": "ran", "secrets": "ran"}
 NO_TESTS = {"mechanical": "ran", "tests": "declined", "secrets": "ran"}
 

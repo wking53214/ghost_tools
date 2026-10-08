@@ -1,6 +1,8 @@
 """Repository-state taxonomy. Zero static refs = DEAD_CANDIDATE, not DEAD."""
 from __future__ import annotations
+
 from enum import Enum
+
 
 class RepositoryStateClass(str, Enum):
     ACTIVE = "ACTIVE"

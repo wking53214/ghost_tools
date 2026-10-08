@@ -24,10 +24,8 @@ to resist.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Set, Tuple
 
-from .schema import Category, Evidence, Finding, FindingSet, Layer, Severity, Status
-from .schema import authoritative
+from .schema import Category, Evidence, Finding, FindingSet, Layer, Severity, Status, authoritative
 
 DETECTOR = "stale_baseline"
 
@@ -35,7 +33,7 @@ DETECTOR = "stale_baseline"
 class Baseline:
     def __init__(self, path: Path):
         self.path = path
-        self._known_ids: Set[str] = set()
+        self._known_ids: set[str] = set()
         self._known: dict = {}
         if path.exists():
             fs = FindingSet.from_json(path.read_text(encoding="utf-8"))
@@ -46,7 +44,7 @@ class Baseline:
     def size(self) -> int:
         return len(self._known_ids)
 
-    def accept(self, findings: List[Finding]) -> None:
+    def accept(self, findings: list[Finding]) -> None:
         """Add these findings' IDs to the baseline and persist it.
 
         Only findings a detector established. Accepting a REASONED one
@@ -65,7 +63,7 @@ class Baseline:
         self.path.write_text(existing.to_json(), encoding="utf-8")
         self._known_ids = existing_ids
 
-    def diff(self, current: List[Finding]) -> Tuple[List[Finding], List[Finding]]:
+    def diff(self, current: list[Finding]) -> tuple[list[Finding], list[Finding]]:
         """Split `current` into (new, already_known). `new` is what a
         report should actually surface; `already_known` still exists but
         was already accepted into the baseline on a prior run.
@@ -74,8 +72,8 @@ class Baseline:
         id hashes detector, path and summary, not severity, so before this an
         entry accepted as MINOR silently suppressed the same finding once it
         became CRITICAL (measured 2026-09-08)."""
-        new: List[Finding] = []
-        known: List[Finding] = []
+        new: list[Finding] = []
+        known: list[Finding] = []
         for f in current:
             stored = self._known.get(f.id)
             if stored is None:
@@ -90,7 +88,7 @@ class Baseline:
                 known.append(f)
         return new, known
 
-    def stale(self, current: List[Finding]) -> List[Finding]:
+    def stale(self, current: list[Finding]) -> list[Finding]:
         """Baseline entries that matched nothing in this run.
 
         Before this they were invisible: a fixed finding, a renamed detector
@@ -100,7 +98,7 @@ class Baseline:
         seen = {f.id for f in current}
         return [f for fid, f in self._known.items() if fid not in seen]
 
-    def derive_findings(self, current: List[Finding]) -> List[Finding]:
+    def derive_findings(self, current: list[Finding]) -> list[Finding]:
         """The baseline's own rot, as a finding rather than a receipt line.
 
         WHY THIS EXISTS AS A FINDING AND NOT A PRINTED LINE (v1.8.0)

@@ -95,12 +95,12 @@ import os
 import subprocess
 import sys
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
 
 from . import speed
-from .mutation import _Scratch, _mutate_function, _safe_parse, _write_tree
+from .mutation import _mutate_function, _safe_parse, _Scratch, _write_tree
 
 #: Emptying the function is the strongest signal available and the cheapest
 #: to explain: a suite that passes with the body replaced by `pass` cannot
@@ -151,24 +151,24 @@ class SerumReport:
     ran: bool = False
     reason: str = ""
     files_swept: int = 0
-    sites: List[Site] = field(default_factory=list)
-    doses: List[Dose] = field(default_factory=list)
+    sites: list[Site] = field(default_factory=list)
+    doses: list[Dose] = field(default_factory=list)
     assessed: bool = False
     verification_reason: str = ""
-    scan_work: List[str] = field(default_factory=list)
+    scan_work: list[str] = field(default_factory=list)
     scan_work_material: bool = False
     seconds: float = 0.0
 
     @property
-    def covered(self) -> List[Dose]:
+    def covered(self) -> list[Dose]:
         return [d for d in self.doses if d.verdict == COVERED]
 
     @property
-    def blind(self) -> List[Dose]:
+    def blind(self) -> list[Dose]:
         return [d for d in self.doses if d.verdict == BLIND]
 
     @property
-    def unknown(self) -> List[Dose]:
+    def unknown(self) -> list[Dose]:
         return [d for d in self.doses if d.verdict == UNKNOWN]
 
 
@@ -180,7 +180,7 @@ def enclosing_function(tree: ast.Module, line: int) -> str:
     Empty when the line is at module scope, which is a real answer: there
     is no function to empty, so there is nothing to verify by emptying it.
     """
-    best: Tuple[int, str] = (-1, "")
+    best: tuple[int, str] = (-1, "")
 
     def walk(node: ast.AST, prefix: str) -> None:
         for child in ast.iter_child_nodes(node):
@@ -202,12 +202,12 @@ def enclosing_function(tree: ast.Module, line: int) -> str:
     return best[1]
 
 
-def find_sites(files: Sequence[Path]) -> List[Site]:
+def find_sites(files: Sequence[Path]) -> list[Site]:
     """Every enhancement site, with the function that holds it."""
     from . import corpus
 
-    out: List[Site] = []
-    trees: Dict[Path, Optional[ast.Module]] = {}
+    out: list[Site] = []
+    trees: dict[Path, ast.Module | None] = {}
     for stop in speed.find_pitstops(files):
         path = Path(stop.path)
         if path not in trees:
@@ -232,7 +232,7 @@ def over_budget(spent: float, baseline_seconds: float, budget: float) -> bool:
     return spent + baseline_seconds > budget
 
 
-def verdict_for(code: int, function: str, tail: str = "") -> Tuple[str, str]:
+def verdict_for(code: int, function: str, tail: str = "") -> tuple[str, str]:
     """What one mutated suite run establishes, and how it is said.
 
     The mapping is the whole argument of this module, so it is a function
@@ -249,7 +249,7 @@ def verdict_for(code: int, function: str, tail: str = "") -> Tuple[str, str]:
     return UNKNOWN, f"not assessed: the run did not complete ({tail[-120:]})"
 
 
-def _run_suite(cwd: Path, timeout: float, python: Optional[str] = None) -> Tuple[int, str]:
+def _run_suite(cwd: Path, timeout: float, python: str | None = None) -> tuple[int, str]:
     """The patient's whole suite, stopping at the first failure. Returns
     (returncode, tail). A non-zero code is all this needs: the question is
     whether ANYTHING notices, not which test did."""
@@ -267,8 +267,8 @@ def _run_suite(cwd: Path, timeout: float, python: Optional[str] = None) -> Tuple
 
 
 def assess_doses(root: Path, sites: Sequence[Site], *, budget: float = DEFAULT_BUDGET,
-                 python: Optional[str] = None,
-                 link_siblings: bool = True) -> Tuple[List[Dose], bool, str]:
+                 python: str | None = None,
+                 link_siblings: bool = True) -> tuple[list[Dose], bool, str]:
     """Grade each site by whether the patient's suite could catch a mistake
     there. Returns (doses, assessed, reason).
 
@@ -361,7 +361,7 @@ def _material(lines: Sequence[str]) -> bool:
 
 
 def assess(root: Path, files: Sequence[Path], *, scan_work: Sequence[str] = (),
-           budget: float = DEFAULT_BUDGET, python: Optional[str] = None,
+           budget: float = DEFAULT_BUDGET, python: str | None = None,
            link_siblings: bool = True) -> SerumReport:
     started = time.perf_counter()
     report = SerumReport(ran=True, files_swept=len(files))
@@ -378,7 +378,7 @@ def assess(root: Path, files: Sequence[Path], *, scan_work: Sequence[str] = (),
     return report
 
 
-def render(report: SerumReport) -> List[str]:
+def render(report: SerumReport) -> list[str]:
     """The serum, as the operative report prints it."""
     if not report.ran:
         return [f"serum: not run ({report.reason or 'no reason given'})"]

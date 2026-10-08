@@ -43,7 +43,6 @@ import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
 
 #: What a missing file hashes to, so "no baseline" is a state the chain
 #: records rather than a gap it cannot describe.
@@ -57,7 +56,7 @@ def digest(data: object) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
-def digest_file(path: Optional[Path]) -> str:
+def digest_file(path: Path | None) -> str:
     """The digest of a record on disk, by its content rather than its
     bytes: a reformatted baseline is the same baseline."""
     if path is None or not Path(path).is_file():
@@ -91,12 +90,12 @@ class Break:
         return f"run {self.run_index} ({self.run_id}): {self.what}"
 
 
-def verify(runs: List[dict]) -> List[Break]:
+def verify(runs: list[dict]) -> list[Break]:
     """Every link, recomputed. An empty list means the chain is intact for
     the runs that carry one; runs written before this existed have no link
     and are reported as unchained rather than as broken, because they are
     not evidence of tampering, only of age."""
-    breaks: List[Break] = []
+    breaks: list[Break] = []
     previous = ""
     for i, run in enumerate(runs):
         recorded = run.get("link")
@@ -113,7 +112,7 @@ def verify(runs: List[dict]) -> List[Break]:
     return breaks
 
 
-def render(breaks: List[Break], total: int) -> str:
+def render(breaks: list[Break], total: int) -> str:
     if not total:
         return "ghost_buster: chain: no runs to verify"
     unchained = [b for b in breaks if "no link recorded" in b.what]

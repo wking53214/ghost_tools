@@ -51,18 +51,18 @@ which is the only way the comparison means anything.
 from __future__ import annotations
 
 import subprocess
+from collections.abc import Callable
 from enum import Enum
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Set, Tuple
 
-__all__ = ["Provenance", "repo_root", "provenance", "Analyse"]
+__all__ = ["Analyse", "Provenance", "provenance", "repo_root"]
 
 
 # The analysis the caller performs at HEAD, handed in so it can be performed
 # at a past revision too. Maps {path: source} to (produced_in_library,
 # produced_in_tests). Injected rather than imported: this module must not
 # depend on the detector that uses it, and a caller can substitute a stub.
-Analyse = Callable[[Dict[str, str]], Tuple[Set[str], Set[str]]]
+Analyse = Callable[[dict[str, str]], tuple[set[str], set[str]]]
 
 # How many string-changing commits to examine before giving up. A member
 # whose spelling churned through more commits than this is not worth an
@@ -95,7 +95,7 @@ class Provenance(str, Enum):
     UNKNOWN = "unknown"
 
 
-def _git(root: Path, *args: str) -> Optional[str]:
+def _git(root: Path, *args: str) -> str | None:
     """stdout, or None for every kind of failure there is.
 
     Deliberately total. A missing git, a non-zero exit, a timeout and a
@@ -118,7 +118,7 @@ def _git(root: Path, *args: str) -> Optional[str]:
         return None
 
 
-def repo_root(paths) -> Optional[Path]:
+def repo_root(paths) -> Path | None:
     """The work tree containing `paths`, or None if there isn't one.
 
     Asks git rather than looking for a `.git` directory, so a work tree, a
@@ -137,7 +137,7 @@ def repo_root(paths) -> Optional[Path]:
     return None
 
 
-def _files_containing(root: Path, rev: str, needle: str) -> Optional[List[str]]:
+def _files_containing(root: Path, rev: str, needle: str) -> list[str] | None:
     """Python files at `rev` containing `needle`, or None if unreadable.
 
     This is the optimisation that makes walking history affordable, and it
@@ -158,15 +158,15 @@ def _files_containing(root: Path, rev: str, needle: str) -> Optional[List[str]]:
     for line in out.splitlines():
         # git grep prints "<rev>:<path>" when searching a revision.
         prefix = rev + ":"
-        names.append(line[len(prefix):] if line.startswith(prefix) else line)
+        names.append(line.removeprefix(prefix))
     return [n for n in names if n]
 
 
-def _sources_at(root: Path, rev: str, needle: str) -> Optional[Dict[str, str]]:
+def _sources_at(root: Path, rev: str, needle: str) -> dict[str, str] | None:
     names = _files_containing(root, rev, needle)
     if names is None:
         return None
-    sources: Dict[str, str] = {}
+    sources: dict[str, str] = {}
     for name in names:
         text = _git(root, "show", f"{rev}:{name}")
         if text is not None:
@@ -175,7 +175,7 @@ def _sources_at(root: Path, rev: str, needle: str) -> Optional[Dict[str, str]]:
 
 
 def _produced_at(root: Path, rev: str, needle: str,
-                 analyse: Analyse) -> Optional[Tuple[Set[str], Set[str]]]:
+                 analyse: Analyse) -> tuple[set[str], set[str]] | None:
     """(library, tests) member names produced at `rev`, or None if unreadable.
 
     An empty revision -- the parent of a root commit, spelled as an empty

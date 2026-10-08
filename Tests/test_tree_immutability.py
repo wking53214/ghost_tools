@@ -13,11 +13,11 @@ import json
 import textwrap
 
 import pytest
+from tree_guard import Changes, unchanged
 
 from blackhole_extrapolator import cli as blackhole_cli
 from ghost_buster import cli as buster_cli
 from ghost_buster.mechanical import run_all
-from tree_guard import Changes, compare, snapshot, unchanged
 
 # Everything that would reach outside the tree or take minutes: git plumbing,
 # the project's own pytest run, and gitleaks. Each is covered by its own
@@ -110,9 +110,8 @@ def test_accept_creates_a_baseline_and_nothing_else(tree, capsys):
 def test_the_writing_flags_no_longer_exist(tree, flag):
     """Ghost reports. Changing a tree is Elegant's job, so the flags that once
     wrote into it are refused as unknown, and the tree is untouched."""
-    with unchanged(tree):
-        with pytest.raises(SystemExit) as stopped:
-            buster_cli.main([str(tree), *QUIET, flag])
+    with unchanged(tree), pytest.raises(SystemExit) as stopped:
+        buster_cli.main([str(tree), *QUIET, flag])
     assert stopped.value.code == 2
 
 
@@ -160,22 +159,19 @@ def test_recovery_touches_neither_the_tree_nor_the_corpus(tree, tmp_path, capsys
 
 def test_the_guard_fails_when_a_file_is_modified(tmp_path):
     (tmp_path / "a.txt").write_text("one")
-    with pytest.raises(AssertionError, match="modified: a.txt"):
-        with unchanged(tmp_path):
-            (tmp_path / "a.txt").write_text("two")
+    with pytest.raises(AssertionError, match="modified: a.txt"), unchanged(tmp_path):
+        (tmp_path / "a.txt").write_text("two")
 
 
 def test_the_guard_fails_when_a_file_is_deleted(tmp_path):
     (tmp_path / "a.txt").write_text("one")
-    with pytest.raises(AssertionError, match="deleted: a.txt"):
-        with unchanged(tmp_path):
-            (tmp_path / "a.txt").unlink()
+    with pytest.raises(AssertionError, match="deleted: a.txt"), unchanged(tmp_path):
+        (tmp_path / "a.txt").unlink()
 
 
 def test_the_guard_fails_on_an_undeclared_new_file(tmp_path):
-    with pytest.raises(AssertionError, match="created: surprise.json"):
-        with unchanged(tmp_path):
-            (tmp_path / "surprise.json").write_text("{}")
+    with pytest.raises(AssertionError, match="created: surprise.json"), unchanged(tmp_path):
+        (tmp_path / "surprise.json").write_text("{}")
 
 
 def test_a_declared_new_file_is_allowed(tmp_path):
@@ -197,26 +193,23 @@ def test_a_permission_change_counts(tmp_path):
     path = tmp_path / "a.txt"
     path.write_text("one")
     path.chmod(0o600)
-    with pytest.raises(AssertionError, match="modified"):
-        with unchanged(tmp_path):
-            path.chmod(0o666)
+    with pytest.raises(AssertionError, match="modified"), unchanged(tmp_path):
+        path.chmod(0o666)
 
 
 def test_a_new_directory_counts(tmp_path):
-    with pytest.raises(AssertionError, match="created: scratch"):
-        with unchanged(tmp_path):
-            (tmp_path / "scratch").mkdir()
+    with pytest.raises(AssertionError, match="created: scratch"), unchanged(tmp_path):
+        (tmp_path / "scratch").mkdir()
 
 
 def test_a_file_written_and_removed_again_is_still_caught(tmp_path):
     """Only if the snapshot is taken as a whole. A check that compared the
     survivors would see nothing here."""
     (tmp_path / "keep.txt").write_text("one")
-    with pytest.raises(AssertionError, match="modified: keep.txt"):
-        with unchanged(tmp_path):
-            (tmp_path / "temp.txt").write_text("scratch")
-            (tmp_path / "keep.txt").write_text("changed")
-            (tmp_path / "temp.txt").unlink()
+    with pytest.raises(AssertionError, match="modified: keep.txt"), unchanged(tmp_path):
+        (tmp_path / "temp.txt").write_text("scratch")
+        (tmp_path / "keep.txt").write_text("changed")
+        (tmp_path / "temp.txt").unlink()
 
 
 def test_caches_are_ignored(tmp_path):

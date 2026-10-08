@@ -25,7 +25,6 @@ from __future__ import annotations
 import shutil
 
 import pytest
-
 from mutant_harness import assert_killed, run_tests_with_mutation
 
 pytestmark = pytest.mark.skipif(

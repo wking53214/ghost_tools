@@ -13,7 +13,10 @@ import json
 import pytest
 
 from ghost_buster.boundary import (
-    build_joined_model, derive_findings, render_report, render_single_repo_notice,
+    build_joined_model,
+    derive_findings,
+    render_report,
+    render_single_repo_notice,
 )
 from ghost_buster.cli import main
 from ghost_buster.pipeline import _collect_files

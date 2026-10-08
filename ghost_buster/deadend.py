@@ -67,9 +67,9 @@ from __future__ import annotations
 
 import ast
 from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Sequence, Set
 
 from . import corpus
 from .naming import is_test_path
@@ -156,12 +156,12 @@ def body_does_nothing(node: ast.AST) -> str | None:
     return None
 
 
-def _decorators(node: ast.AST) -> Set[str]:
+def _decorators(node: ast.AST) -> set[str]:
     return {getattr(d, "id", getattr(d, "attr", ""))
             for d in getattr(node, "decorator_list", [])}
 
 
-def _base_names(node: ast.ClassDef) -> List[str]:
+def _base_names(node: ast.ClassDef) -> list[str]:
     return [getattr(b, "id", getattr(b, "attr", "")) for b in node.bases]
 
 
@@ -188,13 +188,13 @@ class _Index:
     """Everything the seam test needs, read once from the scanned set."""
 
     def __init__(self, files: Sequence[Path]) -> None:
-        self.bases: Dict[str, List[str]] = {}
-        self.real_methods: Dict[str, Set[str]] = defaultdict(set)
-        self.abstract_classes: Set[str] = set()
-        self.abstract_methods: Set[str] = set()
-        self.real_functions: Set[str] = set()
-        self.called: Set[str] = set()
-        self.hollows: List[Hollow] = []
+        self.bases: dict[str, list[str]] = {}
+        self.real_methods: dict[str, set[str]] = defaultdict(set)
+        self.abstract_classes: set[str] = set()
+        self.abstract_methods: set[str] = set()
+        self.real_functions: set[str] = set()
+        self.called: set[str] = set()
+        self.hollows: list[Hollow] = []
 
         for path in (Path(f) for f in files):
             tree = self._parse(path)
@@ -248,7 +248,7 @@ class _Index:
             elif not test:
                 self.hollows.append(Hollow(path, None, node.name, shape, node.lineno))
 
-    def ancestry(self, cls: str, seen: Set[str] | None = None) -> Set[str]:
+    def ancestry(self, cls: str, seen: set[str] | None = None) -> set[str]:
         seen = seen if seen is not None else set()
         for base in self.bases.get(cls, []):
             if base and base not in seen:
@@ -256,15 +256,15 @@ class _Index:
                 self.ancestry(base, seen)
         return seen
 
-    def subclasses(self) -> Dict[str, List[str]]:
-        out: Dict[str, List[str]] = defaultdict(list)
+    def subclasses(self) -> dict[str, list[str]]:
+        out: dict[str, list[str]] = defaultdict(list)
         for cls in self.bases:
             for ancestor in self.ancestry(cls):
                 out[ancestor].append(cls)
         return out
 
 
-def _declared_seam(index: _Index, subclasses: Dict[str, List[str]],
+def _declared_seam(index: _Index, subclasses: dict[str, list[str]],
                    hollow: Hollow) -> str | None:
     """Why this empty body is empty ON PURPOSE, or None if nothing says so."""
     if hollow.owner is None:
@@ -287,7 +287,7 @@ def _deliberate_no_op(hollow: Hollow) -> bool:
     return is_no_op_name(hollow.owner or hollow.name) or is_no_op_name(hollow.name)
 
 
-def find_dead_ends(files: Sequence[Path]) -> List[Hollow]:
+def find_dead_ends(files: Sequence[Path]) -> list[Hollow]:
     """Every empty body that live code calls and nothing is arranged to fill."""
     index = _Index(files)
     subclasses = index.subclasses()
@@ -297,8 +297,8 @@ def find_dead_ends(files: Sequence[Path]) -> List[Hollow]:
             and _declared_seam(index, subclasses, h) is None]
 
 
-def detect_dead_end_calls(files: Sequence[Path]) -> List[Finding]:
-    findings: List[Finding] = []
+def detect_dead_end_calls(files: Sequence[Path]) -> list[Finding]:
+    findings: list[Finding] = []
     for hollow in sorted(find_dead_ends(files), key=lambda h: (str(h.path), h.line)):
         loud = hollow.is_loud
         findings.append(Finding(

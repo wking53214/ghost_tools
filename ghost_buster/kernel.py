@@ -35,9 +35,9 @@ from __future__ import annotations
 import ast
 import copy
 import hashlib
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Sequence, Set, Tuple
 
 from . import corpus
 from .naming import is_test_path
@@ -72,11 +72,11 @@ def _shape(node: ast.ClassDef) -> str:
     ).hexdigest()
 
 
-def _methods(node: ast.ClassDef) -> Set[str]:
+def _methods(node: ast.ClassDef) -> set[str]:
     return {n.name for n in node.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
 
 
-def _members(node: ast.ClassDef) -> Set[str]:
+def _members(node: ast.ClassDef) -> set[str]:
     """The names a class declares at its top level: methods, and the
     class-level assignments that make an Enum's members, a dataclass's
     fields, a Protocol's attributes. The overlap gate compares methods
@@ -84,7 +84,7 @@ def _members(node: ast.ClassDef) -> Set[str]:
     `__init__` instead of declaring them is still the same contract) and
     falls back to these for a class with none, so an Enum with a member
     added is still a drifted contract."""
-    out: Set[str] = set()
+    out: set[str] = set()
     for n in node.body:
         if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
             out.add(n.name)
@@ -104,18 +104,18 @@ class KernelClass:
     members: frozenset      # the gate for an Enum, a dataclass, a Protocol: no methods, only names
 
 
-def _classes(path: Path) -> List[ast.ClassDef]:
+def _classes(path: Path) -> list[ast.ClassDef]:
     tree = corpus.parse(path)
     if tree is None:
         return []
     return [n for n in tree.body if isinstance(n, ast.ClassDef)]
 
 
-def load_kernel(root: Path) -> Dict[str, KernelClass]:
+def load_kernel(root: Path) -> dict[str, KernelClass]:
     """Every top-level class the kernel defines, by name. A name defined
     twice in the kernel is the kernel's own problem and is skipped here,
     since there is no one shape to compare against."""
-    seen: Dict[str, List[KernelClass]] = {}
+    seen: dict[str, list[KernelClass]] = {}
     for path in sorted(Path(root).rglob("*.py")):
         if is_test_path(path) or any(part in _SKIP for part in path.parts):
             continue
@@ -131,7 +131,7 @@ _SKIP = {".git", "venv", ".venv", "node_modules", "site-packages", "__pycache__"
 @dataclass
 class KernelReport:
     ran: bool
-    kernels: Tuple[Path, ...]
+    kernels: tuple[Path, ...]
     kernel_classes: int = 0
     shadows: int = 0
     drifted: int = 0
@@ -145,19 +145,19 @@ def _inside(path: Path, roots: Sequence[Path]) -> bool:
     return any(p == r or r in p.parents for r in roots)
 
 
-def check_kernel(files: Sequence[Path], kernels: Sequence[Path]) -> Tuple[List[Finding], KernelReport]:
+def check_kernel(files: Sequence[Path], kernels: Sequence[Path]) -> tuple[list[Finding], KernelReport]:
     roots = [Path(k).resolve() for k in kernels]
     report = KernelReport(ran=False, kernels=tuple(roots))
     missing = [r for r in roots if not r.is_dir()]
     if missing:
         report.reason = "kernel path is not a directory: " + ", ".join(str(m) for m in missing)
         return [], report
-    kernel: Dict[str, KernelClass] = {}
+    kernel: dict[str, KernelClass] = {}
     for r in roots:
         kernel.update(load_kernel(r))
     report.kernel_classes = len(kernel)
     report.ran = True
-    findings: List[Finding] = []
+    findings: list[Finding] = []
     for path in (Path(f) for f in files):
         if is_test_path(path):
             continue

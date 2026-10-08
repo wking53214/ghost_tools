@@ -29,15 +29,15 @@ from __future__ import annotations
 import ast
 import hashlib
 import re
+from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import Callable, Dict, Iterable, List, Optional, Set, Tuple
 
 from . import corpus, forensics
 from .schema import Category, Evidence, Finding, Layer, Severity, Status, _portable_path
 
-DetectorFn = Callable[[List[Path]], List[Finding]]
+DetectorFn = Callable[[list[Path]], list[Finding]]
 
-_REGISTRY: Dict[str, DetectorFn] = {}
+_REGISTRY: dict[str, DetectorFn] = {}
 
 
 def register(name: str):
@@ -47,7 +47,7 @@ def register(name: str):
     return decorator
 
 
-def registered_detectors() -> Dict[str, DetectorFn]:
+def registered_detectors() -> dict[str, DetectorFn]:
     return dict(_REGISTRY)
 
 
@@ -124,7 +124,7 @@ _ROUTE_ATTRS = frozenset({
 _PROTECTED_MAJORITY = 0.6
 
 
-def _decorator_names(node) -> List[str]:
+def _decorator_names(node) -> list[str]:
     out = []
     for dec in getattr(node, "decorator_list", []):
         target = dec.func if isinstance(dec, ast.Call) else dec
@@ -143,7 +143,7 @@ def _is_route(node) -> bool:
     return False
 
 
-def _auth_names(node) -> List[str]:
+def _auth_names(node) -> list[str]:
     """Every way this handler says it needs a caller identity: a decorator,
     or a parameter default like `user = Depends(require_user)`."""
     found = [n for n in _decorator_names(node) if n in _AUTH_MARKERS]
@@ -163,7 +163,7 @@ def _auth_names(node) -> List[str]:
 
 
 @register("unauthenticated_route")
-def detect_unauthenticated_route(files: List[Path]) -> List[Finding]:
+def detect_unauthenticated_route(files: list[Path]) -> list[Finding]:
     out = []
     for path in sorted(f for f in files if f.suffix == ".py"):
         if _looks_like_a_test(path):
@@ -297,7 +297,7 @@ def _looks_like_a_test(path: Path) -> bool:
 
 
 @register("insecure_default")
-def detect_insecure_default(files: List[Path]) -> List[Finding]:
+def detect_insecure_default(files: list[Path]) -> list[Finding]:
     out = []
     for path in sorted(f for f in files if f.suffix == ".py"):
         if _looks_like_a_test(path):
@@ -429,7 +429,7 @@ _UPDATE_NO_WHERE = re.compile(
 _TRUNCATE = re.compile(r"^\s*TRUNCATE\s+(?:TABLE\s+)?[\w.\"`\[\]]+", re.IGNORECASE)
 
 
-def _static_sql(node) -> Optional[str]:
+def _static_sql(node) -> str | None:
     """The statement text, if this node is a SQL string with no runtime
     parts. Returns None for anything interpolated -- those are the other
     detector's business and their scope cannot be read statically."""
@@ -480,7 +480,7 @@ def _sql_call_arguments(node: ast.Call):
 
 
 @register("sql_injection")
-def detect_sql_injection(files: List[Path]) -> List[Finding]:
+def detect_sql_injection(files: list[Path]) -> list[Finding]:
     """A SQL statement assembled from runtime parts and handed to a driver.
 
     Not reported: a statement built at runtime and never executed here
@@ -533,7 +533,7 @@ def detect_sql_injection(files: List[Path]) -> List[Finding]:
 
 
 @register("destructive_sql")
-def detect_destructive_sql(files: List[Path]) -> List[Finding]:
+def detect_destructive_sql(files: list[Path]) -> list[Finding]:
     """DELETE or UPDATE with no WHERE clause, or TRUNCATE, in an executed
     statement. Every row, every time."""
     out = []
@@ -618,7 +618,7 @@ def detect_destructive_sql(files: List[Path]) -> List[Finding]:
 # ---------------------------------------------------------------------------
 
 @register("unassessable_file")
-def detect_unassessable_file(files: List[Path]) -> List[Finding]:
+def detect_unassessable_file(files: list[Path]) -> list[Finding]:
     out = []
     for path in sorted(f for f in files if f.suffix == ".py"):
         reason = _parse_failure(path)
@@ -739,14 +739,14 @@ _CLAIMS_FROM_DATA = re.compile(
     r"|\bfrom_dict\b"
     r"|\bfrom\s+(?:a\s+|the\s+)?(?:stored|saved|persisted|serialised|serialized)\b"
     r"|\bloaded\s+from\b",
-    re.I)
+    re.IGNORECASE)
 
 # A claim that covers the whole enum rather than naming members, as in
 # "`Finding.from_dict` reconstructs any member from a stored record".
-_BLANKET_MEMBER = re.compile(r"\b(?:any|every|all|each)\s+members?\b", re.I)
+_BLANKET_MEMBER = re.compile(r"\b(?:any|every|all|each)\s+members?\b", re.IGNORECASE)
 
 
-def _declared_data_reachable(doc: str, members: Set[str]) -> Set[str]:
+def _declared_data_reachable(doc: str, members: set[str]) -> set[str]:
     """Members the enum's own docstring says arrive from stored data.
 
     Matched per LINE rather than per sentence, because the claim is as often
@@ -765,7 +765,7 @@ def _declared_data_reachable(doc: str, members: Set[str]) -> Set[str]:
     """
     if not doc:
         return set()
-    claimed: Set[str] = set()
+    claimed: set[str] = set()
     for line in doc.splitlines():
         if not _CLAIMS_FROM_DATA.search(line):
             continue
@@ -778,7 +778,7 @@ def _declared_data_reachable(doc: str, members: Set[str]) -> Set[str]:
     return claimed
 
 
-def _reachable_from_data(parsed, declared) -> Dict[str, Set[str]]:
+def _reachable_from_data(parsed, declared) -> dict[str, set[str]]:
     """Members that can arrive by building the enum from a runtime value.
 
     `Status.CONFIRMED` is an attribute access and is what `_members_produced`
@@ -811,7 +811,7 @@ def _reachable_from_data(parsed, declared) -> Dict[str, Set[str]]:
     and reading no argument out of a record reconstructs nothing, so only
     a subscript or a `.get` with an argument is counted here.
     """
-    def members_mapping_of(node) -> Optional[str]:
+    def members_mapping_of(node) -> str | None:
         """`<Enum>.__members__` -> the enum name, else None."""
         if (isinstance(node, ast.Attribute) and node.attr == "__members__"
                 and isinstance(node.value, ast.Name)
@@ -819,14 +819,14 @@ def _reachable_from_data(parsed, declared) -> Dict[str, Set[str]]:
             return node.value.id
         return None
 
-    values: Dict[str, Dict[object, str]] = {}
+    values: dict[str, dict[object, str]] = {}
     for enum, members in declared.items():
         values[enum] = {v: m for m, (_p, _l, v) in members.items()
                         if v is not None}
-    out: Dict[str, Set[str]] = {enum: set() for enum in declared}
+    out: dict[str, set[str]] = {enum: set() for enum in declared}
     for _path, tree in parsed.items():
         for node in ast.walk(tree):
-            enum: Optional[str] = None
+            enum: str | None = None
             arg = None
             if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
                     and node.func.id in declared and node.args):
@@ -872,7 +872,7 @@ def _within(root: Path, path: Path) -> bool:
     return True
 
 
-def _analyse_sources(sources: Dict[str, str]) -> Tuple[Set[str], Set[str]]:
+def _analyse_sources(sources: dict[str, str]) -> tuple[set[str], set[str]]:
     """(produced in library, produced in tests) for source text off a commit.
 
     Handed to forensics.py so the question asked of a past revision is the
@@ -899,7 +899,7 @@ _HISTORY_SEVERITY = {
 }
 
 
-def _declared_enum_members(parsed) -> Tuple[Dict[str, Dict[str, tuple]], Dict[str, str]]:
+def _declared_enum_members(parsed) -> tuple[dict[str, dict[str, tuple]], dict[str, str]]:
     """Every enum class in the scan: its UPPER-CASE members and its docstring.
 
     Members map to (path, line, literal value or None); docstrings of
@@ -907,8 +907,8 @@ def _declared_enum_members(parsed) -> Tuple[Dict[str, Dict[str, tuple]], Dict[st
     about stored data may sit in any of them.
     """
     # enum name -> {member -> (path, line, literal value or None)}
-    declared: Dict[str, Dict[str, tuple]] = {}
-    docs: Dict[str, str] = {}
+    declared: dict[str, dict[str, tuple]] = {}
+    docs: dict[str, str] = {}
     for path, tree in parsed.items():
         for node in ast.walk(tree):
             if not isinstance(node, ast.ClassDef):
@@ -1076,7 +1076,7 @@ def _finding_unproduced(enum, member, path, line, live, only_tests, provenance,
 
 @register("unreachable_declared_state")
 def detect_unreachable_declared_state(
-        files: List[Path], *, history: bool = True) -> List[Finding]:
+        files: list[Path], *, history: bool = True) -> list[Finding]:
     """Enum members declared as states the code cannot reach.
 
     `history` consults git to tell an oversight from a removal. It is a
@@ -1121,7 +1121,7 @@ def detect_unreachable_declared_state(
 
     root = forensics.repo_root(files) if history else None
 
-    out: List[Finding] = []
+    out: list[Finding] = []
     for enum, members in sorted(declared.items()):
         live = {m for m in members if m in in_library}
         # The asymmetry, and only the asymmetry. An enum where NOTHING is
@@ -1184,7 +1184,7 @@ def detect_unreachable_declared_state(
     return out
 
 
-def _members_produced(parsed) -> Set[str]:
+def _members_produced(parsed) -> set[str]:
     """Member names used as a VALUE rather than merely compared against.
 
     `status = Status.DONE` produces one. `if status is Status.DONE` does not:
@@ -1214,9 +1214,9 @@ def _members_produced(parsed) -> Set[str]:
     name shared by two enums is treated as produced for both, which loses a
     finding rather than inventing one.
     """
-    out: Set[str] = set()
+    out: set[str] = set()
     for _path, tree in parsed.items():
-        compared: Set[int] = set()
+        compared: set[int] = set()
         for node in ast.walk(tree):
             if isinstance(node, ast.Compare):
                 for side in [node.left, *node.comparators]:
@@ -1264,7 +1264,7 @@ def _is_collection(value) -> bool:
 
 
 @register("dead_code")
-def detect_dead_code(files: List[Path]) -> List[Finding]:
+def detect_dead_code(files: list[Path]) -> list[Finding]:
     """Flags a module-level def/class whose name never appears as an
     identifier anywhere else in the scanned set.
 
@@ -1308,9 +1308,9 @@ def detect_dead_code(files: List[Path]) -> List[Finding]:
       @register pattern is the concrete example -- it self-flags on
       ghost_buster's own codebase, see README) are still untraced.
     """
-    definitions: Dict[str, List[Path]] = {}
-    referenced_names: Set[str] = set()
-    exported_names: Set[str] = set()
+    definitions: dict[str, list[Path]] = {}
+    referenced_names: set[str] = set()
+    exported_names: set[str] = set()
 
     def _is_protocol_or_abc(class_node: ast.ClassDef) -> bool:
         for base in class_node.bases:
@@ -1379,7 +1379,7 @@ def detect_dead_code(files: List[Path]) -> List[Finding]:
                                    ast.ClassDef)) and node.decorator_list:
                 referenced_names.add(node.name)
 
-    findings: List[Finding] = []
+    findings: list[Finding] = []
     for name, def_paths in definitions.items():
         if name in exported_names:
             continue
@@ -1412,14 +1412,14 @@ def detect_dead_code(files: List[Path]) -> List[Finding]:
 # ---------------------------------------------------------------------------
 
 @register("long_function")
-def detect_long_functions(files: List[Path], threshold: int = 80) -> List[Finding]:
+def detect_long_functions(files: list[Path], threshold: int = 80) -> list[Finding]:
     """Flags any function/method whose body spans more than `threshold`
     source lines (end_lineno - lineno). Not cyclomatic complexity (that
     needs control-flow-graph construction, out of scope for v0.1's
     stdlib-only constraint) -- line count is a cruder but real, honest
     proxy, and is disclosed as such in every finding's detail text.
     """
-    findings: List[Finding] = []
+    findings: list[Finding] = []
     for path in files:
         tree = _parse(path)
         if tree is None:
@@ -1496,7 +1496,7 @@ def _structural_fingerprint(node: ast.AST) -> str:
     return hashlib.sha256(repr(_shape(node)).encode("utf-8")).hexdigest()
 
 
-def _block_fingerprint(stmts: List[ast.stmt]) -> str:
+def _block_fingerprint(stmts: list[ast.stmt]) -> str:
     """Same normalization as _structural_fingerprint, applied to a run of
     statements rather than a whole function -- see
     detect_intra_function_duplicate_blocks for why this exists."""
@@ -1514,7 +1514,7 @@ def _is_test_file(path: Path) -> bool:
     return any(part.lower() in ("tests", "test") for part in path.parts[:-1])
 
 
-def _identical_file_groups(files: List[Path]) -> List[Tuple[str, List[Path]]]:
+def _identical_file_groups(files: list[Path]) -> list[tuple[str, list[Path]]]:
     """(sha256, group) for every set of 2+ scanned files with byte-identical
     content. The digest is carried out so the finding can publish it as a
     join key -- correlate.py matches a leaked file against its twins on it. Measured on
@@ -1525,7 +1525,7 @@ def _identical_file_groups(files: List[Path]) -> List[Tuple[str, List[Path]]]:
     such a file fingerprinted identically to its twin, so one duplicated
     file was surfacing as N near_duplicate_function findings that said
     nothing about the real event -- the whole file is a copy."""
-    by_hash: Dict[str, List[Path]] = {}
+    by_hash: dict[str, list[Path]] = {}
     for path in files:
         try:
             content = path.read_bytes()
@@ -1540,7 +1540,7 @@ def _identical_file_groups(files: List[Path]) -> List[Tuple[str, List[Path]]]:
 
 
 @register("duplicate_file")
-def detect_duplicate_files(files: List[Path]) -> List[Finding]:
+def detect_duplicate_files(files: list[Path]) -> list[Finding]:
     """One finding per group of byte-identical scanned files -- the
     signal near_duplicate_function was drowning in until v0.9 (see
     _identical_file_groups). A vendored verbatim copy of a sibling repo's
@@ -1549,7 +1549,7 @@ def detect_duplicate_files(files: List[Path]) -> List[Finding]:
     won't. MAJOR for that reason. A file that appears twice only because
     a symlinked directory was scanned twice is not this -- the CLI
     collects each real path once, so it never reaches here."""
-    findings: List[Finding] = []
+    findings: list[Finding] = []
     for digest, group in _identical_file_groups(files):
         group = sorted(group)
         # Portable paths, not absolute: the summary is part of the finding
@@ -1582,7 +1582,7 @@ def detect_duplicate_files(files: List[Path]) -> List[Finding]:
 
 
 @register("near_duplicate_function")
-def detect_near_duplicate_functions(files: List[Path], min_lines: int = 10) -> List[Finding]:
+def detect_near_duplicate_functions(files: list[Path], min_lines: int = 10) -> list[Finding]:
     """Groups functions by structural fingerprint; any group with 2+
     members is a near-duplicate cluster. min_lines guards against every
     trivial one-line getter/setter fingerprinting identically and
@@ -1602,14 +1602,14 @@ def detect_near_duplicate_functions(files: List[Path], min_lines: int = 10) -> L
         suite looks like, and the README had already disclosed it as the
         detector's dominant noise. MAJOR findings went from 42 to 27.
     """
-    representatives: List[Path] = []
+    representatives: list[Path] = []
     seen_twins = set()
     for _digest, group in _identical_file_groups(files):
         for path in sorted(group)[1:]:
             seen_twins.add(path)
     representatives = [p for p in files if p not in seen_twins]
 
-    by_fingerprint: Dict[str, List[tuple]] = {}
+    by_fingerprint: dict[str, list[tuple]] = {}
     for path in representatives:
         tree = _parse(path)
         if tree is None:
@@ -1623,7 +1623,7 @@ def detect_near_duplicate_functions(files: List[Path], min_lines: int = 10) -> L
                 fp = _structural_fingerprint(node)
                 by_fingerprint.setdefault(fp, []).append((path, node))
 
-    findings: List[Finding] = []
+    findings: list[Finding] = []
     for fp, occurrences in by_fingerprint.items():
         if len(occurrences) < 2:
             continue
@@ -1689,7 +1689,7 @@ def detect_near_duplicate_functions(files: List[Path], min_lines: int = 10) -> L
 _BLOCK_FIELD_NAMES = ("body", "orelse", "finalbody")
 
 
-def _stmt_blocks(func_node: ast.AST) -> Iterable[List[ast.stmt]]:
+def _stmt_blocks(func_node: ast.AST) -> Iterable[list[ast.stmt]]:
     """Every list-of-statements belonging to a function's OWN scope: its
     own body, plus the body/orelse/finalbody of every nested if/for/while/
     try/with inside it, plus each except-handler's body. Each is a
@@ -1713,7 +1713,7 @@ def _stmt_blocks(func_node: ast.AST) -> Iterable[List[ast.stmt]]:
     descended into. Rare in practice and left as a known residual rather
     than adding a special case for every AST shape in a v0.2 detector.
     """
-    def blocks_in(stmts: List[ast.stmt]) -> Iterable[List[ast.stmt]]:
+    def blocks_in(stmts: list[ast.stmt]) -> Iterable[list[ast.stmt]]:
         yield stmts
         for stmt in stmts:
             if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -1742,7 +1742,7 @@ def _node_count(node: ast.AST) -> int:
 
 def _stmt_candidates(
     func_node: ast.AST, min_statements: int, min_complexity: int
-) -> Iterable[Tuple[int, List[ast.stmt]]]:
+) -> Iterable[tuple[int, list[ast.stmt]]]:
     """Every comparison unit worth fingerprinting inside one function,
     tagged with the index of the statement list it came from: whole
     sibling blocks of >= min_statements statements (a duplicated
@@ -1768,8 +1768,8 @@ def _stmt_candidates(
 
 @register("intra_function_duplicate_block")
 def detect_intra_function_duplicate_blocks(
-    files: List[Path], min_statements: int = 3, min_complexity: int = 20
-) -> List[Finding]:
+    files: list[Path], min_statements: int = 3, min_complexity: int = 20
+) -> list[Finding]:
     """Within each function independently, groups statement-list blocks
     (if/elif/else bodies, try/except/finally bodies, for/while bodies,
     with bodies) AND individual complex statements by structural
@@ -1813,7 +1813,7 @@ def detect_intra_function_duplicate_blocks(
     Multi-statement blocks are unchanged: 30 findings on the library
     before and after, every one a real repeated branch body.
     """
-    findings: List[Finding] = []
+    findings: list[Finding] = []
     for path in files:
         tree = _parse(path)
         if tree is None:
@@ -1821,8 +1821,8 @@ def detect_intra_function_duplicate_blocks(
         for func in ast.walk(tree):
             if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
-            by_fingerprint: Dict[str, List[List[ast.stmt]]] = {}
-            blocks_of: Dict[str, Set[int]] = {}
+            by_fingerprint: dict[str, list[list[ast.stmt]]] = {}
+            blocks_of: dict[str, set[int]] = {}
             for block_index, unit in _stmt_candidates(func, min_statements, min_complexity):
                 fp = _block_fingerprint(unit)
                 by_fingerprint.setdefault(fp, []).append(unit)
@@ -1969,8 +1969,7 @@ _COUNT_LEAD_INS = frozenset({
     # changes nothing, because this one quietly covers for it. Mutation
     # testing found exactly that, twice, the moment this rule was added.
     "gained", "gains", "gain", "grew", "grown", "grows", "growing",
-    "plus", "minus", "removed", "removes", "dropped", "drops", "another",
-    "extra", "net", "more", "fewer", "claimed", "reported", "said",
+    "minus", "removed", "removes", "dropped", "drops", "extra", "net", "more", "fewer", "claimed", "reported", "said",
 })
 
 #: Deliberately not named after the word it looks for. An earlier draft
@@ -1981,7 +1980,7 @@ _COUNT_LEAD_INS = frozenset({
 _NAMED_OWNER = re.compile(r"(?:^|[\s(\[,;])([A-Za-z][\w.\-]*)\s+$")
 
 
-def claim_shape(before: str) -> Optional[str]:
+def claim_shape(before: str) -> str | None:
     """The reason a "N tests" claim preceded by `before` is not about the
     current suite ("delta", "transition", "quotation", "attribution"), or
     None if it reads as a live claim. See _NOT_A_CURRENT_CLAIM above.
@@ -2012,17 +2011,17 @@ WRITABLE_DOCUMENTS = frozenset({"readme.md", "contributing.md", "index.md"})
 
 _SCOPED_CLAIM = re.compile(
     r"\.py`?|\bpytest\b|python -m pytest|--ignore|/tests?/|`test_"
-    r"|\b(?:core|smoke|unit|integration|new|added)\s+tests?\b", re.I)
+    r"|\b(?:core|smoke|unit|integration|new|added)\s+tests?\b", re.IGNORECASE)
 _TABULAR_CLAIM = re.compile(r"\|[^|]*$|\*\*[^*]+\*\*[^.]{0,12}$")
 _DATED_DOCUMENT = re.compile(
     r"\d{4}-\d{2}-\d{2}|_v\d|FINAL|PHASE|COMPLETE|REPORT|STATUS|MANIFEST"
     r"|APPLY|REVIEW|BRIEF|DECK|COMPLIANCE|CHANGELOG|GUIDE|START_HERE"
-    r"|PRESENTATION", re.I)
+    r"|PRESENTATION", re.IGNORECASE)
 _DATED_SENTENCE = re.compile(
     r"\b(?:recorded|as of|at the time|back in|shipped|released"
-    r"|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|20\d\d)\b[^.]{0,70}$", re.I)
+    r"|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|20\d\d)\b[^.]{0,70}$", re.IGNORECASE)
 _WHOLE_SUITE = re.compile(
-    r"\b(?:test )?suite\b|\ball tests\b|\bthe repository\b|#+\s*tests?\b", re.I)
+    r"\b(?:test )?suite\b|\ball tests\b|\bthe repository\b|#+\s*tests?\b", re.IGNORECASE)
 
 #: How much of the top of a document counts as its own declaration about
 #: itself. A file that says what it is says so at the top, by convention in
@@ -2063,11 +2062,11 @@ _DECLARED_NOT_LIVE = re.compile(
     r"|\bno longer maintained\b|\bnot maintained\b"
     r"|\bpoint[- ]in[- ]time\b"
     r"|\barchived (?:document|record|copy)\b",
-    re.I)
+    re.IGNORECASE)
 
 
 def why_not_writable(filename: str, before: str, after: str = "",
-                     head: str = "") -> Optional[str]:
+                     head: str = "") -> str | None:
     """Why a machine must not rewrite this claim, or None if it may.
 
     REPORTING AND WRITING ARE DIFFERENT QUESTIONS (v1.7.0)
@@ -2136,7 +2135,7 @@ def claim_context(text: str, start: int) -> str:
     return text[max(0, start - _CLAIM_LOOKBACK):start]
 
 
-def _count_test_functions(files: List[Path]) -> int:
+def _count_test_functions(files: list[Path]) -> int:
     """Static, conservative LOWER BOUND on the real test count: every
     function (module-level or a method) named test_* in the scanned .py
     files. A lower bound, not an exact match to pytest's own collection,
@@ -2162,8 +2161,8 @@ def _count_test_functions(files: List[Path]) -> int:
 
 @register("doc_test_count_drift")
 def detect_doc_test_count_drift(
-    files: List[Path], min_growth_ratio: float = 1.15, min_absolute_growth: int = 10
-) -> List[Finding]:
+    files: list[Path], min_growth_ratio: float = 1.15, min_absolute_growth: int = 10
+) -> list[Finding]:
     """Flags a markdown "N tests passing/collected" (or "N tests,") claim
     once the real, statically-counted test_* function count has grown well
     past it. Deliberately one-directional: only flags UNDERcounts (real >
@@ -2187,7 +2186,7 @@ def detect_doc_test_count_drift(
     if actual == 0:
         return []
 
-    findings: List[Finding] = []
+    findings: list[Finding] = []
     for path in md_files:
         try:
             text = path.read_text(encoding="utf-8")
@@ -2266,7 +2265,7 @@ _CONFLICT_SEP = re.compile(r"^={7}$")
 _CONFLICT_THEIRS = re.compile(r"^>{7}(?:\s.*)?$")
 
 
-def _next_matching(lines: List[str], pattern: "re.Pattern[str]", start: int) -> Optional[int]:
+def _next_matching(lines: list[str], pattern: re.Pattern[str], start: int) -> int | None:
     """Index of the first line at or after `start` matching `pattern`, or
     None. Shared by both marker lookups below -- they are the same
     operation ("find the next line of this shape") against two different
@@ -2275,7 +2274,7 @@ def _next_matching(lines: List[str], pattern: "re.Pattern[str]", start: int) -> 
 
 
 @register("merge_conflict_marker")
-def detect_merge_conflict_markers(files: List[Path]) -> List[Finding]:
+def detect_merge_conflict_markers(files: list[Path]) -> list[Finding]:
     """Flags an unresolved conflict-marker triplet: a `<<<<<<<` line,
     followed later by a `=======` line, followed later by a `>>>>>>>`
     line, in that order, anywhere in the same file.
@@ -2319,7 +2318,7 @@ def detect_merge_conflict_markers(files: List[Path]) -> List[Finding]:
     only requires it to appear somewhere after `<<<<<<<`, not immediately
     after.
     """
-    findings: List[Finding] = []
+    findings: list[Finding] = []
     for path in files:
         try:
             text = path.read_text(encoding="utf-8")
@@ -2367,24 +2366,27 @@ def detect_merge_conflict_markers(files: List[Path]) -> List[Finding]:
 # Both abstain rather than guess: the vestigial check needs at least two
 # cassettes to tell a domain's vocabulary from the engine's, and returns
 # nothing at all when a tree has no seam to check against.
-from .buried import DETECTOR as COMMENTED_OUT_DETECTOR         # noqa: E402
-from .buried import detect_commented_out_modules              # noqa: E402
-from .flattened import DETECTOR as FLATTENED_COPY_DETECTOR     # noqa: E402
-from .flattened import detect_flattened_copies                 # noqa: E402
-from .selfcall import DETECTOR as UNDEFINED_SELF_DETECTOR      # noqa: E402
-from .selfcall import detect_undefined_self_methods            # noqa: E402
-from .copies import DETECTOR as DRIFTED_COPY_DETECTOR          # noqa: E402
-from .copies import detect_drifted_copies                      # noqa: E402
-from .deadend import DETECTOR as DEAD_END_DETECTOR             # noqa: E402
-from .deadend import detect_dead_end_calls                     # noqa: E402
-from .speed import INVARIANT_CALL, LIST_IN_LOOP, detect_pitstops  # noqa: E402
-from .swallowed import DETECTOR as SWALLOWED_DETECTOR          # noqa: E402
-from .swallowed import detect_swallowed_exceptions             # noqa: E402
-from .naming import (                                            # noqa: E402
-    DISAGREEMENT_DETECTOR, PLACEHOLDER_DETECTOR, VESTIGIAL_DETECTOR,
-    detect_name_disagreements, detect_placeholder_names,
+from .buried import DETECTOR as COMMENTED_OUT_DETECTOR
+from .buried import detect_commented_out_modules
+from .copies import DETECTOR as DRIFTED_COPY_DETECTOR
+from .copies import detect_drifted_copies
+from .deadend import DETECTOR as DEAD_END_DETECTOR
+from .deadend import detect_dead_end_calls
+from .flattened import DETECTOR as FLATTENED_COPY_DETECTOR
+from .flattened import detect_flattened_copies
+from .naming import (
+    DISAGREEMENT_DETECTOR,
+    PLACEHOLDER_DETECTOR,
+    VESTIGIAL_DETECTOR,
+    detect_name_disagreements,
+    detect_placeholder_names,
     detect_vestigial_domain_names,
 )
+from .selfcall import DETECTOR as UNDEFINED_SELF_DETECTOR
+from .selfcall import detect_undefined_self_methods
+from .speed import INVARIANT_CALL, LIST_IN_LOOP, detect_pitstops
+from .swallowed import DETECTOR as SWALLOWED_DETECTOR
+from .swallowed import detect_swallowed_exceptions
 
 register(VESTIGIAL_DETECTOR)(detect_vestigial_domain_names)
 register(PLACEHOLDER_DETECTOR)(detect_placeholder_names)
@@ -2407,7 +2409,7 @@ register(LIST_IN_LOOP)(lambda files: [f for f in detect_pitstops(files) if f.det
 register(INVARIANT_CALL)(lambda files: [f for f in detect_pitstops(files) if f.detector == INVARIANT_CALL])
 
 
-def run_all(files: Iterable[Path]) -> List[Finding]:
+def run_all(files: Iterable[Path]) -> list[Finding]:
     """Run every registered mechanical detector against the given file list.
 
     Detectors share one corpus: every file is read and parsed once, under
@@ -2422,7 +2424,7 @@ def run_all(files: Iterable[Path]) -> List[Finding]:
     tree left over from a previous one."""
     file_list = list(files)
     corpus.reset()
-    findings: List[Finding] = []
+    findings: list[Finding] = []
     for name, fn in registered_detectors().items():
         findings.extend(fn(file_list))
     return findings

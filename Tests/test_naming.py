@@ -17,9 +17,9 @@ import textwrap
 from pathlib import Path
 
 from ghost_buster.naming import (
+    _ORDINARY_ENGLISH,
     DISAGREEMENT_DETECTOR,
     MINIMUM_CASSETTES,
-    _ORDINARY_ENGLISH,
     detect_name_disagreements,
     detect_placeholder_names,
     detect_vestigial_domain_names,

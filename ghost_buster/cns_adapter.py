@@ -11,8 +11,9 @@ treat a domain Status as a GateOutcome without an explicit mapping.
 from __future__ import annotations
 
 import importlib
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping, Optional, Tuple
+from typing import Any
 
 from .schema import Status
 
@@ -32,7 +33,7 @@ _REQUIRED_GATE = ("GateOutcome", "GateResult", "GatePosition", "subject_digest")
 @dataclass(frozen=True)
 class CnsAvailability:
     ok: bool
-    missing: Tuple[str, ...] = ()
+    missing: tuple[str, ...] = ()
     error: str = ""
 
 
@@ -52,7 +53,7 @@ class TranslationRecord:
 @dataclass(frozen=True)
 class AdapterResult:
     translation: TranslationRecord
-    gate_result: Optional[Any] = None
+    gate_result: Any | None = None
 
 
 def cns_available() -> CnsAvailability:

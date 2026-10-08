@@ -38,7 +38,6 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
-from typing import Dict, List, Optional, Set
 
 from . import corpus
 from .schema import Category, Evidence, Finding, Layer, Severity, Status
@@ -48,8 +47,8 @@ DETECTOR = "undefined_self_method"
 _DYNAMIC_HOOKS = {"__getattr__", "__getattribute__"}
 
 
-def _own_members(cls: ast.ClassDef) -> Set[str]:
-    names: Set[str] = set()
+def _own_members(cls: ast.ClassDef) -> set[str]:
+    names: set[str] = set()
     for node in cls.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             names.add(node.name)
@@ -86,8 +85,8 @@ def _is_dynamic(cls: ast.ClassDef) -> bool:
     return False
 
 
-def _vocabulary(cls: ast.ClassDef, classes: Dict[str, ast.ClassDef],
-                seen: Optional[Set[str]] = None) -> Optional[Set[str]]:
+def _vocabulary(cls: ast.ClassDef, classes: dict[str, ast.ClassDef],
+                seen: set[str] | None = None) -> set[str] | None:
     """Every member name visible on instances of `cls`, or None if unknowable."""
     seen = set() if seen is None else seen
     if cls.name in seen:
@@ -124,14 +123,14 @@ def _self_calls(cls: ast.ClassDef):
                 yield sub.func.attr, sub.lineno, node.name
 
 
-def detect_undefined_self_methods(files: List[Path]) -> List[Finding]:
-    out: List[Finding] = []
+def detect_undefined_self_methods(files: list[Path]) -> list[Finding]:
+    out: list[Finding] = []
     for path in sorted(f for f in files if f.suffix == ".py"):
         tree = corpus.parse(path)
         if tree is None:
             continue
-        classes: Dict[str, ast.ClassDef] = {}
-        duplicated: Set[str] = set()
+        classes: dict[str, ast.ClassDef] = {}
+        duplicated: set[str] = set()
         for node in tree.body:
             if isinstance(node, ast.ClassDef):
                 if node.name in classes:
@@ -143,7 +142,7 @@ def detect_undefined_self_methods(files: List[Path]) -> List[Finding]:
             vocab = _vocabulary(cls, classes)
             if vocab is None:
                 continue
-            reported: Set[str] = set()
+            reported: set[str] = set()
             for attr, line, method in _self_calls(cls):
                 if attr in vocab or attr in reported or attr.startswith("__"):
                     continue

@@ -104,7 +104,6 @@ import subprocess
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 from .schema import Category, Evidence, Finding, Layer, Severity, Status
 
@@ -172,7 +171,7 @@ class SecretsScanReport:
     #: Suppression the TARGET repository configured, as {name: entries}. An
     #: entry count is None for a config file, whose rules are not countable
     #: the way an ignore list's fingerprints are.
-    suppression: Dict[str, Optional[int]] = field(default_factory=dict)
+    suppression: dict[str, int | None] = field(default_factory=dict)
     #: What the scan could not have seen, in the scan's own words.
     scope: str = ""
 
@@ -195,7 +194,7 @@ class SecretsScanReport:
         return f"{said}; {self.scope}" if self.scope else said
 
 
-def _count_ignore_entries(path: Path) -> Optional[int]:
+def _count_ignore_entries(path: Path) -> int | None:
     """Fingerprints listed in a .gitleaksignore, ignoring blanks and
     comments. A .toml is not counted: its rules are not a list."""
     if path.suffix == ".toml":
@@ -207,7 +206,7 @@ def _count_ignore_entries(path: Path) -> Optional[int]:
     return sum(1 for line in lines if line.strip() and not line.strip().startswith("#"))
 
 
-def target_suppression(root: Path) -> Dict[str, Optional[int]]:
+def target_suppression(root: Path) -> dict[str, int | None]:
     """What the TARGET repository has told gitleaks to stay quiet about.
 
     WHY THIS IS REPORTED RATHER THAN OVERRIDDEN
@@ -224,7 +223,7 @@ def target_suppression(root: Path) -> Dict[str, Optional[int]]:
     NAMED. A reader who sees `2 entries` beside a clean secrets line knows
     to ask what those two are; a reader who sees nothing cannot.
     """
-    found: Dict[str, Optional[int]] = {}
+    found: dict[str, int | None] = {}
     for name in SUPPRESSION_FILES:
         path = root / name
         if path.is_file():
@@ -262,7 +261,7 @@ def _short_message(message: str, limit: int = 90) -> str:
     return first_line if len(first_line) <= limit else first_line[: limit - 1] + "…"
 
 
-def _finding(root: Path, entry: dict) -> Optional[Finding]:  # ghost_buster: name-disagreement -- `entry` is `e` at every call site
+def _finding(root: Path, entry: dict) -> Finding | None:  # ghost_buster: name-disagreement -- `entry` is `e` at every call site
     file = entry.get("File")
     if not file:
         return None
@@ -351,8 +350,8 @@ def _finding(root: Path, entry: dict) -> Optional[Finding]:  # ghost_buster: nam
     )
 
 
-def scan(root: Path, *, gitleaks_path: Optional[str] = None,
-         timeout: float = _TIMEOUT_DEFAULT) -> Tuple[List[Finding], SecretsScanReport]:
+def scan(root: Path, *, gitleaks_path: str | None = None,
+         timeout: float = _TIMEOUT_DEFAULT) -> tuple[list[Finding], SecretsScanReport]:
     """Scan `root`'s checked-out branch history for committed secrets with
     gitleaks. Returns (findings, report); `report.ran` is False -- never
     reported as a clean scan -- when the directory is not a git repository,

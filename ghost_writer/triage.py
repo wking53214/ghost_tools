@@ -25,8 +25,8 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable, List, Optional, Tuple
 
 from ghost_buster.casefile import Casefile
 from ghost_buster.schema import Finding, FindingSet
@@ -36,8 +36,8 @@ DISPOSITIONS = ("fix", "suppress", "document")
 
 def apply_dispositions(
     findings: Iterable[Finding],
-    decisions: Iterable[Tuple[str, str, str]],
-) -> List[Finding]:
+    decisions: Iterable[tuple[str, str, str]],
+) -> list[Finding]:
     """decisions: (finding id or unique id prefix, disposition, note).
 
     Returns the findings with dispositions applied. Raises ValueError for an
@@ -58,12 +58,12 @@ def apply_dispositions(
     return items
 
 
-def pending(findings: Iterable[Finding]) -> List[Finding]:
+def pending(findings: Iterable[Finding]) -> list[Finding]:
     """Findings no human has dispositioned yet."""
     return [f for f in findings if not f.disposition]
 
 
-def _parse_decision(text: str) -> Tuple[str, str, str]:
+def _parse_decision(text: str) -> tuple[str, str, str]:
     """ID=DISPOSITION[:NOTE]"""
     if "=" not in text:
         raise argparse.ArgumentTypeError(f"expected ID=DISPOSITION[:NOTE], got {text!r}")
@@ -72,7 +72,7 @@ def _parse_decision(text: str) -> Tuple[str, str, str]:
     return ident.strip(), disposition.strip(), note.strip()
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="ghost_triage",
         description="record human dispositions on a ghost_buster FindingSet",

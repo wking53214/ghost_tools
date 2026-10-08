@@ -19,8 +19,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from ghost_buster.baseline import Baseline  # noqa: E402
-from ghost_buster.schema import FindingSet, Severity  # noqa: E402
+from ghost_buster.baseline import Baseline
+from ghost_buster.schema import FindingSet, Severity
 
 FLAGS = ["--no-tests", "--no-branches", "--single-repo", "--no-ledger", "--no-correlate", "--json",
          "--baseline", str(ROOT / ".ghost_no_such_baseline.json")]

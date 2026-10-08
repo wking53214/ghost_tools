@@ -22,19 +22,18 @@ kept separate on purpose.
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Dict, List
 
 from ghost_buster.schema import Category, Finding, Severity
 
 DOCUMENT_DISPOSITION = "document"
 
 
-def dispositioned_for_documentation(findings: List[Finding]) -> List[Finding]:
+def dispositioned_for_documentation(findings: list[Finding]) -> list[Finding]:
     """The triage gate. The only findings ghost_writer will ever act on."""
     return [f for f in findings if f.disposition == DOCUMENT_DISPOSITION]
 
 
-def render_ghost_report(findings: List[Finding], title: str = "Known Structural Ghosts") -> str:
+def render_ghost_report(findings: list[Finding], title: str = "Known Structural Ghosts") -> str:
     """Renders a markdown section suitable for dropping into a README or
     an ARCHITECTURE.md -- grouped by category, most severe first, every
     entry carrying its own evidence and the human's disposition note (the
@@ -46,7 +45,7 @@ def render_ghost_report(findings: List[Finding], title: str = "Known Structural 
         return f"## {title}\n\n_None currently dispositioned for documentation._\n"
 
     severity_order = {Severity.CRITICAL: 0, Severity.MAJOR: 1, Severity.MINOR: 2, Severity.INFORMATIONAL: 3}
-    by_category: Dict[Category, List[Finding]] = defaultdict(list)
+    by_category: dict[Category, list[Finding]] = defaultdict(list)
     for f in to_document:
         by_category[f.category].append(f)
 
@@ -79,7 +78,7 @@ def render_ghost_report(findings: List[Finding], title: str = "Known Structural 
     return "\n".join(lines)
 
 
-def render_triage_report(findings: List[Finding], title: str = "Ghost Findings, Awaiting Triage") -> str:
+def render_triage_report(findings: list[Finding], title: str = "Ghost Findings, Awaiting Triage") -> str:
     """The other report: EVERYTHING ghost_buster found, for the person doing
     the triage, most severe first, grouped by file so one file's problems
     read together.
@@ -108,8 +107,8 @@ def render_triage_report(findings: List[Finding], title: str = "Ghost Findings, 
     lines.append("")
 
     # Summary table by severity and detector.
-    counts: Dict[Severity, int] = defaultdict(int)
-    by_detector: Dict[str, int] = defaultdict(int)
+    counts: dict[Severity, int] = defaultdict(int)
+    by_detector: dict[str, int] = defaultdict(int)
     for f in open_items:
         counts[f.severity] += 1
         by_detector[f.detector] += 1
@@ -127,7 +126,7 @@ def render_triage_report(findings: List[Finding], title: str = "Ghost Findings, 
     lines.append("")
 
     # Open findings by file, most severe file first.
-    by_file: Dict[str, List[Finding]] = defaultdict(list)
+    by_file: dict[str, list[Finding]] = defaultdict(list)
     for f in open_items:
         by_file[f.evidence.file].append(f)
 

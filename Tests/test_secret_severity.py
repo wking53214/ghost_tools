@@ -11,7 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ghost_buster.schema import Category, Layer, Severity, Status
-from ghost_buster.secrets import DETECTOR, _SHAPE_ONLY_RULES, _finding
+from ghost_buster.secrets import _SHAPE_ONLY_RULES, DETECTOR, _finding
 
 ROOT = Path("/repo")
 

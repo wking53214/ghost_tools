@@ -15,7 +15,9 @@ from __future__ import annotations
 import pytest
 
 from ghost_buster.mechanical import (
-    detect_destructive_sql, detect_sql_injection, run_all,
+    detect_destructive_sql,
+    detect_sql_injection,
+    run_all,
 )
 from ghost_buster.schema import Severity
 

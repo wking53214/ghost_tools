@@ -6,7 +6,11 @@ import textwrap
 from pathlib import Path
 
 from ghost_buster.kernel import (
-    DRIFTED_CONTRACT, KERNEL_SHADOW, check_kernel, load_kernel, render_report,
+    DRIFTED_CONTRACT,
+    KERNEL_SHADOW,
+    check_kernel,
+    load_kernel,
+    render_report,
 )
 
 KERNEL = '''

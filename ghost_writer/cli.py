@@ -11,14 +11,13 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import List
 
 from ghost_buster.schema import FindingSet
 
 from .report import render_ghost_report, render_triage_report
 
 
-def main(argv: List[str] = None) -> int:
+def main(argv: list[str] = None) -> int:
     parser = argparse.ArgumentParser(prog="ghost_writer")
     parser.add_argument("findings", type=Path, help="a FindingSet JSON file (from ghost_buster --json)")
     parser.add_argument(

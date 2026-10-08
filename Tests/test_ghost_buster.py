@@ -15,17 +15,32 @@ import pytest
 
 from ghost_buster.baseline import Baseline
 from ghost_buster.mechanical import (
-    _is_test_file, _next_matching, _node_count, detect_dead_code, detect_doc_test_count_drift,
-    detect_duplicate_files, detect_intra_function_duplicate_blocks, detect_long_functions,
-    detect_merge_conflict_markers, detect_near_duplicate_functions, run_all,
+    _is_test_file,
+    _next_matching,
+    _node_count,
+    detect_dead_code,
+    detect_doc_test_count_drift,
+    detect_duplicate_files,
+    detect_intra_function_duplicate_blocks,
+    detect_long_functions,
+    detect_merge_conflict_markers,
+    detect_near_duplicate_functions,
+    run_all,
 )
 from ghost_buster.schema import (
-    Category, Evidence, Finding, FindingSet, Layer, Severity, Status,
+    Category,
+    Evidence,
+    Finding,
+    FindingSet,
+    Layer,
+    Severity,
+    Status,
 )
 from ghost_buster.semantic import (
-    StubModelClient, detect_doc_drift, detect_parallel_implementations,
+    StubModelClient,
+    detect_doc_drift,
+    detect_parallel_implementations,
 )
-
 
 # --------------------------------------------------------------------- schema
 
@@ -846,7 +861,7 @@ def test_doc_test_count_drift_included_in_run_all(tmp_path):
 
 # ------------------------------------------------------------ cli file collection
 
-from ghost_buster.pipeline import _collect_files, _EXCLUDED_DIRS  # noqa: E402
+from ghost_buster.pipeline import _EXCLUDED_DIRS, _collect_files
 
 
 def _touch(root: Path, rel: str) -> Path:

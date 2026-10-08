@@ -40,9 +40,9 @@ from __future__ import annotations
 import ast
 import re
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Sequence, Set, Tuple
 
 from . import corpus
 from .schema import Category, Evidence, Finding, Layer, Severity, Status
@@ -88,12 +88,12 @@ _ORDINARY_ENGLISH = frozenset({
 })
 
 
-def _identifiers(tree: ast.AST) -> Set[str]:
+def _identifiers(tree: ast.AST) -> set[str]:
     """Every name a module defines, binds, takes as an argument, or reads
     as an attribute. Attributes are included because `self._patient_kalman`
     is exactly the kind of name this is looking for and it is never a
     Name node."""
-    found: Set[str] = set()
+    found: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             found.add(node.name)
@@ -109,7 +109,7 @@ def _identifiers(tree: ast.AST) -> Set[str]:
 _SPLIT = re.compile(r"[_\W]+|(?<=[a-z0-9])(?=[A-Z])")
 
 
-def _words(name: str) -> Set[str]:
+def _words(name: str) -> set[str]:
     """snake_case and CamelCase both, lowercased, short fragments dropped."""
     return {w.lower() for w in _SPLIT.split(name) if len(w) > 2}
 
@@ -144,7 +144,7 @@ def _vocabulary(paths: Sequence[Path]) -> Counter:
     return counts
 
 
-def _generic_vocabulary() -> Set[str]:
+def _generic_vocabulary() -> set[str]:
     """Words that are just Python, taken from this tool's own source.
 
     A reference corpus has to be unrelated to whatever is being scanned, and
@@ -172,7 +172,7 @@ def _generic_vocabulary() -> Set[str]:
 FOREIGN_VOCABULARY = frozenset({"cns_adapter.py"})
 
 
-def find_cassettes(files: Sequence[Path]) -> Tuple[List[Path], Path | None]:
+def find_cassettes(files: Sequence[Path]) -> tuple[list[Path], Path | None]:
     """(cassette modules, the contract they implement).
 
     The convention this reads is `<domain>_cassette.py` beside a
@@ -185,7 +185,7 @@ def find_cassettes(files: Sequence[Path]) -> Tuple[List[Path], Path | None]:
     return cassettes, contract
 
 
-def domain_vocabularies(cassettes: Sequence[Path], contract: Path | None) -> Dict[str, Set[str]]:
+def domain_vocabularies(cassettes: Sequence[Path], contract: Path | None) -> dict[str, set[str]]:
     """The words that belong to ONE domain and to nothing else.
 
     A word qualifies when it appears in exactly one cassette, is absent from
@@ -210,7 +210,7 @@ def domain_vocabularies(cassettes: Sequence[Path], contract: Path | None) -> Dic
     for words in per_cassette.values():
         seen_in.update(set(words))
 
-    out: Dict[str, Set[str]] = {}
+    out: dict[str, set[str]] = {}
     for name, words in per_cassette.items():
         out[name] = {
             word for word, uses in words.items()
@@ -221,7 +221,7 @@ def domain_vocabularies(cassettes: Sequence[Path], contract: Path | None) -> Dic
     return out
 
 
-def detect_vestigial_domain_names(files: Sequence[Path]) -> List[Finding]:
+def detect_vestigial_domain_names(files: Sequence[Path]) -> list[Finding]:
     """Domain vocabulary surviving in code that claims to be domain-agnostic.
 
     Found by hand on 2026-09-10 in observe-perceive and recorded in its own
@@ -244,7 +244,7 @@ def detect_vestigial_domain_names(files: Sequence[Path]) -> List[Finding]:
         return []
 
     cassette_names = {p.name for p in cassettes}
-    findings: List[Finding] = []
+    findings: list[Finding] = []
     for path in files:
         if path.name in cassette_names or path.name == "cassette.py":
             continue
@@ -253,7 +253,7 @@ def detect_vestigial_domain_names(files: Sequence[Path]) -> List[Finding]:
         tree = _parse(path)
         if tree is None:
             continue
-        by_domain: Dict[str, Set[str]] = {}
+        by_domain: dict[str, set[str]] = {}
         for name in _identifiers(tree):
             words = _words(name)
             for domain, terms in vocab.items():
@@ -288,7 +288,7 @@ def detect_vestigial_domain_names(files: Sequence[Path]) -> List[Finding]:
     return findings
 
 
-def detect_placeholder_names(files: Sequence[Path]) -> List[Finding]:
+def detect_placeholder_names(files: Sequence[Path]) -> list[Finding]:
     """Names that were meant to be temporary and were not.
 
     Matched by literal and by suffix, never by substring: `template` is not
@@ -296,14 +296,14 @@ def detect_placeholder_names(files: Sequence[Path]) -> List[Finding]:
     on the list -- temperature is a vital sign and a bar is a unit of
     pressure, and a check that flags a measurement is worse than no check.
     """
-    findings: List[Finding] = []
+    findings: list[Finding] = []
     for path in (Path(f) for f in files):
         if is_test_path(path):
             continue
         tree = _parse(path)
         if tree is None:
             continue
-        hits: Set[str] = set()
+        hits: set[str] = set()
         for name in _identifiers(tree):
             lowered = name.lower()
             if lowered in _PLACEHOLDER_EXACT or lowered.endswith(_PLACEHOLDER_SUFFIX):
@@ -377,7 +377,7 @@ def _call_name(node: ast.Call) -> str | None:
     return None
 
 
-Site = Tuple[str, int]
+Site = tuple[str, int]
 
 
 @dataclass(frozen=True)
@@ -393,11 +393,11 @@ class Disagreement:
 
     param: str
     arg: str
-    definitions: Tuple[Site, ...]
-    call_sites: Tuple[Site, ...]
+    definitions: tuple[Site, ...]
+    call_sites: tuple[Site, ...]
 
     @property
-    def files(self) -> List[str]:
+    def files(self) -> list[str]:
         return sorted({f for f, _ in self.definitions + self.call_sites})
 
 
@@ -420,8 +420,8 @@ class _Definitions:
     """
 
     def __init__(self, trees: Sequence[tuple]) -> None:
-        self.everywhere: Dict[str, List[Tuple[str, List[str], int]]] = {}
-        self.per_file: Dict[str, Dict[str, List[Tuple[List[str], int]]]] = {}
+        self.everywhere: dict[str, list[tuple[str, list[str], int]]] = {}
+        self.per_file: dict[str, dict[str, list[tuple[list[str], int]]]] = {}
         for path, tree in trees:
             for node in ast.walk(tree):
                 if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -433,7 +433,7 @@ class _Definitions:
                 self.per_file.setdefault(str(path), {}).setdefault(
                     node.name, []).append((params, node.lineno))
 
-    def resolve(self, path: Path, name: str) -> Tuple[List[str], Site] | None:
+    def resolve(self, path: Path, name: str) -> tuple[list[str], Site] | None:
         here = self.per_file.get(str(path), {}).get(name)
         if here is not None:
             if len(here) != 1:
@@ -447,7 +447,7 @@ class _Definitions:
         return params, (file, line)
 
 
-def find_name_disagreements(files: Sequence[Path]) -> List[Disagreement]:
+def find_name_disagreements(files: Sequence[Path]) -> list[Disagreement]:
     """One value carried across a seam under two different names.
 
     The complaint this answers is the one every SQL join produces: a column
@@ -472,10 +472,10 @@ def find_name_disagreements(files: Sequence[Path]) -> List[Disagreement]:
              for t in (_parse(p),) if t is not None]
     known = _Definitions(trees)
 
-    to_arg: Dict[str, Counter] = {}
-    to_param: Dict[str, Counter] = {}
-    call_sites: Dict[tuple, Set[Site]] = {}
-    declared: Dict[tuple, Set[Site]] = {}
+    to_arg: dict[str, Counter] = {}
+    to_param: dict[str, Counter] = {}
+    call_sites: dict[tuple, set[Site]] = {}
+    declared: dict[tuple, set[Site]] = {}
 
     def note(param: str, arg: str, definition: Site, site: Site) -> None:
         to_arg.setdefault(param, Counter())[arg] += 1
@@ -505,7 +505,7 @@ def find_name_disagreements(files: Sequence[Path]) -> List[Disagreement]:
                 if isinstance(arg, ast.Name) and index < len(params):
                     note(params[index], arg.id, definition, site)
 
-    out: List[Disagreement] = []
+    out: list[Disagreement] = []
     for param, args in sorted(to_arg.items()):
         if len(args) != 1:
             continue
@@ -522,7 +522,7 @@ def find_name_disagreements(files: Sequence[Path]) -> List[Disagreement]:
     return out
 
 
-def detect_name_disagreements(files: Sequence[Path]) -> List[Finding]:
+def detect_name_disagreements(files: Sequence[Path]) -> list[Finding]:
     """The 1:1 disagreements above, as findings.
 
     Reports; does not rename. A cross-repository rename touches call sites
@@ -532,7 +532,7 @@ def detect_name_disagreements(files: Sequence[Path]) -> List[Finding]:
     it is the ONLY one is checked, not asserted: see
     Tests/test_tree_immutability.py.
     """
-    findings: List[Finding] = []
+    findings: list[Finding] = []
     for d in find_name_disagreements(files):
         where = sorted({f for f, _ in d.call_sites})
         sites = len(d.call_sites)

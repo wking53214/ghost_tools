@@ -34,8 +34,7 @@ import subprocess
 import pytest
 
 from ghost_buster.ledger import Ledger, parse_name_status, renames_between
-from ghost_buster.schema import (Category, Evidence, Finding, Layer, Severity,
-                                 Status)
+from ghost_buster.schema import Category, Evidence, Finding, Layer, Severity, Status
 
 
 def _git(root, *args):

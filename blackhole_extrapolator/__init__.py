@@ -22,25 +22,39 @@ package, by design. A file that fills the hole while carrying the name of what
 was lost is indistinguishable from a recovery and is not one.
 """
 
-from .rename import detect_rename_candidates as detect_rename_candidates
 from .detect import (
     detect_dangling_in_debris,
     detect_dangling_names,
     detect_destroyed_residue,
-    detect_debris_structure as detect_debris_structure,
     detect_missing_imports,
-    resolve_providers as resolve_providers,
     detect_orphaned_tests,
     detect_unparseable,
     scan,
 )
+from .detect import (
+    detect_debris_structure as detect_debris_structure,
+)
+from .detect import (
+    resolve_providers as resolve_providers,
+)
 from .extrapolate import extrapolate, group_by_target, infer_usage_invariants
+from .rename import detect_rename_candidates as detect_rename_candidates
 from .schema import Anchor, EvidenceKind, NegativeEvidence, Void, VoidKind
 
 __all__ = [
-    "Anchor", "EvidenceKind", "NegativeEvidence", "Void", "VoidKind",
-    "scan", "detect_dangling_names", "detect_missing_imports",
-    "detect_orphaned_tests", "detect_unparseable", "detect_destroyed_residue",
+    "Anchor",
+    "EvidenceKind",
+    "NegativeEvidence",
+    "Void",
+    "VoidKind",
     "detect_dangling_in_debris",
-    "extrapolate", "group_by_target", "infer_usage_invariants",
+    "detect_dangling_names",
+    "detect_destroyed_residue",
+    "detect_missing_imports",
+    "detect_orphaned_tests",
+    "detect_unparseable",
+    "extrapolate",
+    "group_by_target",
+    "infer_usage_invariants",
+    "scan",
 ]

@@ -42,14 +42,13 @@ import json
 import os
 import subprocess
 import tempfile
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence
 
-from .schema import Category, Evidence, Finding, Layer, Severity, Status
 from . import attest
-from .schema import authoritative, primary
+from .schema import Category, Evidence, Finding, Layer, Severity, Status, authoritative, primary
 
 DETECTOR = "ledger"
 SCHEMA_VERSION = 1
@@ -128,10 +127,10 @@ def _escalate(severity: Severity) -> Severity:
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
-def renames_between(root: Path, before: str, after: str) -> Dict[str, str]:
+def renames_between(root: Path, before: str, after: str) -> dict[str, str]:
     """Files git says moved between two commits: old path -> new path.
 
     WHY A MEMORY HAS TO ASK THIS (v1.7.3)
@@ -170,7 +169,7 @@ def renames_between(root: Path, before: str, after: str) -> Dict[str, str]:
     return parse_name_status(out.stdout)
 
 
-def parse_name_status(output: str) -> Dict[str, str]:
+def parse_name_status(output: str) -> dict[str, str]:
     """The renames in `git diff --name-status` output.
 
     Its own function so the status codes can be tested against lines git
@@ -180,7 +179,7 @@ def parse_name_status(output: str) -> Dict[str, str]:
     move would take a live finding's history away from a file that still
     has the defect in it.
     """
-    moved: Dict[str, str] = {}
+    moved: dict[str, str] = {}
     for line in output.splitlines():
         parts = line.split("\t")
         # `R100\told\tnew`. An add, a delete or a modification has two
@@ -210,11 +209,11 @@ class RunRecord:
     at: str
     commit: str
     tool_version: str
-    checks: Dict[str, str] = field(default_factory=dict)
-    counts: Dict[str, int] = field(default_factory=dict)
+    checks: dict[str, str] = field(default_factory=dict)
+    counts: dict[str, int] = field(default_factory=dict)
     #: The records this run READ, as they were when it read them, and this
     #: run's place in the chain. See attest.py for what that proves.
-    records: Dict[str, str] = field(default_factory=dict)
+    records: dict[str, str] = field(default_factory=dict)
     link: str = ""
 
     def to_dict(self) -> dict:
@@ -226,7 +225,7 @@ class RunRecord:
         }
 
     @staticmethod
-    def from_dict(d: dict) -> "RunRecord":
+    def from_dict(d: dict) -> RunRecord:
         return RunRecord(
             run_id=str(d.get("run_id", "")), at=str(d.get("at", "")),
             commit=str(d.get("commit", "")), tool_version=str(d.get("tool_version", "")),
@@ -266,7 +265,7 @@ class FindingHistory:
     #: a rename. Recorded rather than silently dropped: a streak that spans
     #: two paths is a claim a reader is entitled to check.
     renamed_from: str = ""
-    dispositions: List[dict] = field(default_factory=list)
+    dispositions: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -281,7 +280,7 @@ class FindingHistory:
         }
 
     @staticmethod
-    def from_dict(fid: str, d: dict) -> "FindingHistory":
+    def from_dict(fid: str, d: dict) -> FindingHistory:
         return FindingHistory(
             finding_id=fid,
             detector=str(d.get("detector", "")), file=str(d.get("file", "")),
@@ -305,10 +304,10 @@ class LedgerError(ValueError):
 class Ledger:
     def __init__(self, path: Path):
         self.path = Path(path)
-        self.runs: List[RunRecord] = []
-        self.findings: Dict[str, FindingHistory] = {}
+        self.runs: list[RunRecord] = []
+        self.findings: dict[str, FindingHistory] = {}
         #: Aggregate counters for runs that have aged out of `runs`.
-        self.totals: Dict[str, int] = {"runs": 0}
+        self.totals: dict[str, int] = {"runs": 0}
         self._existed = self.path.exists()
         if self._existed:
             self._load()
@@ -373,7 +372,7 @@ class Ledger:
             raise
 
     def _follow_renames(self, findings: Sequence[Finding], seen_now: set,
-                        commit: str, root: Optional[Path]) -> None:
+                        commit: str, root: Path | None) -> None:
         """Move a finding's history onto its new id when its file moved.
 
         The history is re-keyed, not copied: the old id is deleted and the
@@ -413,7 +412,7 @@ class Ledger:
             return set()
 
         # Where each finding seen this run lives, by detector.
-        here: Dict[tuple, List[Finding]] = {}
+        here: dict[tuple, list[Finding]] = {}
         for finding in findings:
             here.setdefault((finding.detector, finding.evidence.file),
                             []).append(finding)
@@ -449,10 +448,10 @@ class Ledger:
     # ---------------------------------------------------------------- record
 
     def record(
-        self, findings: Sequence[Finding], *, checks: Dict[str, str],
-        commit: str, tool_version: str, at: Optional[str] = None,
-        scanned: Optional[int] = None, records: Optional[Dict[str, str]] = None,
-        root: Optional[Path] = None,
+        self, findings: Sequence[Finding], *, checks: dict[str, str],
+        commit: str, tool_version: str, at: str | None = None,
+        scanned: int | None = None, records: dict[str, str] | None = None,
+        root: Path | None = None,
     ) -> RunRecord:
         """Fold one run into memory. `findings` is everything FOUND, before
         the baseline diff -- see the module docstring on why.
@@ -554,10 +553,10 @@ class Ledger:
 
     # ------------------------------------------------------------- derive
 
-    def _blind_spot_streaks(self) -> Dict[str, int]:
+    def _blind_spot_streaks(self) -> dict[str, int]:
         """For each check, how many runs in a row, ending with the most
         recent, nobody actually looked. A check that ran breaks its streak."""
-        streaks: Dict[str, int] = {}
+        streaks: dict[str, int] = {}
         names = {n for r in self.runs for n in r.checks}
         for name in names:
             streak = 0
@@ -572,10 +571,10 @@ class Ledger:
             streaks[name] = streak
         return streaks
 
-    def derive(self, findings: Sequence[Finding]) -> List[Finding]:
+    def derive(self, findings: Sequence[Finding]) -> list[Finding]:
         """The four things a single run cannot know. Purely additive: every
         return is a NEW finding. Nothing here removes or downgrades."""
-        out: List[Finding] = []
+        out: list[Finding] = []
         present = {f.id: f for f in findings}
 
         for fid, hist in sorted(self.findings.items()):
@@ -660,7 +659,7 @@ class Ledger:
         )
 
 
-def render_report(ledger: "Ledger", derived: Sequence[Finding]) -> str:
+def render_report(ledger: Ledger, derived: Sequence[Finding]) -> str:
     """One line, on the same channel as every other check's line."""
     if not ledger.existed:
         return (f"ghost_buster: ledger started at {ledger.path} "

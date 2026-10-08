@@ -52,10 +52,10 @@ from __future__ import annotations
 
 import json
 from collections import Counter
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional
 
 from .schema import Finding
 
@@ -78,7 +78,7 @@ class Case:
     shape: str
     outcome: str
     note: str = ""
-    when: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    when: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     #: Which finding the decision was about, so the priors view can ask the
     #: ledger whether the decision held. Empty on cases recorded before
     #: 1.2.0; those still count toward the shape's history, and their
@@ -96,15 +96,15 @@ class Prior:
     """What the case file knows about a kind of finding."""
 
     detector: str
-    shape: Optional[str]
-    counts: Dict[str, int]
+    shape: str | None
+    counts: dict[str, int]
 
     @property
     def seen(self) -> int:
         return sum(self.counts.values())
 
     @property
-    def false_rate(self) -> Optional[float]:
+    def false_rate(self) -> float | None:
         decided = self.counts.get("real", 0) + self.counts.get("false", 0)
         return self.counts.get("false", 0) / decided if decided else None
 
@@ -125,7 +125,7 @@ def shape_of(finding: Finding) -> str:
 class Casefile:
     def __init__(self, path: Path) -> None:
         self.path = Path(path)
-        self.cases: List[Case] = []
+        self.cases: list[Case] = []
         if self.path.is_file():
             data = json.loads(self.path.read_text(encoding="utf-8"))
             self.cases = [Case(**c) for c in data.get("cases", [])]
@@ -157,7 +157,7 @@ class Casefile:
 
     # ------------------------------------------------------------- priors
 
-    def prior(self, detector: str, shape: Optional[str] = None) -> Prior:
+    def prior(self, detector: str, shape: str | None = None) -> Prior:
         """The shape's history if it has any, else the detector's.
 
         A shape nobody has seen falls back to the detector: rare shapes are
@@ -169,7 +169,7 @@ class Casefile:
         matching = [c for c in self.cases if c.detector == detector]
         return Prior(detector, None, dict(Counter(c.outcome for c in matching)))
 
-    def annotate(self, findings: Iterable[Finding]) -> Dict[str, Prior]:
+    def annotate(self, findings: Iterable[Finding]) -> dict[str, Prior]:
         """finding id -> the prior that applies to it. Nothing is hidden."""
         return {f.id: self.prior(f.detector, shape_of(f)) for f in findings}
 
@@ -177,7 +177,7 @@ class Casefile:
         """Finding ids whose most recent decision was "false" (suppress).
         A candidate somebody read and dismissed stays reported and stops
         counting as unread; a later decision the other way un-retires it."""
-        latest: Dict[str, Case] = {}
+        latest: dict[str, Case] = {}
         for case in sorted(self.cases, key=lambda c: c.when):
             if case.finding_id and case.outcome in ("real", "false"):
                 latest[case.finding_id] = case

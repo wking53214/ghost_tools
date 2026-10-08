@@ -38,9 +38,7 @@ morning's arithmetic.
 """
 from __future__ import annotations
 
-
-from ghost_buster.schema import (Category, Evidence, Finding, Layer, Severity,
-                                 Status)
+from ghost_buster.schema import Category, Evidence, Finding, Layer, Severity, Status
 
 
 def _finding(summary, *, detector="doc_test_count_drift", file="README.md",

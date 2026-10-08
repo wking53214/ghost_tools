@@ -103,7 +103,6 @@ import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 from .schema import Category, Evidence, Finding, Layer, Severity, Status
 
@@ -177,7 +176,7 @@ def pytest_collectreport(report):
 # Environment-variable patterns are case-sensitive on purpose (an all-caps
 # token), and come first so "requires DATABASE_URL" is an env probe, not a
 # module probe.
-_REASON_PATTERNS: List[Tuple[str, "re.Pattern[str]"]] = [
+_REASON_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("env", re.compile(
         r"(?:\$|\b[Ee]nv(?:ironment)?\b.*?|os\.environ\S*)\s*[\"'\[]*([A-Z][A-Z0-9_]{2,})")),
     ("env", re.compile(r"\b([A-Z][A-Z0-9]*_[A-Z0-9_]*[A-Z0-9])\b")),
@@ -206,7 +205,7 @@ _REASON_PATTERNS: List[Tuple[str, "re.Pattern[str]"]] = [
         r"\bgpu\b|\bcuda\b|\bhardware\b|\barm64\b|\bx86|\bpython 3\.\d+", re.IGNORECASE)),
 ]
 
-_FAILURE_PATTERNS: List[Tuple[str, "re.Pattern[str]"]] = [
+_FAILURE_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("module", re.compile(r"ModuleNotFoundError: No module named '([A-Za-z_][\w.]*)'")),
     ("env", re.compile(
         r"KeyError: '([A-Z][A-Z0-9_]{2,})'|"
@@ -253,8 +252,8 @@ class TestOutcome:
     nodeid: str
     outcome: str                  # passed | failed | error | skipped | xfailed | xpassed
     xfail_reason: str = ""        # why, when the outcome is xfailed; "" if none given
-    file: Optional[str] = None
-    line: Optional[int] = None    # 1-based
+    file: str | None = None
+    line: int | None = None    # 1-based
     text: str = ""                # skip reason or failure text
     when: str = "call"
 
@@ -280,20 +279,20 @@ class TestStatusReport:
     # but a finding that could be filtered out of view. Measured
     # 2026-09-11: a scan reported "2 flaky" and two reruns later nothing
     # could say which two. The record is part of the report now.
-    reruns: List["RerunRecord"] = field(default_factory=list)
+    reruns: list[RerunRecord] = field(default_factory=list)
     # Files under the root whose mtime or size differed between the start
     # and the end of the full run. A test that fails in the suite and
     # passes alone while this is non-empty is not flaky; the tree moved
     # under it. Found 2026-09-11 when pyproject.toml and CHANGELOG.md were
     # edited during a scan and two tests that read them were reported
     # "flaky", then could not be reproduced in four clean runs.
-    changed_during_run: List[str] = field(default_factory=list)
+    changed_during_run: list[str] = field(default_factory=list)
     blocked: int = 0
     stale_skips: int = 0
     unjustified_skips: int = 0
     dependency_skips: int = 0
-    pytest_exit: Optional[int] = None
-    findings: List[Finding] = field(default_factory=list)
+    pytest_exit: int | None = None
+    findings: list[Finding] = field(default_factory=list)
 
 
 _SNAPSHOT_SUFFIXES = {".py", ".toml", ".cfg", ".ini", ".txt", ".md", ".json", ".yaml", ".yml"}
@@ -301,10 +300,10 @@ _SNAPSHOT_SKIP = {".git", "venv", ".venv", "node_modules", "__pycache__", ".pyte
                   ".ruff_cache", ".mypy_cache", ".tox", "build", "dist", ".eggs"}
 
 
-def _snapshot(root: Path) -> Dict[str, Tuple[int, int]]:
+def _snapshot(root: Path) -> dict[str, tuple[int, int]]:
     """(mtime_ns, size) of every source-shaped file under root, so the scan
     can tell afterwards whether the tree it examined held still."""
-    out: Dict[str, Tuple[int, int]] = {}
+    out: dict[str, tuple[int, int]] = {}
     for path in root.rglob("*"):
         if any(part in _SNAPSHOT_SKIP for part in path.relative_to(root).parts):
             continue
@@ -318,7 +317,7 @@ def _snapshot(root: Path) -> Dict[str, Tuple[int, int]]:
     return out
 
 
-def _changed(before: Dict[str, Tuple[int, int]], after: Dict[str, Tuple[int, int]]) -> List[str]:
+def _changed(before: dict[str, tuple[int, int]], after: dict[str, tuple[int, int]]) -> list[str]:
     return sorted(p for p in set(before) | set(after) if before.get(p) != after.get(p))
 
 
@@ -331,13 +330,13 @@ class RerunRecord:
     outcome: str          # pytest's word for what the rerun did, or "no report"
 
 
-def flaky_tests(report: TestStatusReport) -> List[str]:
+def flaky_tests(report: TestStatusReport) -> list[str]:
     """The tests whose isolated rerun passed on a tree that held still, in
     the order they were rerun. A rerun-pass on a tree that changed during
     the run is an unstable run, not a flaky test, and is not listed."""
     if report.changed_during_run:
         return []
-    seen: List[str] = []
+    seen: list[str] = []
     for r in report.reruns:
         if r.outcome in ("passed", "xpassed") and r.nodeid not in seen:
             seen.append(r.nodeid)
@@ -348,7 +347,7 @@ def rerun_summary(report: TestStatusReport) -> str:
     """One line naming what was rerun and how it went, for the status line."""
     if not report.reruns:
         return ""
-    by_test: Dict[str, List[str]] = {}
+    by_test: dict[str, list[str]] = {}
     for r in report.reruns:
         by_test.setdefault(r.nodeid, []).append(r.outcome)
     return "; ".join(f"{nodeid}: {' then '.join(outcomes)} on rerun"
@@ -367,12 +366,12 @@ class _PytestRunner:
         self.tmpdir = Path(self._tmp.name)
         (self.tmpdir / f"{_PLUGIN_MODULE}.py").write_text(_PLUGIN_SOURCE, encoding="utf-8")
         self._n = 0
-        self._local_modules: Optional[Dict[str, str]] = None
+        self._local_modules: dict[str, str] | None = None
 
     def close(self) -> None:
         self._tmp.cleanup()
 
-    def local_module_path(self, name: str) -> Optional[str]:
+    def local_module_path(self, name: str) -> str | None:
         """Where a top-level module of that name lives inside the scanned
         project, relative to the root, or None. One walk per scan."""
         if self._local_modules is None:
@@ -399,7 +398,7 @@ class _PytestRunner:
             return False
         return proc.returncode == 0
 
-    def run(self, nodeids: Optional[List[str]] = None) -> Tuple[Optional[int], List[dict], str]:
+    def run(self, nodeids: list[str] | None = None) -> tuple[int | None, list[dict], str]:
         """Run pytest (the whole suite, or only `nodeids`). Returns
         (exit code or None on timeout/launch failure, records, stderr tail)."""
         self._n += 1
@@ -433,14 +432,14 @@ _SKIPPED_DIRS = {".git", ".hg", ".svn", ".venv", "venv", "env", ".env", "node_mo
                  ".pytest_cache", ".mypy_cache", ".ruff_cache"}
 
 
-def _index_local_modules(root: Path) -> Dict[str, str]:
+def _index_local_modules(root: Path) -> dict[str, str]:
     """Top-level importable names defined by files in the project: `x.py`
     and `x/__init__.py`, mapped to the first path found (shallowest wins).
     Used to tell "this dependency is not installed" from "this module is
     right here and not on the import path" -- measured on gsa-815: 17 of
     its 19 test modules could not be collected for want of modules that
     were all files in the same repository."""
-    index: Dict[str, str] = {}
+    index: dict[str, str] = {}
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = sorted(d for d in dirnames
                              if d not in _SKIPPED_DIRS and not d.endswith(".egg-info"))
@@ -454,7 +453,7 @@ def _index_local_modules(root: Path) -> Dict[str, str]:
     return index
 
 
-def _read_records(path: Path) -> List[dict]:
+def _read_records(path: Path) -> list[dict]:
     if not path.exists():
         return []
     records = []
@@ -469,11 +468,11 @@ def _read_records(path: Path) -> List[dict]:
     return records
 
 
-def _aggregate(records: List[dict]) -> Dict[str, TestOutcome]:
+def _aggregate(records: list[dict]) -> dict[str, TestOutcome]:
     """Fold per-phase records into one outcome per node id. A failure in
     setup or teardown is an error; a skip in any phase is a skip; xfail
     and xpass are read from the call phase's wasxfail flag."""
-    outcomes: Dict[str, TestOutcome] = {}
+    outcomes: dict[str, TestOutcome] = {}
     for rec in records:
         nodeid = rec.get("nodeid") or "<collection>"
         when = rec.get("when", "call")
@@ -514,8 +513,7 @@ def _aggregate(records: List[dict]) -> Dict[str, TestOutcome]:
 def _strip_prefix(reason: str) -> str:
     reason = reason.strip()
     for prefix in ("Skipped: ", "skipped: ", "XFAIL ", "[XPASS(strict)] "):
-        if reason.startswith(prefix):
-            reason = reason[len(prefix):]
+        reason = reason.removeprefix(prefix)
     return reason.strip()
 
 
@@ -530,7 +528,7 @@ def _error_lines(text: str) -> str:
     return "\n".join(picked)
 
 
-def classify_dependency(text: str, *, failure: bool = False) -> Optional[Dependency]:
+def classify_dependency(text: str, *, failure: bool = False) -> Dependency | None:
     """The external dependency a skip reason (or, with failure=True, a
     failure text) names, if any. Heuristic; see the module docstring."""
     if not text:
@@ -621,8 +619,8 @@ def _excerpt(text: str, limit: int = 600) -> str:
     return text if len(text) <= limit else "..." + text[-limit:]
 
 
-def scan(root: Path, *, python: Optional[str] = None, reruns: int = 3,
-         timeout: float = 900.0) -> Tuple[List[Finding], TestStatusReport]:
+def scan(root: Path, *, python: str | None = None, reruns: int = 3,
+         timeout: float = 900.0) -> tuple[list[Finding], TestStatusReport]:
     """Run the project's pytest suite under `root` and report every test
     that did not pass, classified as described in the module docstring.
 
@@ -656,7 +654,7 @@ def scan(root: Path, *, python: Optional[str] = None, reruns: int = 3,
             return [], report
 
         report.ran = True
-        findings: List[Finding] = []
+        findings: list[Finding] = []
         for outcome in outcomes.values():
             if outcome.when == "collect":
                 report.errored += 1
