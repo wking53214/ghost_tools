@@ -35,7 +35,7 @@ modified by this package.
 ## 3. What It Does NOT Do / Non-Goals
 
 - Does not govern runtime decisions.
-- Writes nothing into the code it scans. Ghost reports; changing a tree is the job of Elegant (the governor), proposing fixes is Proposer's, and the final tidy and README are Streamline's. The `--operate` surgeon, `--annotate-names` and `ghost_writer/correct.py` were removed so no two repositories do the same job.
+- Writes nothing into the code it scans. Ghost reports; changing a tree is the job of Elegant (the governor), proposing fixes is Proposer's, and the final tidy and README are Streamline's. The old repair mode, the name annotator and the doc-correction proposer were removed so no two repositories do the same job.
 - Model claims stay `REASONED` and never self-promote.
 
 ## 4. Brutally Honest Current Status & Gaps
