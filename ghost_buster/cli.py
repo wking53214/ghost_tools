@@ -27,9 +27,7 @@ from .ledger import (
     Ledger,
 )
 from . import readiness
-from . import serum
 from .casefile import Casefile, Prior
-from .operate import Refused, notes_on_arrival, operate
 from .mutation import render_run
 from .schema import Finding, FindingSet, Severity
 from .pipeline import Stop, gather
@@ -105,31 +103,6 @@ def _build_parser() -> argparse.ArgumentParser:
              "caches are always skipped.",
     )
     parser.add_argument(
-        "--operate", action="store_true",
-        help="OPT-IN. The surgeon operates: on a CLEAN tree, open a branch, apply "
-             "every remedy that carries a verification that can fail, re-examine "
-             "after each cut, commit each cut, record the outcomes in the case "
-             "file, and assess whether the patient is a candidate for enhancement. "
-             "The branch the patient came in on is never written to; that is "
-             "checked. Refuses on a dirty tree. See operate.py.",
-    )
-    parser.add_argument(
-        "--operate-branch", default=None, metavar="NAME",
-        help="the branch to operate on (default: ghost/operate-<timestamp>)",
-    )
-    parser.add_argument(
-        "--operate-dry-run", action="store_true",
-        help="with --operate: diagnose and assess candidacy, write nothing",
-    )
-    parser.add_argument(
-        "--serum-budget", type=float, default=serum.DEFAULT_BUDGET, metavar="SECONDS",
-        help="with --operate: whole seconds the serum may spend establishing, per "
-             "enhancement site, whether this patient's own test suite would catch a "
-             "mistake made there. It runs the suite once per site, so this is a real "
-             "cost; a site the budget did not reach is reported as not assessed, never "
-             "dropped. (default: %(default)ss)",
-    )
-    parser.add_argument(
         "--profile", action="store_true",
         help="instrument the scan and report work done more than once with the "
              "same input -- parses, reads, subprocesses -- ranked by what it "
@@ -149,18 +122,6 @@ def _build_parser() -> argparse.ArgumentParser:
              "hides a finding. Point every repository at one file and the tool "
              "learns across the library. (default: <path>/.ghost_casefile.json "
              "if it exists)",
-    )
-    parser.add_argument(
-        "--annotate-names", action="store_true",
-        help="OPT-IN, and the only thing ghost_buster does that writes to the "
-             "scanned tree. Records every 1:1 name disagreement in the one "
-             "place somebody looks: a trailing comment on each signature and "
-             "each call site. It never touches a README. Comments "
-             "only -- every edit is parsed before and after and discarded "
-             "unless the syntax tree is identical, so it cannot change what a "
-             "program means. Idempotent: the notes are stripped and rewritten "
-             "whole on each run, so they follow a rename instead of piling up "
-             "behind one, and a run that finds nothing new produces no diff.",
     )
     parser.add_argument(
         "--mutate", action="store_true",
@@ -337,30 +298,6 @@ def _verify_chain(args) -> int:
     return 1 if any("no link recorded" not in b.what for b in breaks) else 0
 
 
-def _operate(args, evidence, casefile_path, archive, arrival=None) -> int:
-    """--operate: the only mode that writes to the target. Everything it
-    needs was already established by the scan; this decides whether to
-    let it run and what to say about the result."""
-    if archive is not None:
-        print("refused: an archive is not a patient; remove .ghost_archive to operate",
-              file=sys.stderr)
-        return 2
-    try:
-        op = operate(args.path, evidence.files, evidence.findings, evidence.checks,
-                     casefile=Casefile(casefile_path), branch=args.operate_branch,
-                     dry_run=args.operate_dry_run, arrival=arrival,
-                     serum_budget=args.serum_budget)
-    except Refused as e:
-        print(f"refused: {e}", file=sys.stderr)
-        return 2
-    print(op.render())
-    if not op.came_in_untouched:
-        print("error: the branch the patient came in on was modified; "
-              "this should be impossible and is a bug", file=sys.stderr)
-        return 2
-    return 0
-
-
 def _present(args, evidence, new, known, priors, archive, casefile_path) -> None:
     """The human report: the findings themselves, then what the run says
     about the repository as a whole. Writes to stdout and decides nothing
@@ -478,7 +415,7 @@ def _prepare_output_data(args, evidence, baseline, findings) -> tuple:
 
 
 def _handle_dispatch_modes(args) -> int:
-    """Handle verify-chain and operate modes."""
+    """Handle verify-chain mode."""
     if args.verify_chain:
         return _verify_chain(args)
     return None
@@ -499,8 +436,6 @@ def main(argv: List[str] = None) -> int:
     result = _validate_path(args)
     if result is not None:
         return result
-
-    arrival = notes_on_arrival(args.path)
 
     # Gather evidence
     try:
@@ -528,9 +463,6 @@ def main(argv: List[str] = None) -> int:
     # Dispatch modes
     if args.verify_chain:
         return _verify_chain(args)
-
-    if args.operate:
-        return _operate(args, evidence, casefile_path, archive, arrival)
 
     # Present results
     if args.json:

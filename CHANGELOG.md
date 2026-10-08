@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+**Ghost Tools now only reports.** Elegant is the only thing that applies changes.
+
+- Removed `--operate` (the surgeon), `--operate-branch`, `--operate-dry-run`,
+  `--serum-budget`, `--annotate-names`, and the modules `operate.py`,
+  `annotate.py` and `production/operate_lifecycle.py`.
+- Removed `ghost_writer/correct.py` and `ghost_writer/polish/`, with their tests
+  and mutants. Proposing fixes is Proposer's job. The LLM-backed doc-correction
+  proposal is not ported yet; it is in git history.
+- Mutant census is now 624 mutants in 45 files.
+- `Tests/test_tree_immutability.py` now asserts the writing flags are refused.
+
 **ghost_buster no longer writes into READMEs.** Only Streamline writes READMEs now.
 
 - Removed the name-disagreement README table (`update_readme`, `render_section`,

@@ -88,10 +88,10 @@ def test_the_reference_corpus_is_this_package():
 
 
 def test_prose_is_not_part_of_the_corpus():
-    """The metaphor is safe. `operate.py` calls the repository a patient in
-    almost every docstring, and none of that reaches the corpus, because
-    only identifiers do."""
-    assert "patient" in (PACKAGE / "operate.py").read_text(encoding="utf-8")
+    """The metaphor is safe. `archive.py` calls the repository a patient in
+    its docstring, and none of that reaches the corpus, because only
+    identifiers do."""
+    assert "patient" in (PACKAGE / "archive.py").read_text(encoding="utf-8")
     assert "patient" not in _reference_corpus()
 
 
