@@ -6,7 +6,7 @@ A Python file that imports without error, raises nothing, and defines
 nothing, because every line of its code sits behind a `#`. The usual cause
 is a paste through a chat window that destroyed every line break: if the
 first character of the surviving single line happens to be `#`, the whole
-file becomes one comment. TOUCHSTONE keeps the canonical specimen
+file becomes one comment. ASSAY keeps the canonical specimen
 (`specimens/pairs/governance_os_security_source.py`, 11,700 bytes, one line,
 zero names) and its MANIFEST answer is REFUSE.
 

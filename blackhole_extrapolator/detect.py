@@ -573,7 +573,7 @@ _DEFINING_NODES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef,
 #   LOUD    the flattened text is not valid Python, so it raises on parse.
 #   SILENT  the file's single line begins with `#`, so Python reads all
 #           11,700 bytes of it as one comment. It imports cleanly, raises
-#           nothing, and defines zero names. TOUCHSTONE keeps one of these
+#           nothing, and defines zero names. ASSAY keeps one of these
 #           as a specimen precisely because a tool that only catches
 #           SyntaxError walks straight past it.
 #
@@ -591,7 +591,7 @@ _DEFINING_NODES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef,
 def _is_destroyed(text: str) -> bool:
     """Does not parse, or parses to a module that defines nothing.
 
-    The second case is TOUCHSTONE's canonical silent-pass specimen: a
+    The second case is ASSAY's canonical silent-pass specimen: a
     flattened file whose single line begins with `#`, so Python reads all
     11,700 bytes as one comment. It imports cleanly and defines zero names.
     An empty file is empty, not destroyed."""

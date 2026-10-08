@@ -1,6 +1,6 @@
 # ghost_tools
 
-Codebase **integrity toolkit**: things that are present and wrong, documentation drift, duplication, dead/vacuous tests, secrets, structural ghosts. Version per README title / CHANGELOG (v1.5.x lineage). Assurance loop: **this scanner ← [`SWIZZLE`](https://github.com/wking53214/SWIZZLE) + [`TOUCHSTONE`](https://github.com/wking53214/TOUCHSTONE) specimens**.
+Codebase **integrity toolkit**: things that are present and wrong, documentation drift, duplication, dead/vacuous tests, secrets, structural ghosts. Version per README title / CHANGELOG (v1.5.x lineage). Assurance loop: **this scanner ← [`SWIZZLE`](https://github.com/wking53214/SWIZZLE) + [`ASSAY`](https://github.com/wking53214/ASSAY) specimens**.
 
 ## 1. Pipeline Position & Role
 
@@ -35,7 +35,7 @@ modified by this package.
 ## 3. What It Does NOT Do / Non-Goals
 
 - Does not govern runtime decisions.
-- Writes nothing into the code it scans. Ghost reports; changing a tree is the job of Elegant (the governor), proposing fixes is Proposer's, and the final tidy and README are Streamline's. The old repair mode, the name annotator and the doc-correction proposer were removed so no two repositories do the same job.
+- Writes nothing into the code it scans. Ghost reports; changing a tree is the job of Warden (the governor), proposing fixes is Drafter's, and the final tidy and README are Burnish's. The old repair mode, the name annotator and the doc-correction drafter were removed so no two repositories do the same job.
 - Model claims stay `REASONED` and never self-promote.
 
 ## 4. Brutally Honest Current Status & Gaps
@@ -54,11 +54,11 @@ CLI over a git work tree. Findings: severity, `CONFIRMED`/`REASONED`, evidence. 
 
 ```text
 SWIZZLE attack worlds  →  ghost_buster  →  findings
-TOUCHSTONE specimens   →  known-damage corpus; `swizzle touchstone` scores this tool against it
-Elegant                →  runs ghost_buster to observe, then re-inspect after an authorized change
+ASSAY specimens   →  known-damage corpus; `swizzle assay` scores this tool against it
+Warden                →  runs ghost_buster to observe, then re-inspect after an authorized change
 composition-engine     →  GhostToolsAdapter (one adapter, optional)
 observe-perceive       ✗ does not import
-swizzle-gate CI        replays SWIZZLE cases and TOUCHSTONE specimens against this tool (no secret needed)
+swizzle-gate CI        replays SWIZZLE cases and ASSAY specimens against this tool (no secret needed)
 ```
 
 Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). Copyright 2026 William N. King. Prefer this README plus `CHANGELOG.md` over folklore.

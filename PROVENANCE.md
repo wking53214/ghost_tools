@@ -5,7 +5,7 @@ as the `PROVENANCE.md` files in the other repos of this stack.
 
 > **Removed 2026-10-08.** `ghost_writer/polish/` and `ghost_writer/correct.py` (the
 > proposal writer it gated) were removed so Ghost only reports; proposing fixes
-> belongs to Proposer. The records below are history and stay in git.
+> belongs to Drafter. The records below are history and stay in git.
 
 ## `ghost_writer/polish/` (2026-09-09)
 

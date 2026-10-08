@@ -403,7 +403,7 @@ def test_residue_is_not_read_from_a_file_that_parses(tmp_path):
 def test_a_file_that_parses_to_nothing_is_still_destroyed(tmp_path):
     """Parsing is not proof of survival, and this is not hypothetical.
 
-    TOUCHSTONE's canonical silent-pass specimen is a flattened file whose
+    ASSAY's canonical silent-pass specimen is a flattened file whose
     single line begins with `#`, so Python reads the whole 11,700 bytes as
     one comment: it imports cleanly, raises nothing, defines zero names. The
     first version of this detector returned early on it -- fooled by exactly

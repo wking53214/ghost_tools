@@ -83,15 +83,15 @@ jobs:
     # (--fail-on-unmeasured, SWIZZLE 18f1afc or later): a candidate that
     # cannot run at all must not pass as "unchanged".
     #
-    # SWIZZLE and TOUCHSTONE are both public (Apache-2.0, Oct 2026), so the
+    # SWIZZLE and ASSAY are both public (Apache-2.0, Oct 2026), so the
     # gate needs no secret and always runs. It used to read SWIZZLE with
     # LIBRARY_READ_TOKEN and quietly skip itself with a warning when the
     # secret was absent; that skip is gone with the need for it.
     #
-    # The TOUCHSTONE step scores both revisions against TOUCHSTONE's
+    # The ASSAY step scores both revisions against ASSAY's
     # published answer key (real damage, correct answers written down in
     # MANIFEST.md) and fails if any specimen's outcome got worse. It also
-    # fails (exit 2) if the answer key cannot be proven by TOUCHSTONE's own
+    # fails (exit 2) if the answer key cannot be proven by ASSAY's own
     # verify_manifest.py, so a drifted corpus cannot pass as "unchanged".
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -106,8 +106,8 @@ jobs:
           path: swizzle
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
-          repository: wking53214/TOUCHSTONE
-          path: touchstone
+          repository: wking53214/ASSAY
+          path: assay
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: "3.11"
@@ -148,5 +148,5 @@ jobs:
           fi
           python -m swizzle diff --ghost "$BASE" --ghost "$GHOST_TOOLS" --fail-on-unmeasured
           python -m swizzle diff --ghost "$BASE" --ghost "$GHOST_TOOLS" --seeds --fail-on-unmeasured
-          python -m swizzle touchstone --touchstone "$GITHUB_WORKSPACE/touchstone" \
+          python -m swizzle assay --assay "$GITHUB_WORKSPACE/assay" \
             --ghost "$BASE" --ghost "$GHOST_TOOLS"

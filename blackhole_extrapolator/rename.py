@@ -2,7 +2,7 @@
 
 Jon is looking for Sally. Sally now goes by Karen. Every detector in this
 package keys on the literal identifier, so Jon's call is a never-built void
-and Karen's definition is unrelated to it. Found on TOUCHSTONE, 2026-09-08:
+and Karen's definition is unrelated to it. Found on ASSAY, 2026-09-08:
 three superseded specimens call `initialize_hybrid_cluster(node_count=3)`
 and unpack three values from it; the flattened quorum file beside them
 declares `initialize_network_cluster(node_count: int, ...)` returning a

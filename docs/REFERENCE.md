@@ -99,9 +99,9 @@ history (`git show 93143f5^:README.md`).
 | `unauthenticated_route` | a route with no auth while most of its siblings have it | MAJOR |
 | `loop_invariant_call` | a call inside a loop whose arguments the loop cannot change (a serum pitstop) | MINOR |
 | `list_membership_in_loop` | membership tests against a list literal inside a loop (a serum pitstop) | MINOR |
-| `commented_out_module` | a file that parses and defines nothing because its code is all in comments (TOUCHSTONE 3.1) | MAJOR |
-| `undefined_self_method` | `self.name()` on a fully visible class that has no `name` anywhere (TOUCHSTONE 3.2) | MAJOR |
-| `flattened_copy` | an unparseable file that is a readable one with its whitespace destroyed (TOUCHSTONE 3.3) | MAJOR |
+| `commented_out_module` | a file that parses and defines nothing because its code is all in comments (ASSAY 3.1) | MAJOR |
+| `undefined_self_method` | `self.name()` on a fully visible class that has no `name` anywhere (ASSAY 3.2) | MAJOR |
+| `flattened_copy` | an unparseable file that is a readable one with its whitespace destroyed (ASSAY 3.3) | MAJOR |
 
 One detector reads more than the files on disk. `unreachable_declared_state`
 grades a declared-but-unproduced enum member by what the evidence costs to

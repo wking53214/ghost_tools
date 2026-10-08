@@ -1,6 +1,6 @@
 """Rename candidates: Jon is looking for Sally, and Sally is now Karen.
 
-Guarded by the TOUCHSTONE case found on 2026-09-08: superseded specimens
+Guarded by the ASSAY case found on 2026-09-08: superseded specimens
 call `initialize_hybrid_cluster` and unpack three values; the flattened
 quorum file declares `initialize_network_cluster` returning a three-tuple
 whose elements flow into the next call's typed parameters.
