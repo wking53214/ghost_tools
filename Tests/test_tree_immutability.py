@@ -17,7 +17,7 @@ import pytest
 from blackhole_extrapolator import cli as blackhole_cli
 from ghost_buster import cli as buster_cli
 from ghost_buster.mechanical import run_all
-from tree_guard import Changes, compare, snapshot, unchanged
+from tree_guard import Changes, unchanged
 
 # Everything that would reach outside the tree or take minutes: git plumbing,
 # the project's own pytest run, and gitleaks. Each is covered by its own
