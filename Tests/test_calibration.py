@@ -2,8 +2,9 @@
 something that exists (ghost_buster/calibration.json)."""
 from __future__ import annotations
 
-import json
 import re
+
+import json
 
 from ghost_buster.calibration import PATH, REPRODUCE_FIELDS, REQUIRED, records, render, reproducible
 from ghost_buster.mechanical import registered_detectors

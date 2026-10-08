@@ -80,8 +80,9 @@ from __future__ import annotations
 
 import subprocess
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import List, Optional, Set, Tuple
 
 from .schema import Category, Evidence, Finding, Layer, Severity, Status
 
@@ -94,8 +95,8 @@ DETECTOR = "unmerged_branch"
 _CANDIDATE_BASES = ("origin/main", "origin/master", "main", "master")
 
 
-def _run(root: Path, args: list[str], *, input_text: str | None = None,  # ghost_buster: name-disagreement -- `input_text` is `diff_out` at every call site
-         timeout: float = 30.0) -> str | None:
+def _run(root: Path, args: List[str], *, input_text: Optional[str] = None,  # ghost_buster: name-disagreement -- `input_text` is `diff_out` at every call site
+         timeout: float = 30.0) -> Optional[str]:
     """Run a read-only git command; None on any failure (missing git, not
     a repository, a bad ref, a nonzero exit, a timeout) -- fail closed,
     the same discipline semantic.py's _run_json_check uses for its own
@@ -127,7 +128,7 @@ class BranchScanReport:
 
     ran: bool
     reason: str = ""
-    base_branch: str | None = None
+    base_branch: Optional[str] = None
     branches_scanned: int = 0
 
 
@@ -135,7 +136,7 @@ def _is_git_repo(root: Path) -> bool:
     return _run(root, ["rev-parse", "--git-dir"]) is not None
 
 
-def _resolve_base_branch(root: Path, explicit: str | None) -> str | None:  # ghost_buster: name-disagreement -- `explicit` is `base_branch` at every call site
+def _resolve_base_branch(root: Path, explicit: Optional[str]) -> Optional[str]:  # ghost_buster: name-disagreement -- `explicit` is `base_branch` at every call site
     candidates = (explicit,) if explicit else _CANDIDATE_BASES
     for candidate in candidates:
         if candidate and _run(root, ["rev-parse", "--verify", "--quiet", candidate]) is not None:
@@ -150,15 +151,15 @@ def _short_name(ref: str) -> str:
     return ref.split("/", 1)[1] if ref.startswith("origin/") else ref
 
 
-def _list_branches(root: Path, base: str) -> list[str]:
+def _list_branches(root: Path, base: str) -> List[str]:
     """Local heads, then origin's remote-tracking branches, excluding the
     base branch (in either form), excluded refs, and anything -- local or
     remote -- pointing at the same commit as one already listed (a local
     branch and its own remote-tracking counterpart are one branch, not
     two; local is listed first so it wins as the more actionable name)."""
     base_name = _short_name(base)
-    seen_shas: set[str] = set()
-    names: list[str] = []
+    seen_shas: Set[str] = set()
+    names: List[str] = []
     # Full refnames, shortened here, not by git: `%(refname:short)` renders
     # refs/remotes/origin/HEAD as the bare word "origin", which slipped past
     # an endswith("/HEAD") filter and was counted as a branch on every
@@ -197,7 +198,7 @@ def _is_ancestor(root: Path, branch: str, base: str) -> bool:
     return _run(root, ["merge-base", "--is-ancestor", branch, base]) is not None
 
 
-def _patch_id(root: Path, diff_args: list[str]) -> str | None:
+def _patch_id(root: Path, diff_args: List[str]) -> Optional[str]:
     """The first token of `git patch-id --stable`'s output for the diff or
     show given by `diff_args`; None if the diff is empty, unreadable, or
     the plumbing fails."""
@@ -241,7 +242,7 @@ def _ref_path(root: Path, name: str) -> str:
     return str(root / ".git" / "refs" / "heads" / name)
 
 
-def _describe_last_commit(root: Path, branch: str) -> tuple[str, str, str]:
+def _describe_last_commit(root: Path, branch: str) -> Tuple[str, str, str]:
     """(short_sha, author, age-and-date-or-'date unknown') for branch's tip."""
     line = _run(root, ["log", "-1", "--format=%H|%an|%at", branch])
     if not line:
@@ -250,8 +251,8 @@ def _describe_last_commit(root: Path, branch: str) -> tuple[str, str, str]:
     author, _, ts = rest.partition("|")
     age = "date unknown"
     if ts.strip().isdigit():
-        commit_dt = datetime.fromtimestamp(int(ts.strip()), tz=UTC)
-        age_days = (datetime.now(UTC) - commit_dt).days
+        commit_dt = datetime.fromtimestamp(int(ts.strip()), tz=timezone.utc)
+        age_days = (datetime.now(timezone.utc) - commit_dt).days
         age = f"{age_days} day(s) ago ({commit_dt.date().isoformat()})"
     return sha[:12], author or "unknown", age
 
@@ -281,7 +282,7 @@ def _build_finding(root: Path, branch: str, base: str) -> Finding:
     )
 
 
-def scan(root: Path, base_branch: str | None = None) -> tuple[list[Finding], BranchScanReport]:
+def scan(root: Path, base_branch: Optional[str] = None) -> Tuple[List[Finding], BranchScanReport]:
     """Find every local or remote-tracking branch whose content is not
     reflected in the base branch, by any of: being an outright ancestor
     (fast-forward or an ordinary merge), or having a whole-branch diff
@@ -304,7 +305,7 @@ def scan(root: Path, base_branch: str | None = None) -> tuple[list[Finding], Bra
         )
 
     names = _list_branches(root, base)
-    findings: list[Finding] = []
+    findings: List[Finding] = []
     for name in names:
         if _is_ancestor(root, name, base):
             continue

@@ -12,8 +12,7 @@ holds the two in agreement either way.
 from __future__ import annotations
 
 import tomllib
-from importlib.metadata import PackageNotFoundError
-from importlib.metadata import version as _installed_version
+from importlib.metadata import PackageNotFoundError, version as _installed_version
 from pathlib import Path
 
 #: The backronym. ghost_tools catalogues the mistakes that founders make

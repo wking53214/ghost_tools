@@ -15,18 +15,8 @@ import pytest
 
 from ghost_buster.cli import main
 from ghost_buster.ledger import (
-    BLIND_SPOT_AFTER,
-    COULD_NOT_RUN,
-    DECLINED,
-    FLAPPING_AFTER,
-    MAX_RUNS_KEPT,
-    NOT_APPLICABLE,
-    NOT_RUN,
-    PERSISTENT_AFTER,
-    RAN,
-    SCHEMA_VERSION,
-    Ledger,
-    LedgerError,
+    BLIND_SPOT_AFTER, COULD_NOT_RUN, DECLINED, FLAPPING_AFTER, Ledger, LedgerError,
+    MAX_RUNS_KEPT, NOT_APPLICABLE, NOT_RUN, PERSISTENT_AFTER, RAN, SCHEMA_VERSION,
 )
 from ghost_buster.schema import Category, Evidence, Finding, Layer, Severity, Status
 

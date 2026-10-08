@@ -20,9 +20,7 @@ import textwrap
 import pytest
 
 from blackhole_extrapolator.reconstruct import (
-    HEADER,
-    reconstruct,
-    write_proposal,
+    HEADER, reconstruct, write_proposal,
 )
 
 # A newline became one space; the indentation after it survived.

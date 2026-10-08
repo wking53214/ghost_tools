@@ -12,22 +12,11 @@ denominator.
 """
 from __future__ import annotations
 
-from datetime import UTC
-
-from ghost_buster import correlate
-from ghost_buster.ledger import DETECTOR as LEDGER_DETECTOR
-from ghost_buster.ledger import RAN, Ledger
+import ghost_buster.correlate as correlate
+from ghost_buster.ledger import DETECTOR as LEDGER_DETECTOR, RAN, Ledger
 from ghost_buster.schema import (
-    DERIVED_DETECTORS,
-    Category,
-    Evidence,
-    Finding,
-    Layer,
-    Severity,
-    Status,
-    derived,
-    is_derived,
-    primary,
+    DERIVED_DETECTORS, Category, Evidence, Finding, Layer, Severity, Status,
+    derived, is_derived, primary,
 )
 from ghost_buster.trajectory import DETECTOR as TRAJECTORY_DETECTOR
 
@@ -81,10 +70,9 @@ def test_the_ledger_records_both_counts(tmp_path):
 
 def _runs(pairs):
     """One RunRecord per (primary, derived) pair, measured the same way."""
-    from datetime import datetime, timedelta
-
+    from datetime import datetime, timedelta, timezone
     from ghost_buster.ledger import RunRecord
-    base = datetime(2026, 1, 1, tzinfo=UTC)
+    base = datetime(2026, 1, 1, tzinfo=timezone.utc)
     checks = {"tests": RAN, "secrets": RAN}
     out = []
     for i, (n_primary, n_derived) in enumerate(pairs):

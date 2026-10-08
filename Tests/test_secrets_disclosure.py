@@ -20,11 +20,7 @@ from pathlib import Path
 import pytest
 
 from ghost_buster.secrets import (
-    SUPPRESSION_FILES,
-    SecretsScanReport,
-    render_report,
-    scan,
-    target_suppression,
+    SUPPRESSION_FILES, SecretsScanReport, render_report, scan, target_suppression,
 )
 
 #: A value gitleaks reports as generic-api-key. Not a live credential:

@@ -10,6 +10,7 @@ The working tree is never modified.
 from __future__ import annotations
 
 import pytest
+
 from mutant_harness import assert_killed, run_tests_with_mutation
 
 DOCS = "Tests/test_ledger_renames.py"

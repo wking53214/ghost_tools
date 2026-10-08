@@ -42,13 +42,13 @@ from __future__ import annotations
 
 import ast
 import re
-from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 from . import corpus
 from .schema import Category, Evidence, Finding, Layer, Severity, Status
-from .structure import _PACKAGE_PARENTS, StructuralModel, _stdlib_names, build_model
+from .structure import _PACKAGE_PARENTS, _stdlib_names, StructuralModel, build_model
 
 DETECTOR = "boundary"
 
@@ -66,8 +66,8 @@ class GuardedImport:
     module: str            # the importing module, dotted
     package: str           # the top-level package being reached for
     source: str = ""       # the exact module named, e.g. "ccc.matching"
-    names: list[str] = field(default_factory=list)
-    line: int | None = None
+    names: List[str] = field(default_factory=list)
+    line: Optional[int] = None
     guarded: bool = True
 
 
@@ -76,31 +76,31 @@ class DormantTest:
     repo: str
     module: str
     reason: str
-    line: int | None = None
+    line: Optional[int] = None
 
 
 @dataclass
 class JoinedModel:
-    repos: list[str] = field(default_factory=list)
+    repos: List[str] = field(default_factory=list)
     ran: bool = False
     reason: str = ""
     #: package name -> (repo root, every name any of its modules exports)
-    provides: dict[str, tuple[str, set[str]]] = field(default_factory=dict)
+    provides: Dict[str, Tuple[str, Set[str]]] = field(default_factory=dict)
     #: exact dotted module -> the names IT exports. Resolving `from
     #: ccc.matching import X` against the union of every ccc module would
     #: accept a name that lives in a different submodule entirely.
-    provides_module: dict[str, set[str]] = field(default_factory=dict)
-    opaque_modules: set[str] = field(default_factory=set)
-    reaches: list[GuardedImport] = field(default_factory=list)
-    dormant_tests: list[DormantTest] = field(default_factory=list)
-    unresolved: list[str] = field(default_factory=list)
+    provides_module: Dict[str, Set[str]] = field(default_factory=dict)
+    opaque_modules: Set[str] = field(default_factory=set)
+    reaches: List[GuardedImport] = field(default_factory=list)
+    dormant_tests: List[DormantTest] = field(default_factory=list)
+    unresolved: List[str] = field(default_factory=list)
 
 
 def _dotted(path: Path, root: Path) -> str:
     return ".".join(path.relative_to(root).with_suffix("").parts)
 
 
-def guarded_imports(tree: ast.AST, repo: str, module: str) -> tuple[list[GuardedImport], list[str]]:
+def guarded_imports(tree: ast.AST, repo: str, module: str) -> Tuple[List[GuardedImport], List[str]]:
     """Every import written with a fallback, plus notes on the ones whose
     target cannot be named."""
     out, notes = [], []
@@ -147,7 +147,7 @@ def _handler_catches_import(handler: ast.ExceptHandler) -> bool:
     return False
 
 
-def dormant_tests(tree: ast.AST, repo: str, module: str) -> list[DormantTest]:
+def dormant_tests(tree: ast.AST, repo: str, module: str) -> List[DormantTest]:
     """A test that skips because something is not here. The reason string is
     the evidence -- a skip with no reason is a different finding entirely,
     and testsuite.py already rates it MAJOR."""
@@ -178,14 +178,14 @@ def _is_stdlib(package: str) -> bool:
     return package.split(".", 1)[0] in _stdlib_names()
 
 
-def build_joined_model(roots: Sequence, files_by_root: dict[str, list[Path]]) -> JoinedModel:
+def build_joined_model(roots: Sequence, files_by_root: Dict[str, List[Path]]) -> JoinedModel:
     joined = JoinedModel(repos=[str(Path(r).resolve()) for r in roots])
     if len(joined.repos) < 2:
         joined.reason = "a boundary needs at least two repositories"
         return joined
     joined.ran = True
 
-    models: dict[str, StructuralModel] = {}
+    models: Dict[str, StructuralModel] = {}
     for root in joined.repos:
         files = files_by_root.get(root, [])
         models[root] = build_model(root, files)
@@ -213,19 +213,19 @@ def build_joined_model(roots: Sequence, files_by_root: dict[str, list[Path]]) ->
     # A NAME A MODULE RE-EXPORTS IS A NAME IT PROVIDES. Collecting only
     # definitions treated `__init__.py` as though it exported nothing, which
     # is the opposite of what an `__init__.py` is usually for.
-    def _surface(m) -> set[str]:
+    def _surface(m) -> Set[str]:
         return set(m.exported) | set(m.public_names) | set(m.bindings) | set(m.reexports)
 
     #: Modules whose surface cannot be enumerated because a star-import
     #: points somewhere this scan could not resolve. Their contents are
     #: unknowable, so a name is never reported missing from them.
-    opaque: set[str] = set()
+    opaque: Set[str] = set()
 
     for root, model in models.items():
         # Index by the LAST dotted segment as well, so `gems.contracts`
         # resolves whether the scan saw it as `gems.contracts` or as
         # `src.gems.contracts` under a src layout.
-        by_tail: dict[str, set[str]] = {}
+        by_tail: Dict[str, Set[str]] = {}
         for m in model.modules:
             tail = _normalise(m.dotted)
             if not tail:
@@ -234,7 +234,7 @@ def build_joined_model(roots: Sequence, files_by_root: dict[str, list[Path]]) ->
             by_tail.setdefault(tail.split(".")[-1], set()).update(_surface(m))
 
         for package in model.packages:
-            names: set[str] = set()
+            names: Set[str] = set()
             for m in model.modules:
                 normalised = _normalise(m.dotted)
                 if not normalised or normalised.split(".", 1)[0] != package:
@@ -291,7 +291,7 @@ def _finding(kind: str, severity: Severity, file: str, summary: str,
     )
 
 
-def _test_corpus(files_by_root: dict[str, list[Path]]) -> str:
+def _test_corpus(files_by_root: Dict[str, List[Path]]) -> str:
     """Every test file in the joined set, concatenated. Crude on purpose: a
     symbol's NAME appearing nowhere in any test is strong evidence nothing
     exercises it, while its appearing somewhere proves only that it is
@@ -311,10 +311,10 @@ def _test_corpus(files_by_root: dict[str, list[Path]]) -> str:
     return "\n".join(chunks)
 
 
-def derive_findings(joined: JoinedModel, files_by_root: dict[str, list[Path]]) -> list[Finding]:
+def derive_findings(joined: JoinedModel, files_by_root: Dict[str, List[Path]]) -> List[Finding]:
     if not joined.ran:
         return []
-    out: list[Finding] = []
+    out: List[Finding] = []
     corpus = _test_corpus(files_by_root)
 
     for reach in joined.reaches:
@@ -423,7 +423,7 @@ def derive_findings(joined: JoinedModel, files_by_root: dict[str, list[Path]]) -
     return out
 
 
-def render_report(joined: JoinedModel, findings: list[Finding]) -> str:
+def render_report(joined: JoinedModel, findings: List[Finding]) -> str:
     if not joined.ran:
         return f"ghost_buster: boundary scan did not run: {joined.reason}"
     crossings = len([r for r in joined.reaches
@@ -433,7 +433,7 @@ def render_report(joined: JoinedModel, findings: list[Finding]) -> str:
             f"test(s), {len(joined.unresolved)} unresolved; {len(findings)} finding(s)")
 
 
-def render_single_repo_notice(root, files: list[Path]) -> str | None:
+def render_single_repo_notice(root, files: List[Path]) -> Optional[str]:
     """What a ONE-repo scan should say when it is looking at half a system.
 
     A repository full of guarded imports and dormant tests is not a whole

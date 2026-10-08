@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import subprocess
 
+
 from ghost_buster import forensics
 from ghost_buster.forensics import Provenance
 
@@ -248,7 +249,6 @@ def test_a_root_commit_has_no_parent_and_does_not_crash(tmp_path):
 
 def _severity(root):
     from pathlib import Path
-
     from ghost_buster.mechanical import detect_unreachable_declared_state
     files = sorted(p for p in Path(root).rglob("*.py") if ".git" not in p.parts)
     found = [f for f in detect_unreachable_declared_state(files)

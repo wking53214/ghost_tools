@@ -63,7 +63,6 @@ a class.
 Writes only to OUT.py, never beside the input.
 """
 from __future__ import annotations
-
 import codeop
 import io
 import keyword
@@ -214,7 +213,9 @@ def split_statements(tokens):
             elif t.type == tokenize.NAME and s == "for":
                 boundary = prev.string != "async"
             elif (is_atom(prev) or prev.string in CLOSE) and (is_atom(t) or s == "@"):
-                if t.type == tokenize.NAME and s in EXPR_KW or prev.type == tokenize.STRING and t.type == tokenize.STRING:
+                if t.type == tokenize.NAME and s in EXPR_KW:
+                    boundary = False
+                elif prev.type == tokenize.STRING and t.type == tokenize.STRING:
                     boundary = False
                 else:
                     boundary = True
@@ -284,7 +285,17 @@ def render(stmt):
                 depth += 1
             continue
         join = " "
-        if s in NO_SPACE_BEFORE or prev.string in NO_SPACE_AFTER or (prev.string == "@" and len(out) == 1) or s in ("(", "[") and ((prev.type == tokenize.NAME and not keyword.iskeyword(prev.string)) or prev.string in CLOSE or prev.type == tokenize.STRING) or depth > 0 and (s == "=" or prev.string == "=") or prev.string in ("-", "+", "~") and (len(out) < 2 or out[-2] in "(,=[:{" or out[:-1].rstrip().endswith(("return", "in", "=", ",", "(", "[", "{", ":", "yield"))) or s == "**" and depth > 0 and prev.string in ("(", ",") or prev.string in ("**", "*") and depth > 0 and len(out) > 2 and out[-3:-1].strip() in ("(", ","):
+        if s in NO_SPACE_BEFORE or prev.string in NO_SPACE_AFTER or (prev.string == "@" and len(out) == 1):
+            join = ""
+        elif s in ("(", "[") and ((prev.type == tokenize.NAME and not keyword.iskeyword(prev.string)) or prev.string in CLOSE or prev.type == tokenize.STRING):
+            join = ""
+        elif depth > 0 and (s == "=" or prev.string == "="):
+            join = ""
+        elif prev.string in ("-", "+", "~") and (len(out) < 2 or out[-2] in "(,=[:{" or out[:-1].rstrip().endswith(("return", "in", "=", ",", "(", "[", "{", ":", "yield"))):
+            join = ""
+        elif s == "**" and depth > 0 and prev.string in ("(", ","):
+            join = ""
+        elif prev.string in ("**", "*") and depth > 0 and len(out) > 2 and out[-3:-1].strip() in ("(", ","):
             join = ""
         if s == ":" and depth > 0:
             join = ""

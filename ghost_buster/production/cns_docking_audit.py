@@ -1,27 +1,25 @@
 """CNS docking audit — single seam, bypass risks."""
 from __future__ import annotations
-
 from dataclasses import dataclass, field
-from typing import Any
-
+from typing import Any, Dict, List, Optional
 
 @dataclass
 class DockingAuditResult:
-    proposed_seam: str | None
-    current_communicators: list[str]
-    should_not_communicate: list[str]
-    duplicate_paths: list[str]
-    authority_crossings: list[str]
-    provenance_crossings: list[str]
-    scope_crossings: list[str]
-    unknown_loss_risks: list[str]
-    authorization_bypass_risks: list[str]
-    identity_confusion_risks: list[str]
-    adapter_as_authority_risks: list[str]
+    proposed_seam: Optional[str]
+    current_communicators: List[str]
+    should_not_communicate: List[str]
+    duplicate_paths: List[str]
+    authority_crossings: List[str]
+    provenance_crossings: List[str]
+    scope_crossings: List[str]
+    unknown_loss_risks: List[str]
+    authorization_bypass_risks: List[str]
+    identity_confusion_risks: List[str]
+    adapter_as_authority_risks: List[str]
     single_seam_defined: bool
     ready_for_adapter_design: bool
-    unknowns: list[str] = field(default_factory=list)
-    details: dict[str, Any] = field(default_factory=dict)
+    unknowns: List[str] = field(default_factory=list)
+    details: Dict[str, Any] = field(default_factory=dict)
     def to_dict(self):
         return self.__dict__.copy()
 

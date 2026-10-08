@@ -94,9 +94,9 @@ opposite of the defect.
 from __future__ import annotations
 
 import ast
-from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import List, Sequence
 
 from . import corpus
 from .naming import is_test_path
@@ -149,8 +149,8 @@ class Swallowed:
         return bool(names & _CATCHES_EVERYTHING)
 
 
-def find_swallowed(files: Sequence[Path]) -> list[Swallowed]:
-    out: list[Swallowed] = []
+def find_swallowed(files: Sequence[Path]) -> List[Swallowed]:
+    out: List[Swallowed] = []
     for path in (Path(f) for f in files):
         if is_test_path(path):
             continue
@@ -163,8 +163,8 @@ def find_swallowed(files: Sequence[Path]) -> list[Swallowed]:
     return sorted(out, key=lambda s: (str(s.path), s.line))
 
 
-def detect_swallowed_exceptions(files: Sequence[Path]) -> list[Finding]:
-    findings: list[Finding] = []
+def detect_swallowed_exceptions(files: Sequence[Path]) -> List[Finding]:
+    findings: List[Finding] = []
     for swallowed in find_swallowed(files):
         broad = swallowed.catches_everything
         findings.append(Finding(

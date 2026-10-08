@@ -57,11 +57,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Iterable
-from dataclasses import asdict, dataclass, field
-from datetime import UTC, datetime
+from dataclasses import dataclass, field, asdict
+from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
+from typing import Iterable, Any, Dict, List, Optional
 
 
 class Severity(str, Enum):
@@ -220,13 +219,13 @@ class Evidence:
     not part of the finding's identity."""
 
     file: str
-    line_start: int | None = None
-    line_end: int | None = None
-    snippet: str | None = None
-    related_files: list[str] = field(default_factory=list)
-    absolute_file: str | None = None
+    line_start: Optional[int] = None
+    line_end: Optional[int] = None
+    snippet: Optional[str] = None
+    related_files: List[str] = field(default_factory=list)
+    absolute_file: Optional[str] = None
 
-    def as_dict(self) -> dict[str, Any]:
+    def as_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
 
@@ -248,14 +247,14 @@ class Finding:
     detail: str = ""
     # Machine-readable join keys, for correlate.py -- see WHY ATTRIBUTES
     # EXIST in the module docstring. Never part of the id.
-    attributes: dict[str, str] = field(default_factory=dict)
-    confidence: float | None = None  # 0.0-1.0, semantic layer only; None for mechanical
-    first_seen: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
+    attributes: Dict[str, str] = field(default_factory=dict)
+    confidence: Optional[float] = None  # 0.0-1.0, semantic layer only; None for mechanical
+    first_seen: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     # Set by the human triage step: ghost_writer/triage.py, which records
     # "fix", "suppress" or "document" against a finding id. This is the
     # mechanism a person judges a finding with; `Status` is what the SCANNER
     # concluded, and the two are deliberately separate.
-    disposition: str | None = None
+    disposition: Optional[str] = None
     disposition_note: str = ""
     #: What identifies this finding, when the summary does not (v1.7.3).
     #:
@@ -285,7 +284,7 @@ class Finding:
     #: detector knows which part of its own sentence is the defect and
     #: which part is this morning's arithmetic. Left None, the summary is
     #: used exactly as before.
-    identity_key: str | None = None
+    identity_key: Optional[str] = None
     id: str = field(init=False)
 
     def __post_init__(self):
@@ -319,7 +318,7 @@ class Finding:
                 "produced at all. REASONED is reserved for the semantic layer."
             )
 
-    def as_dict(self) -> dict[str, Any]:
+    def as_dict(self) -> Dict[str, Any]:
         return {
             "id": self.id,
             "detector": self.detector,
@@ -338,7 +337,7 @@ class Finding:
         }
 
     @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> Finding:
+    def from_dict(cls, payload: Dict[str, Any]) -> "Finding":
         ev = payload["evidence"]
         finding = cls(
             detector=payload["detector"],
@@ -355,7 +354,7 @@ class Finding:
                 related_files=ev.get("related_files", []),
             ),
             confidence=payload.get("confidence"),
-            first_seen=payload.get("first_seen", datetime.now(UTC).isoformat()),
+            first_seen=payload.get("first_seen", datetime.now(timezone.utc).isoformat()),
             disposition=payload.get("disposition"),
             disposition_note=payload.get("disposition_note", ""),
         )
@@ -386,23 +385,23 @@ class FindingSet:
     """A run's worth of findings, with the JSON round-trip ghost_writer
     and the baseline mechanism both depend on."""
 
-    def __init__(self, findings: list[Finding] | None = None):
-        self.findings: list[Finding] = list(findings or [])
+    def __init__(self, findings: Optional[List[Finding]] = None):
+        self.findings: List[Finding] = list(findings or [])
 
     def add(self, finding: Finding) -> None:
         self.findings.append(finding)
 
-    def by_status(self, status: Status) -> list[Finding]:
+    def by_status(self, status: Status) -> List[Finding]:
         return [f for f in self.findings if f.status == status]
 
-    def by_severity(self, severity: Severity) -> list[Finding]:
+    def by_severity(self, severity: Severity) -> List[Finding]:
         return [f for f in self.findings if f.severity == severity]
 
     def to_json(self) -> str:
         return json.dumps([f.as_dict() for f in self.findings], indent=2, sort_keys=True)
 
     @classmethod
-    def from_json(cls, text: str) -> FindingSet:
+    def from_json(cls, text: str) -> "FindingSet":
         payload = json.loads(text)
         return cls([Finding.from_dict(p) for p in payload])
 
@@ -443,7 +442,7 @@ def is_derived(finding: Finding) -> bool:
     return finding.detector in DERIVED_DETECTORS
 
 
-def primary(findings: Iterable[Finding]) -> list[Finding]:
+def primary(findings: Iterable[Finding]) -> List[Finding]:
     """The findings a measurement of the TREE may rest on.
 
     WHY THE DISTINCTION IS LOAD-BEARING
@@ -460,11 +459,11 @@ def primary(findings: Iterable[Finding]) -> list[Finding]:
     return [f for f in findings if not is_derived(f)]
 
 
-def derived(findings: Iterable[Finding]) -> list[Finding]:
+def derived(findings: Iterable[Finding]) -> List[Finding]:
     return [f for f in findings if is_derived(f)]
 
 
-def authoritative(findings: Iterable[Finding]) -> list[Finding]:
+def authoritative(findings: Iterable[Finding]) -> List[Finding]:
     """The findings a gate, a baseline or the ledger may read.
 
     WHY THIS EXISTS BEFORE IT IS NEEDED
@@ -484,7 +483,7 @@ def authoritative(findings: Iterable[Finding]) -> list[Finding]:
     return [f for f in findings if f.status in AUTHORITATIVE]
 
 
-def disambiguate_ids(findings: list[Finding]) -> int:
+def disambiguate_ids(findings: List[Finding]) -> int:
     """Give every finding its own id, and say how many needed help.
 
     THE DEFECT THIS CLOSES
@@ -535,7 +534,7 @@ def disambiguate_ids(findings: list[Finding]) -> int:
     renumbered once by this change, because the 1.3.0 ordinal ids are not
     reproducible. Eight pairs in a 38-repository library; re-accept them.
     """
-    by_id: dict[str, list[Finding]] = {}
+    by_id: Dict[str, List[Finding]] = {}
     for f in findings:
         by_id.setdefault(f.id, []).append(f)
     renamed = 0

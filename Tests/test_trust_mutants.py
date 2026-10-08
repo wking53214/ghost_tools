@@ -3,6 +3,7 @@ never modified."""
 from __future__ import annotations
 
 import pytest
+
 from mutant_harness import assert_killed, run_tests_with_mutation
 
 TRUST_TESTS = "Tests/test_trust.py"

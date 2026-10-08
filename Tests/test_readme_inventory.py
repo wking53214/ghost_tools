@@ -31,7 +31,7 @@ def _section(title: str, until: str) -> str:
 
 def test_the_inventory_table_names_every_registered_detector_and_no_other():
     table = _section("What it checks", "What it remembers")
-    documented = set(re.findall(r"^\| `([a-z_]+)` \|", table, re.MULTILINE))
+    documented = set(re.findall(r"^\| `([a-z_]+)` \|", table, re.M))
     registered = set(registered_detectors())
     assert documented == registered, (
         f"undocumented: {sorted(registered - documented)}; "

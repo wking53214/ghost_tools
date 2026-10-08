@@ -56,9 +56,9 @@ says so instead of reporting zero.
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from typing import List, Optional, Sequence, Tuple
 
 from .schema import Category, Evidence, Finding, Layer, Severity, Status
 
@@ -109,7 +109,7 @@ def adverse_rate_for(density: float) -> float:
 SURPRISE_Z = 3.0
 
 
-def _noise_for(level: float) -> tuple[float, float, float]:
+def _noise_for(level: float) -> Tuple[float, float, float]:
     """Noise terms scaled to the series level. See the constants above."""
     scale = max(abs(level), _MIN_LEVEL)
     return (_Q_LEVEL_FRAC * scale) ** 2, (_Q_RATE_FRAC * scale) ** 2, (_R_FRAC * scale) ** 2
@@ -121,14 +121,14 @@ class _Kalman1D:
     sequence of (value, dt) yields identical output, which matters because
     a nondeterministic signal is exactly what `flapping_finding` exists to
     catch and this module must never become one."""
-    level: float | None = None
+    level: Optional[float] = None
     rate: float = 0.0
     p00: float = 1.0
     p01: float = 0.0
     p10: float = 0.0
     p11: float = 1.0
 
-    def step(self, z: float, dt: float) -> tuple[float, float]:
+    def step(self, z: float, dt: float) -> Tuple[float, float]:
         """Fold in one measurement; return (innovation, |z-score|)."""
         if self.level is None:
             self.level = z
@@ -165,7 +165,7 @@ def _ran(checks) -> frozenset:
     return frozenset(name for name, state in (checks or {}).items() if state == "ran")
 
 
-def _at(value: str) -> datetime | None:
+def _at(value: str) -> Optional[datetime]:
     try:
         return datetime.fromisoformat(value)
     except (TypeError, ValueError):
@@ -183,7 +183,7 @@ class Assessment:
     surprise_z: float = 0.0
 
 
-def comparable(runs: Sequence, signature: frozenset) -> list:
+def comparable(runs: Sequence, signature: frozenset) -> List:
     """Runs measured the same way as the current one, oldest first."""
     return [r for r in runs
             if _ran(r.checks) == signature and "scanned" in r.counts
@@ -204,7 +204,7 @@ def assess(runs: Sequence) -> Assessment:
         )
 
     kf = _Kalman1D()
-    previous: datetime | None = None
+    previous: Optional[datetime] = None
     z_score = 0.0
     density = 0.0
     for run in series:
@@ -229,13 +229,13 @@ def assess(runs: Sequence) -> Assessment:
     return Assessment(True, "", len(series), density, kf.rate, z_score)
 
 
-def derive(runs: Sequence, root_label: str = ".") -> list[Finding]:
+def derive(runs: Sequence, root_label: str = ".") -> List[Finding]:
     """Findings for a direction worth knowing about. Additive only."""
     result = assess(runs)
     if not result.assessed:
         return []
 
-    out: list[Finding] = []
+    out: List[Finding] = []
     evidence = Evidence(file=root_label)
     shared = {
         "comparable_runs": str(result.comparable_runs),

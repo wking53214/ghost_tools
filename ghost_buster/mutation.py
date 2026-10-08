@@ -42,9 +42,9 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from . import corpus
 from .schema import Category, Evidence, Finding, Layer, Severity, Status
@@ -80,8 +80,8 @@ class Candidate:
     line: int
     shape: str              # weak_assertion | unused_result | guarded_assertion | restated_set
     detail: str
-    targets: list[tuple[Path, str]] = field(default_factory=list)  # (file, qualified function name)
-    literal_values: list[str] = field(default_factory=list)          # restated_set only
+    targets: List[Tuple[Path, str]] = field(default_factory=list)  # (file, qualified function name)
+    literal_values: List[str] = field(default_factory=list)          # restated_set only
     guard_count: int = 0                                             # guarded_assertion only
     all_guarded: bool = False                                        # guarded_assertion: no assertion outside a guard
 
@@ -90,8 +90,8 @@ class Candidate:
 class Mutant:
     candidate: Candidate
     operator: str
-    target_file: Path | None
-    target_name: str | None
+    target_file: Optional[Path]
+    target_name: Optional[str]
     description: str
     outcome: str = "not_run"   # survived | killed | baseline_failed | error | not_run
     output_tail: str = ""
@@ -99,17 +99,17 @@ class Mutant:
 
 @dataclass
 class MutationRun:
-    candidates: list[Candidate] = field(default_factory=list)
-    mutants: list[Mutant] = field(default_factory=list)
-    unjudged: list[tuple[Candidate, str]] = field(default_factory=list)  # (candidate, reason)
-    findings: list[Finding] = field(default_factory=list)
+    candidates: List[Candidate] = field(default_factory=list)
+    mutants: List[Mutant] = field(default_factory=list)
+    unjudged: List[Tuple[Candidate, str]] = field(default_factory=list)  # (candidate, reason)
+    findings: List[Finding] = field(default_factory=list)
 
     @property
-    def survived(self) -> list[Mutant]:
+    def survived(self) -> List[Mutant]:
         return [m for m in self.mutants if m.outcome == "survived"]
 
     @property
-    def killed(self) -> list[Mutant]:
+    def killed(self) -> List[Mutant]:
         return [m for m in self.mutants if m.outcome == "killed"]
 
     def summary(self) -> str:
@@ -127,9 +127,9 @@ def _is_test_file(path: Path) -> bool:
     return name.endswith(".py") and (name.startswith("test_") or name.endswith("_test.py"))
 
 
-def _assert_nodes(func: ast.AST) -> list[ast.AST]:
+def _assert_nodes(func: ast.AST) -> List[ast.AST]:
     """`assert` statements plus unittest `self.assert*` / `self.fail` calls."""
-    found: list[ast.AST] = []
+    found: List[ast.AST] = []
     for n in ast.walk(func):
         if isinstance(n, ast.Assert):
             found.append(n)
@@ -180,41 +180,41 @@ def _is_weak(node: ast.AST) -> bool:
     return False
 
 
-def _asserts_under(stmts: list[ast.stmt]) -> list[ast.AST]:
+def _asserts_under(stmts: List[ast.stmt]) -> List[ast.AST]:
     return [a for stmt in stmts for a in ast.walk(stmt)
             if isinstance(a, ast.Assert) or (
                 isinstance(a, ast.Call) and isinstance(a.func, ast.Attribute)
                 and a.func.attr.startswith("assert"))]
 
 
-def _guarded_asserts(func: ast.FunctionDef) -> list[ast.If]:
+def _guarded_asserts(func: ast.FunctionDef) -> List[ast.If]:
     """`if` statements whose body asserts and whose else branch does not.
 
     An if/else that asserts on both sides is a branch, not a guard: one side
     or the other always runs. A bare `if` around an assertion is the shape
     that can silently never fire."""
-    guards: list[ast.If] = []
+    guards: List[ast.If] = []
     for n in ast.walk(func):
         if isinstance(n, ast.If) and _asserts_under(n.body) and not _asserts_under(n.orelse):
             guards.append(n)
     return guards
 
 
-def _assigned_then_unread(func: ast.FunctionDef) -> list[tuple[str, ast.Assign]]:
+def _assigned_then_unread(func: ast.FunctionDef) -> List[Tuple[str, ast.Assign]]:
     """Names bound from a call and never read afterwards in the function."""
-    assigned: dict[str, ast.Assign] = {}
+    assigned: Dict[str, ast.Assign] = {}
     for stmt in ast.walk(func):
         if isinstance(stmt, ast.Assign) and len(stmt.targets) == 1 \
                 and isinstance(stmt.targets[0], ast.Name) and isinstance(stmt.value, ast.Call):
             assigned[stmt.targets[0].id] = stmt
-    reads: dict[str, int] = {}
+    reads: Dict[str, int] = {}
     for n in ast.walk(func):
         if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load):
             reads[n.id] = reads.get(n.id, 0) + 1
     return [(name, stmt) for name, stmt in assigned.items() if reads.get(name, 0) == 0]
 
 
-def _literal_strings(node: ast.AST) -> list[str]:
+def _literal_strings(node: ast.AST) -> List[str]:
     """String constants of a list/set/tuple literal, looking through
     set(...)/sorted(...)/list(...)/frozenset(...) wrappers."""
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) \
@@ -227,12 +227,12 @@ def _literal_strings(node: ast.AST) -> list[str]:
     return []
 
 
-def _restated_literals(func: ast.FunctionDef) -> list[str]:
+def _restated_literals(func: ast.FunctionDef) -> List[str]:
     """A hand-written list of three or more strings that an assertion
     compares (==, <=, >=, in, issubset) against something derived: the
     restatement of a set the source already defines."""
     for a in _assert_nodes(func):
-        sides: list[ast.AST] = []
+        sides: List[ast.AST] = []
         if isinstance(a, ast.Assert):
             t = a.test
             if isinstance(t, ast.Compare) and len(t.ops) == 1 and isinstance(t.ops[0], (ast.Eq, ast.LtE, ast.GtE, ast.In, ast.NotIn)):
@@ -248,9 +248,9 @@ def _restated_literals(func: ast.FunctionDef) -> list[str]:
     return []
 
 
-def _import_map(module: ast.Module) -> dict[str, tuple[str, str | None]]:
+def _import_map(module: ast.Module) -> Dict[str, Tuple[str, Optional[str]]]:
     """local name -> (module path, attribute or None) for every import."""
-    out: dict[str, tuple[str, str | None]] = {}
+    out: Dict[str, Tuple[str, Optional[str]]] = {}
     for n in ast.walk(module):
         if isinstance(n, ast.Import):
             for alias in n.names:
@@ -261,7 +261,7 @@ def _import_map(module: ast.Module) -> dict[str, tuple[str, str | None]]:
     return out
 
 
-def _module_file(root: Path, dotted: str) -> Path | None:  # ghost_buster: name-disagreement -- `dotted` is `mod` at every call site
+def _module_file(root: Path, dotted: str) -> Optional[Path]:  # ghost_buster: name-disagreement -- `dotted` is `mod` at every call site
     rel = Path(*dotted.split("."))
     for candidate in (root / rel.with_suffix(".py"), root / rel / "__init__.py"):
         if candidate.exists():
@@ -281,7 +281,7 @@ def _function_in(file: Path, qualname: str) -> bool:
     return _find_function(tree, qualname) is not None
 
 
-def _find_function(tree: ast.Module, qualname: str) -> ast.AST | None:
+def _find_function(tree: ast.Module, qualname: str) -> Optional[ast.AST]:
     parts = qualname.split(".")
     scope: ast.AST = tree
     for i, part in enumerate(parts):
@@ -296,7 +296,7 @@ def _find_function(tree: ast.Module, qualname: str) -> ast.AST | None:
     return scope if isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)) else None
 
 
-def _class_methods(tree: ast.Module, class_name: str) -> list[str]:
+def _class_methods(tree: ast.Module, class_name: str) -> List[str]:
     for n in ast.iter_child_nodes(tree):
         if isinstance(n, ast.ClassDef) and n.name == class_name:
             return [m.name for m in n.body if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef))
@@ -304,10 +304,10 @@ def _class_methods(tree: ast.Module, class_name: str) -> list[str]:
     return []
 
 
-def _resolve_targets(root: Path, test_file: Path, module: ast.Module, func: ast.FunctionDef) -> list[tuple[Path, str]]:
+def _resolve_targets(root: Path, test_file: Path, module: ast.Module, func: ast.FunctionDef) -> List[Tuple[Path, str]]:
     """Project functions the test calls, best effort, via the test file's imports."""
     imports = _import_map(module)
-    targets: list[tuple[Path, str]] = []
+    targets: List[Tuple[Path, str]] = []
     seen = set()
 
     def add(file: Path, qual: str):
@@ -317,7 +317,7 @@ def _resolve_targets(root: Path, test_file: Path, module: ast.Module, func: ast.
             targets.append(key)
 
     # names bound to constructed instances: x = Cls(...); later x.method(...)
-    instance_of: dict[str, str] = {}
+    instance_of: Dict[str, str] = {}
     for n in ast.walk(func):
         if isinstance(n, ast.Assign) and isinstance(n.value, ast.Call) and isinstance(n.value.func, ast.Name) \
                 and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name):
@@ -368,16 +368,16 @@ def _resolve_targets(root: Path, test_file: Path, module: ast.Module, func: ast.
     return targets
 
 
-def _safe_parse(path: Path) -> ast.Module | None:
+def _safe_parse(path: Path) -> Optional[ast.Module]:
     """An UNCACHED tree. This module mutates what it parses -- `drop_body`
     replaces a function body with `pass` in place -- so it must never
     receive the tree every other detector shares."""
     return corpus.fresh(path)
 
 
-def find_candidates(root: Path, files: Iterable[Path]) -> list[Candidate]:
+def find_candidates(root: Path, files: Iterable[Path]) -> List[Candidate]:
     root = Path(root)
-    out: list[Candidate] = []
+    out: List[Candidate] = []
     for path in files:
         path = Path(path)
         if not _is_test_file(path):
@@ -449,7 +449,7 @@ class _BumpConstants(ast.NodeTransformer):
         return ast.copy_location(ast.Constant(value=node.value + 100), node)
 
 
-def _mutate_function(tree: ast.Module, qualname: str, operator: str) -> tuple[bool, str]:
+def _mutate_function(tree: ast.Module, qualname: str, operator: str) -> Tuple[bool, str]:
     func = _find_function(tree, qualname)
     if func is None:
         return False, "function not found"
@@ -476,7 +476,7 @@ def _mutate_function(tree: ast.Module, qualname: str, operator: str) -> tuple[bo
 GUARD_MARKER = "ghost_buster: guarded assertions never ran"
 
 
-def _instrument_guard(tree: ast.Module, test_qual: str, guard_index: int) -> tuple[bool, str]:
+def _instrument_guard(tree: ast.Module, test_qual: str, guard_index: int) -> Tuple[bool, str]:
     """Record whether the guarded branch ever runs, and fail the test at the
     end if it never did.
 
@@ -505,7 +505,7 @@ def _instrument_guard(tree: ast.Module, test_qual: str, guard_index: int) -> tup
     return True, f"`if` guard at line {guard.lineno} instrumented; the test now fails if its assertions never run"
 
 
-def _extend_enum(tree: ast.Module, values: Sequence[str]) -> tuple[bool, str]:
+def _extend_enum(tree: ast.Module, values: Sequence[str]) -> Tuple[bool, str]:
     """Append a member to an Enum (or a module-level list/set/tuple) whose
     string members contain every restated value."""
     wanted = set(values)
@@ -529,7 +529,7 @@ def _extend_enum(tree: ast.Module, values: Sequence[str]) -> tuple[bool, str]:
     return False, "no enum or literal collection defines exactly these values"
 
 
-def _find_defining_file(root: Path, files: Iterable[Path], values: Sequence[str]) -> Path | None:
+def _find_defining_file(root: Path, files: Iterable[Path], values: Sequence[str]) -> Optional[Path]:
     wanted = set(values)
     for path in files:
         path = Path(path)
@@ -579,7 +579,7 @@ class _Scratch:
         shutil.rmtree(self.tmp, ignore_errors=True)
 
 
-def _run_test(scratch: _Scratch, candidate: Candidate, timeout: float) -> tuple[str, str]:
+def _run_test(scratch: _Scratch, candidate: Candidate, timeout: float) -> Tuple[str, str]:
     """Run one test in the scratch copy. Returns (outcome, output tail)."""
     rel = Path(candidate.test_file).resolve().relative_to(scratch.root)
     node_id = f"{rel.as_posix()}::{candidate.test_name}"
@@ -613,7 +613,7 @@ def run_mutations(
     timeout: float = 120.0,
     operators: Sequence[str] = ("drop_body", "return_none", "flip_compare", "bump_constants"),
     link_siblings: bool = True,
-    only: str | None = None,
+    only: Optional[str] = None,
 ) -> MutationRun:
     """Find candidates, mutate what they call, keep what survived.
 
@@ -629,7 +629,7 @@ def run_mutations(
 
     scratch = _Scratch(root, link_siblings=link_siblings)
     try:
-        baseline_cache: dict[tuple[Path, str], tuple[str, str]] = {}
+        baseline_cache: Dict[Tuple[Path, str], Tuple[str, str]] = {}
         for cand in run.candidates:
             key = (cand.test_file, cand.test_name)
             if key not in baseline_cache:
@@ -691,8 +691,8 @@ def run_mutations(
     return run
 
 
-def _plan_mutants(cand: Candidate, root: Path, files: list[Path], operators: Sequence[str], cap: int) -> list[Mutant]:  # ghost_buster: name-disagreement -- `cap` is `max_mutants_per_candidate` at every call site
-    plans: list[Mutant] = []
+def _plan_mutants(cand: Candidate, root: Path, files: List[Path], operators: Sequence[str], cap: int) -> List[Mutant]:  # ghost_buster: name-disagreement -- `cap` is `max_mutants_per_candidate` at every call site
+    plans: List[Mutant] = []
     if cand.shape == "guarded_assertion":
         for index in range(cand.guard_count):
             plans.append(Mutant(cand, f"guard_never_taken:{index}", None, None, ""))
@@ -710,7 +710,7 @@ def _plan_mutants(cand: Candidate, root: Path, files: list[Path], operators: Seq
     return plans
 
 
-def _apply(mutant: Mutant, tree: ast.Module) -> tuple[bool, str]:
+def _apply(mutant: Mutant, tree: ast.Module) -> Tuple[bool, str]:
     if mutant.operator.startswith("guard_never_taken:"):
         return _instrument_guard(tree, mutant.candidate.test_name, int(mutant.operator.split(":")[1]))
     if mutant.operator == "extend_set":

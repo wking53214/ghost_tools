@@ -12,10 +12,7 @@ from pathlib import Path
 import pytest
 
 from ghost_buster.mutation import (
-    Candidate,
-    find_candidates,
-    render_run,
-    run_mutations,
+    Candidate, find_candidates, render_run, run_mutations,
 )
 from ghost_buster.schema import Category, Severity, Status
 
@@ -274,7 +271,6 @@ def test_weak():
 @pytest.mark.parametrize("operator", ["drop_body", "return_none", "flip_compare", "bump_constants"])
 def test_each_operator_changes_the_function(operator):
     import ast
-
     from ghost_buster.mutation import _mutate_function
     tree = ast.parse("def f(x, limit=3):\n    if x >= limit:\n        return x\n    return 0\n")
     applied, description = _mutate_function(tree, "f", operator)

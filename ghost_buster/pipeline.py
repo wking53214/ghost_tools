@@ -26,69 +26,38 @@ about arguments, the baseline diff, the report and the exit status.
 from __future__ import annotations
 
 import sys
-from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable, Dict, Iterable, List, Optional
 
-from . import __version__, attest
+from . import attest
+from . import __version__
 from .boundary import (
-    build_joined_model,
-    render_single_repo_notice,
-)
-from .boundary import (
-    derive_findings as derive_boundary_findings,
-)
-from .boundary import (
-    render_report as render_boundary_report,
+    build_joined_model, derive_findings as derive_boundary_findings,
+    render_report as render_boundary_report, render_single_repo_notice,
 )
 from .branches import scan as scan_branches
 from .correlate import (
-    load_prior_run,
-    run_connectors,
+    load_prior_run, render_report as render_correlation_report, run_connectors,
 )
-from .correlate import (
-    render_report as render_correlation_report,
-)
-from .kernel import check_kernel
-from .kernel import render_report as render_kernel_report
+from .kernel import check_kernel, render_report as render_kernel_report
 from .ledger import (
-    COULD_NOT_RUN,
-    DECLINED,
-    NOT_APPLICABLE,
-    NOT_RUN,
-    RAN,
-    Ledger,
-    LedgerError,
-    _head_commit,
-)
-from .ledger import (
-    render_report as render_ledger_report,
+    COULD_NOT_RUN, DECLINED, Ledger, LedgerError, NOT_APPLICABLE, NOT_RUN, RAN,
+    _head_commit, render_report as render_ledger_report,
 )
 from .mechanical import run_all
 from .mutation import run_mutations
-from .project import render_report as render_project_report
-from .project import scan as scan_project
+from .project import render_report as render_project_report, scan as scan_project
 from .schema import Finding, disambiguate_ids
-from .secrets import render_report as render_secrets_report
-from .secrets import scan as scan_secrets
+from .secrets import render_report as render_secrets_report, scan as scan_secrets
 from .speed import Profile
 from .structure import (
-    build_model,
-    render_model,
-)
-from .structure import (
-    derive_findings as derive_structure_findings,
-)
-from .structure import (
+    build_model, render_model, derive_findings as derive_structure_findings,
     render_report as render_structure_report,
 )
-from .testsuite import render_report as render_test_report
-from .testsuite import scan as scan_tests
+from .testsuite import render_report as render_test_report, scan as scan_tests
 from .trajectory import (
-    derive as trajectory_derive,
-)
-from .trajectory import (
-    render_report as render_trajectory_report,
+    derive as trajectory_derive, render_report as render_trajectory_report,
 )
 from .trust import declined_receipt
 
@@ -108,10 +77,10 @@ def to_stderr(message: str) -> None:
 @dataclass
 class Evidence:
     """Everything the scan established, and the record of what it ran."""
-    files: list[Path] = field(default_factory=list)
-    findings: list[Finding] = field(default_factory=list)
-    checks: dict[str, str] = field(default_factory=dict)
-    baseline_path: Path | None = None
+    files: List[Path] = field(default_factory=list)
+    findings: List[Finding] = field(default_factory=list)
+    checks: Dict[str, str] = field(default_factory=dict)
+    baseline_path: Optional[Path] = None
     test_report: object = None
     mutation_run: object = None
     profile: object = None
@@ -134,7 +103,7 @@ _EXCLUDED_DIRS = frozenset({
 })
 
 
-def _collect_files(root: Path, extra_excludes: Iterable[str] = ()) -> list[Path]:
+def _collect_files(root: Path, extra_excludes: Iterable[str] = ()) -> List[Path]:
     """.py for every code detector, plus .md so doc_test_count_drift (v0.3)
     has something to read -- every other detector calls _parse() on
     whatever it's handed, which fails closed (returns None, gets skipped)
@@ -163,8 +132,8 @@ def _collect_files(root: Path, extra_excludes: Iterable[str] = ()) -> list[Path]
     #
     # A finding has to name the path whose history will show the change.
     # Nothing else here moves for a repository with no symlinks in it.
-    seen_real: dict[Path, int] = {}
-    out: list[Path] = []
+    seen_real: Dict[Path, int] = {}
+    out: List[Path] = []
     for p in sorted(list(root.rglob("*.py")) + list(root.rglob("*.md"))):
         if not excluded.isdisjoint(p.parts) or p.name.startswith("."):
             continue
@@ -182,7 +151,7 @@ def _collect_files(root: Path, extra_excludes: Iterable[str] = ()) -> list[Path]
 
 
 
-def _resolve_join_mode(args, files, say=to_stderr) -> list[Path]:
+def _resolve_join_mode(args, files, say=to_stderr) -> List[Path]:
     """Joined or single, and never by silently assuming.
 
     --join says so outright. --single-repo says so outright. With neither,
@@ -242,7 +211,7 @@ def _state(report) -> str:
 
 
 
-def _run_repository_checks(args, findings: list[Finding], checks: dict, say):
+def _run_repository_checks(args, findings: List[Finding], checks: dict, say):
     """The three checks that take a repository rather than a file list:
     --branches, --tests, --secrets. All three are ON by default; each
     appends to `findings` and prints its own one-line report to stderr,

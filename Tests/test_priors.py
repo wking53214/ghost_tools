@@ -3,7 +3,7 @@ the decision held (ghost_buster/priors.py)."""
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from ghost_buster.casefile import Case, Casefile
@@ -13,7 +13,7 @@ from ghost_buster.schema import Category, Evidence, Finding, Layer, Severity, St
 
 
 def _t(days: int) -> str:
-    return (datetime(2026, 9, 1, tzinfo=UTC) + timedelta(days=days)).isoformat()
+    return (datetime(2026, 9, 1, tzinfo=timezone.utc) + timedelta(days=days)).isoformat()
 
 
 def _casefile(tmp_path: Path, cases) -> Casefile:

@@ -7,7 +7,6 @@ whose elements flow into the next call's typed parameters.
 """
 from __future__ import annotations
 
-import ast
 import json
 import textwrap
 from pathlib import Path
@@ -16,6 +15,7 @@ from blackhole_extrapolator import EvidenceKind, scan
 from blackhole_extrapolator.cli import main
 from blackhole_extrapolator.extrapolate import extrapolate, group_by_target
 from blackhole_extrapolator.rename import signatures_from_debris, signatures_from_tree
+import ast
 
 KAREN = '''
 from typing import Any, Dict, List, Tuple

@@ -17,18 +17,15 @@ import json
 import sys
 from collections import Counter
 from pathlib import Path
+from typing import List
 
-from .corpus import RootKind, classify_root
 from .detect import _declared_dependencies, false_absence_hints, scan
-from .extrapolate import extrapolate, group_by_target
+from .corpus import RootKind, classify_root
 from .reconstruct import reconstruct, write_proposal
 from .recover import (
-    Corpus,
-    harvest,
-    recover,
-    write_manifest,
-    write_recovery,
+    Corpus, harvest, recover, write_manifest, write_recovery,
 )
+from .extrapolate import extrapolate, group_by_target
 from .schema import NON_SEEDING_KINDS, EvidenceKind, VoidKind
 
 _SKIP_DIRS = {".git", "__pycache__", "site-packages", ".venv", "venv",
@@ -52,7 +49,7 @@ def _kind_for(evidence) -> VoidKind:
     return VoidKind.NEVER_BUILT
 
 
-def main(argv: list[str] = None) -> int:
+def main(argv: List[str] = None) -> int:
     parser = argparse.ArgumentParser(
         prog="blackhole_extrapolator",
         description="Infer the shape of missing code from what surrounds it.",
@@ -136,7 +133,7 @@ def _payload(voids, wiring, evidence, args):
     return [v.as_dict() for v in voids]
 
 
-def _analyse(root: Path, siblings: list[Path], args):
+def _analyse(root: Path, siblings: List[Path], args):
     """(voids, wiring, non-wiring evidence) for one tree."""
     evidence = [
         item for item in scan(root, siblings)
@@ -204,7 +201,7 @@ def _reconstruct_flattened(root: Path, into: Path) -> int:
     return 0
 
 
-def _flattened(root: Path) -> list[Path]:
+def _flattened(root: Path) -> List[Path]:
     """Every flattened file under `root`. One definition, used by both the
     reconstruct pass and the recover pass, so the two can never disagree
     about what they are looking at."""
@@ -220,7 +217,7 @@ def _flattened(root: Path) -> list[Path]:
     return out
 
 
-def _recover_flattened(root: Path, corpora: list[Path], into: Path) -> int:
+def _recover_flattened(root: Path, corpora: List[Path], into: Path) -> int:
     """Recover the ORIGINAL of each flattened file from a history corpus.
 
     Reported separately from reconstruction and never mixed with it. A
@@ -277,7 +274,7 @@ def _recover_flattened(root: Path, corpora: list[Path], into: Path) -> int:
     return 0
 
 
-def _report(root: Path, siblings: list[Path], args) -> int:
+def _report(root: Path, siblings: List[Path], args) -> int:
     voids, wiring, evidence, classification = _analyse(root, siblings, args)
     if classification.is_archive:
         return _report_archive(classification, voids, evidence, args)

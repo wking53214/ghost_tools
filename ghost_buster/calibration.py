@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 from functools import lru_cache
 from pathlib import Path
+from typing import Dict
 
 PATH = Path(__file__).with_name("calibration.json")
 
@@ -52,7 +53,7 @@ def reproducible(record: dict) -> bool:
 
 
 @lru_cache(maxsize=1)
-def records() -> dict[str, dict]:
+def records() -> Dict[str, dict]:
     data = json.loads(PATH.read_text(encoding="utf-8"))
     return {r["name"]: r for r in data["records"]}
 

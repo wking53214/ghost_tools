@@ -16,11 +16,7 @@ from ghost_buster.cli import main
 from ghost_buster.pipeline import _collect_files
 from ghost_buster.schema import Severity
 from ghost_buster.structure import (
-    build_model,
-    derive_findings,
-    render_model,
-    render_report,
-    requirement_name,
+    build_model, derive_findings, render_model, render_report, requirement_name,
 )
 
 PYPROJECT = '''[project]

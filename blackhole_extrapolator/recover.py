@@ -67,9 +67,9 @@ import ast
 import html
 import json
 import re
-from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Iterable, Iterator, List, Sequence, Tuple
 
 IDENTICAL = "identical"
 CONTAINED = "contained"
@@ -93,7 +93,7 @@ RELATED_OVERLAP = 0.40
 # anything, since the whole point is that the original had them.
 MINIMUM_LINES = 3
 _PYTHONISH = ("def ", "class ", "import ")
-_FENCE = re.compile(r"```[A-Za-z]*\n(.*?)```", re.DOTALL)
+_FENCE = re.compile(r"```[A-Za-z]*\n(.*?)```", re.S)
 # An HTML-rendered corpus stores `"""` as `&quot;&quot;&quot;`, which no
 # amount of whitespace normalisation will turn back into a match. Decoding is
 # lossless and unambiguous, and it only ADDS a candidate -- the raw form is
@@ -122,7 +122,7 @@ def collapse(text: str) -> str:
     return _WHITESPACE.sub(" ", text).strip()
 
 
-def collapse_with_index(text: str) -> tuple[str, list[int]]:
+def collapse_with_index(text: str) -> Tuple[str, List[int]]:
     """`collapse(text)`, plus the position in `text` of each character in it.
 
     The index is what makes `contained` a recovery rather than another
@@ -130,8 +130,8 @@ def collapse_with_index(text: str) -> tuple[str, list[int]]:
     original's own bytes, whitespace and all, instead of being rebuilt from
     the collapsed copy.
     """
-    out: list[str] = []
-    index: list[int] = []
+    out: List[str] = []
+    index: List[int] = []
     after_space = True
     for position, character in enumerate(text):
         if character.isspace():
@@ -162,7 +162,7 @@ def parses(text: str) -> bool:
         return False
 
 
-def repair(text: str) -> tuple[str, tuple[str, ...]]:
+def repair(text: str) -> Tuple[str, Tuple[str, ...]]:
     """Substitutions applied ONLY when they turn a file that does not parse
     into one that does.
 
@@ -202,7 +202,7 @@ class Recovery:
     origin: str = ""
     label: str = ""
     overlap: float = 0.0
-    repairs: tuple[str, ...] = ()
+    repairs: Tuple[str, ...] = ()
 
     @property
     def parses(self) -> bool:
@@ -264,13 +264,13 @@ def _candidates(text: str) -> Iterator[str]:
                 yield block
 
 
-def harvest(paths: Sequence[Path]) -> list[Source]:
+def harvest(paths: Sequence[Path]) -> List[Source]:
     """Every candidate original under `paths`.
 
     Reads .json and .jsonl as data and everything else as text, so a
     directory of exported transcripts works as well as a raw export.
     """
-    sources: list[Source] = []
+    sources: List[Source] = []
     seen: set = set()
     for path in _files(paths):
         try:
@@ -359,7 +359,7 @@ class Corpus:
             return Recovery(path=path, verdict=NONE)
 
         wanted = identifiers(flattened)
-        contained: tuple[Source, int] | None = None
+        contained: Tuple[Source, int] | None = None
         best_score, best_source = 0.0, None
 
         for source, collapsed, ids in self.entries:
@@ -420,9 +420,9 @@ def recover_one(path: Path, flattened: str, sources: Sequence[Source]) -> Recove
     return Corpus(sources).match(Path(path), flattened)
 
 
-def recover(files: Iterable[Path], sources: Sequence[Source] | Corpus) -> list[Recovery]:
+def recover(files: Iterable[Path], sources: Sequence[Source] | Corpus) -> List[Recovery]:
     corpus = sources if isinstance(sources, Corpus) else Corpus(sources)
-    out: list[Recovery] = []
+    out: List[Recovery] = []
     for path in files:
         try:
             text = Path(path).read_text(errors="replace")

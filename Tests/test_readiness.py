@@ -148,8 +148,8 @@ def test_retirement_never_reaches_an_established_credential():
 def test_the_cli_reads_retirements_from_the_case_file(tmp_path, capsys, monkeypatch):
     """End to end: a candidate the case file dismissed shows as retired in
     the readiness the plain report prints."""
-    from ghost_buster.casefile import Case, Casefile
     from ghost_buster.cli import main
+    from ghost_buster.casefile import Case, Casefile
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "m.py").write_text("x = 1\n")

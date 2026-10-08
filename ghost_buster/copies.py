@@ -64,9 +64,9 @@ from __future__ import annotations
 import ast
 import hashlib
 from collections import defaultdict
-from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Dict, List, Sequence, Tuple
 
 from . import corpus
 from .schema import Category, Evidence, Finding, Layer, Severity, Status
@@ -94,7 +94,7 @@ def _structure(node: ast.AST) -> str:
     ).hexdigest()
 
 
-def _definitions(path: Path) -> dict[str, str] | None:
+def _definitions(path: Path) -> Dict[str, str] | None:
     tree = corpus.parse(path)
     if tree is None:
         return None
@@ -106,9 +106,9 @@ def _definitions(path: Path) -> dict[str, str] | None:
 class Copies:
     """One group of files defining the same names, and where they disagree."""
 
-    paths: tuple[Path, ...]
-    agreed: tuple[str, ...]
-    differing: tuple[str, ...]
+    paths: Tuple[Path, ...]
+    agreed: Tuple[str, ...]
+    differing: Tuple[str, ...]
 
     @property
     def has_drifted(self) -> bool:
@@ -119,17 +119,17 @@ class Copies:
         return len(self.agreed) + len(self.differing)
 
 
-def find_copies(files: Sequence[Path]) -> list[Copies]:
+def find_copies(files: Sequence[Path]) -> List[Copies]:
     """Groups of files sharing a full top-level name set, byte-identical
     groups excluded."""
-    by_names: dict[frozenset, list[tuple[Path, dict[str, str]]]] = defaultdict(list)
+    by_names: Dict[frozenset, List[Tuple[Path, Dict[str, str]]]] = defaultdict(list)
     for path in (Path(f) for f in files):
         definitions = _definitions(path)
         if definitions is None or len(definitions) < MINIMUM_DEFINITIONS:
             continue
         by_names[frozenset(definitions)].append((path, definitions))
 
-    out: list[Copies] = []
+    out: List[Copies] = []
     for names, members in by_names.items():
         if len(members) < 2:
             continue
@@ -154,8 +154,8 @@ def _file_digest(path: Path) -> str:
         return "unreadable:" + str(path)
 
 
-def detect_drifted_copies(files: Sequence[Path]) -> list[Finding]:
-    findings: list[Finding] = []
+def detect_drifted_copies(files: Sequence[Path]) -> List[Finding]:
+    findings: List[Finding] = []
     for group in find_copies(files):
         drifted = group.has_drifted
         shown = ", ".join(f"`{n}`" for n in group.differing[:SHOWN])

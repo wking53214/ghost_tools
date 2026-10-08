@@ -28,6 +28,7 @@ from __future__ import annotations
 import json
 from collections import defaultdict
 from dataclasses import dataclass, field
+from typing import Dict, List, Optional
 
 from .casefile import Casefile
 from .ledger import Ledger
@@ -41,20 +42,20 @@ UNKNOWN = "unknown"      # no finding id, or the ledger has never seen it
 @dataclass
 class DetectorPriors:
     detector: str
-    outcomes: dict[str, int] = field(default_factory=dict)    # real/false/healed/exposed/broke/declined
-    verdicts: dict[str, int] = field(default_factory=dict)    # held/open/returned/revisited/unknown
-    notes: list[str] = field(default_factory=list)            # the most recent reasons, newest first
+    outcomes: Dict[str, int] = field(default_factory=dict)    # real/false/healed/exposed/broke/declined
+    verdicts: Dict[str, int] = field(default_factory=dict)    # held/open/returned/revisited/unknown
+    notes: List[str] = field(default_factory=list)            # the most recent reasons, newest first
 
     @property
     def decided(self) -> int:
         return self.outcomes.get("real", 0) + self.outcomes.get("false", 0)
 
     @property
-    def false_rate(self) -> float | None:
+    def false_rate(self) -> Optional[float]:
         return self.outcomes.get("false", 0) / self.decided if self.decided else None
 
     @property
-    def hold_rate(self) -> float | None:
+    def hold_rate(self) -> Optional[float]:
         judged = sum(n for k, n in self.verdicts.items() if k != UNKNOWN)
         return self.verdicts.get(HELD, 0) / judged if judged else None
 
@@ -64,7 +65,7 @@ class DetectorPriors:
                 "notes": list(self.notes)}
 
 
-def _verdict(case, later_cases, ledger: Ledger | None) -> str:  # ghost_buster: name-disagreement -- `later_cases` is `later` at every call site
+def _verdict(case, later_cases, ledger: Optional[Ledger]) -> str:  # ghost_buster: name-disagreement -- `later_cases` is `later` at every call site
     """Did this decision hold? See the module docstring."""
     if not case.finding_id or not case.decision:
         return UNKNOWN
@@ -83,9 +84,9 @@ def _verdict(case, later_cases, ledger: Ledger | None) -> str:  # ghost_buster: 
     return HELD if hist.absent_last_run else OPEN
 
 
-def build(casefile: Casefile, ledger: Ledger | None) -> list[DetectorPriors]:
-    by_detector: dict[str, DetectorPriors] = {}
-    by_finding: dict[str, list] = defaultdict(list)
+def build(casefile: Casefile, ledger: Optional[Ledger]) -> List[DetectorPriors]:
+    by_detector: Dict[str, DetectorPriors] = {}
+    by_finding: Dict[str, list] = defaultdict(list)
     for c in casefile.cases:
         if c.finding_id:
             by_finding[c.finding_id].append(c)
@@ -103,7 +104,7 @@ def build(casefile: Casefile, ledger: Ledger | None) -> list[DetectorPriors]:
     return sorted(by_detector.values(), key=lambda r: (-r.decided, r.detector))
 
 
-def render(rows: list[DetectorPriors], casefile_path, ledger_path) -> str:
+def render(rows: List[DetectorPriors], casefile_path, ledger_path) -> str:
     out = [f"PRIORS  {casefile_path}" + (f"  with {ledger_path}" if ledger_path else "  (no ledger: fixes cannot be judged)")]
     if not rows:
         out.append("  no decisions recorded yet: ghost-triage FINDINGS --casefile records them")
@@ -123,5 +124,5 @@ def render(rows: list[DetectorPriors], casefile_path, ledger_path) -> str:
     return "\n".join(out)
 
 
-def to_json(rows: list[DetectorPriors]) -> str:
+def to_json(rows: List[DetectorPriors]) -> str:
     return json.dumps([r.to_dict() for r in rows], indent=2)

@@ -57,6 +57,7 @@ import ast
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import List
 
 # A newline became a single space and the indentation after it survived, so
 # a run of one-plus-4n spaces is a break followed by its indent. Anchored on
@@ -82,7 +83,7 @@ class Reconstruction:
     text: str
     lines: int
     parses: bool
-    passes: list[str]
+    passes: List[str]
     source: str
 
     @property

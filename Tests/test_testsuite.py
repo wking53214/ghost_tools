@@ -18,14 +18,8 @@ import pytest
 
 from ghost_buster.cli import main
 from ghost_buster.schema import Category, Severity, Status
-from ghost_buster.testsuite import (
-    _index_local_modules,
-    classify_dependency,
-    flaky_tests,
-    render_report,
-    rerun_summary,
-    scan,
-)
+from ghost_buster.testsuite import (_index_local_modules, classify_dependency, flaky_tests,
+                                    render_report, rerun_summary, scan)
 
 STALE_ENV = "GHOST_STALE_ENV_PROBE"
 ABSENT_ENV = "GHOST_ABSENT_ENV_PROBE"

@@ -29,8 +29,8 @@ from __future__ import annotations
 import ast
 import re
 from collections import defaultdict
-from collections.abc import Iterable, Sequence
 from pathlib import Path
+from typing import Iterable, Sequence
 
 from .schema import Anchor, EvidenceKind, NegativeEvidence, Void, VoidKind
 
@@ -104,7 +104,8 @@ def _recovered_from_debris(evidence: Iterable[NegativeEvidence]) -> list[str]:
             text = line.strip()
             if not text or text.startswith("companion "):
                 continue
-            text = text.removeprefix("class ")
+            if text.startswith("class "):
+                text = text[len("class "):]
             if text not in out:
                 out.append(text)
     return out

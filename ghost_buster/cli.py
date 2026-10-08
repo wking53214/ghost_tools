@@ -15,22 +15,23 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import List, Optional, Dict
 
-from . import attest, readiness, version_string
-from .archive import marked as archive_marked
+from . import version_string
+from . import attest
 from .baseline import Baseline
-from .casefile import Casefile, Prior
+from .trust import check as trust_check, grant as trust_grant
+from .archive import marked as archive_marked
+from .priors import build as build_priors, render as render_priors, to_json as priors_json
 from .ledger import (
     Ledger,
 )
+from . import readiness
+from .casefile import Casefile, Prior
 from .mutation import render_run
-from .pipeline import Stop, gather
-from .priors import build as build_priors
-from .priors import render as render_priors
-from .priors import to_json as priors_json
 from .schema import Finding, FindingSet, Severity
-from .trust import check as trust_check
-from .trust import grant as trust_grant
+from .pipeline import Stop, gather
+
 
 # Directory names never descended into. `site-packages` is the load-bearing
 # one: it catches an installed-package tree regardless of what the enclosing
@@ -41,8 +42,8 @@ from .trust import grant as trust_grant
 # of a path, so a nested occurrence is still excluded.
 
 
-def _print_report(new: list[Finding], known: list[Finding],
-                  priors: dict[str, Prior] | None = None) -> None:
+def _print_report(new: List[Finding], known: List[Finding],
+                  priors: Optional[Dict[str, Prior]] = None) -> None:
     order = {Severity.CRITICAL: 0, Severity.MAJOR: 1, Severity.MINOR: 2, Severity.INFORMATIONAL: 3}
     new_sorted = sorted(new, key=lambda f: order[f.severity])
 
@@ -317,7 +318,7 @@ def _present(args, evidence, new, known, priors, archive, casefile_path) -> None
         print(render_run(evidence.mutation_run, verbose=args.mutate_verbose))
 
 
-def _note_stale_baseline(baseline, findings) -> list[Finding]:
+def _note_stale_baseline(baseline, findings) -> List[Finding]:
     """The receipt line and the finding, for baseline entries that matched
     nothing. Both, because they reach different readers: the line is on the
     same channel as every other check's receipt, and the finding is what a
@@ -420,7 +421,7 @@ def _handle_dispatch_modes(args) -> int:
     return None
 
 
-def main(argv: list[str] = None) -> int:
+def main(argv: List[str] = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
 

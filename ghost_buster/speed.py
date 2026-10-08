@@ -37,9 +37,9 @@ from __future__ import annotations
 
 import ast
 from collections import Counter
-from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Dict, List, Optional, Sequence, Set
 
 from . import corpus
 from .naming import is_test_path
@@ -62,11 +62,11 @@ _COMPS = (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
 _LOOPS = (ast.For, ast.While) + _COMPS
 
 
-def _names(node: ast.AST) -> set[str]:
+def _names(node: ast.AST) -> Set[str]:
     return {n.id for n in ast.walk(node) if isinstance(n, ast.Name)}
 
 
-def _variant_in(loop: ast.AST) -> set[str]:
+def _variant_in(loop: ast.AST) -> Set[str]:
     """Every name that can change from one iteration to the next.
 
     Not just the loop target. The first version checked only the target,
@@ -75,7 +75,7 @@ def _variant_in(loop: ast.AST) -> set[str]:
     _parse(path)` -- `tree` is bound in the body, so it varies. Anything
     STORED anywhere inside the loop varies, and so does every
     comprehension target."""
-    out: set[str] = set()
+    out: Set[str] = set()
     for n in ast.walk(loop):
         if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store):
             out.add(n.id)
@@ -84,13 +84,13 @@ def _variant_in(loop: ast.AST) -> set[str]:
     return out
 
 
-def _iterated(loop: ast.AST) -> list[ast.AST]:
+def _iterated(loop: ast.AST) -> List[ast.AST]:
     """The statements or expressions evaluated once per iteration. A
     comprehension has no `.body`; its per-iteration work is the element and
     the filters, and the FIRST iterable is evaluated once, not per pass."""
     if isinstance(loop, (ast.For, ast.While)):
         return list(loop.body)
-    parts: list[ast.AST] = [loop.key, loop.value] if isinstance(loop, ast.DictComp) else [loop.elt]
+    parts: List[ast.AST] = [loop.key, loop.value] if isinstance(loop, ast.DictComp) else [loop.elt]
     for gen in loop.generators:
         parts.extend(gen.ifs)
     for gen in loop.generators[1:]:
@@ -113,11 +113,11 @@ class Pitstop:
 _SMALL_LITERAL = 8
 
 
-def _list_literals_bound(tree: ast.Module) -> dict[str, int]:
+def _list_literals_bound(tree: ast.Module) -> Dict[str, int]:
     """Names bound to a list or tuple literal at module level, with the
     literal's length. The one case where the tree KNOWS the container is a
     list and not something a set would break, and knows how long it is."""
-    out: dict[str, int] = {}
+    out: Dict[str, int] = {}
     for node in tree.body:
         if isinstance(node, ast.Assign) and isinstance(node.value, (ast.List, ast.Tuple)):
             for t in node.targets:
@@ -126,7 +126,7 @@ def _list_literals_bound(tree: ast.Module) -> dict[str, int]:
     return out
 
 
-def _may_change(loop_parts: list[ast.AST], call: ast.Call) -> bool:
+def _may_change(loop_parts: List[ast.AST], call: ast.Call) -> bool:
     """Could something else in this loop change what `call`'s arguments
     refer to between iterations? The tree cannot see side effects, so it
     looks for the shapes that usually carry them, and abstains on any:
@@ -169,11 +169,11 @@ def _may_change(loop_parts: list[ast.AST], call: ast.Call) -> bool:
     return False
 
 
-def _memoised(loop_parts: list[ast.AST]) -> set[int]:
+def _memoised(loop_parts: List[ast.AST]) -> Set[int]:
     """Calls that run once per loop, not once per pass: the value of
     `x = f(...)` inside `if x is None:` or `if not x:`. A memo is the
     hoist already done, lazily; reporting it asks for what is there."""
-    out: set[int] = set()
+    out: Set[int] = set()
     for part in loop_parts:
         for node in ast.walk(part):
             if not isinstance(node, ast.If):
@@ -197,7 +197,7 @@ def _memoised(loop_parts: list[ast.AST]) -> set[int]:
     return out
 
 
-def _filled_each_pass(loop_parts: list[ast.AST]) -> set[int]:
+def _filled_each_pass(loop_parts: List[ast.AST]) -> Set[int]:
     """Calls whose result is a fresh accumulator: `x = f(...)` inside the
     loop, with `x` then filled in the same loop -- an item stored under it
     (`x[k] = v`, `x[k].add(v)`, `x[k] += 1`), a method called on it, or an
@@ -206,7 +206,7 @@ def _filled_each_pass(loop_parts: list[ast.AST]) -> set[int]:
     reported two `defaultdict(set)` constructions this way; a
     `defaultdict` whose argument never changes is still built for its
     contents, and the contents change every pass."""
-    out: set[int] = set()
+    out: Set[int] = set()
     for part in loop_parts:
         for node in ast.walk(part):
             if not (isinstance(node, ast.Assign) and isinstance(node.value, ast.Call)):
@@ -217,7 +217,7 @@ def _filled_each_pass(loop_parts: list[ast.AST]) -> set[int]:
     return out
 
 
-def _filled(loop_parts: list[ast.AST], names: set[str]) -> bool:
+def _filled(loop_parts: List[ast.AST], names: Set[str]) -> bool:
     for part in loop_parts:
         for node in ast.walk(part):
             if isinstance(node, ast.AugAssign):
@@ -235,21 +235,21 @@ def _filled(loop_parts: list[ast.AST], names: set[str]) -> bool:
     return False
 
 
-def _add(out: list[Pitstop], seen: set[Pitstop], stop: Pitstop) -> None:
+def _add(out: List[Pitstop], seen: Set[Pitstop], stop: Pitstop) -> None:
     if stop not in seen:
         seen.add(stop)
         out.append(stop)
 
 
-def find_pitstops(files: Sequence[Path]) -> list[Pitstop]:
+def find_pitstops(files: Sequence[Path]) -> List[Pitstop]:
     """Every pitstop, each once.
 
     A call inside an inner loop sits inside the outer loop's body too, so a
     walk from each loop finds it twice; the first run against ghost_tools
     reported mechanical.py:551 three times. A set keys on (path, line, kind,
     what) so a nested loop reports what it contains once."""
-    seen: set[Pitstop] = set()
-    out: list[Pitstop] = []
+    seen: Set[Pitstop] = set()
+    out: List[Pitstop] = []
     for path in (Path(f) for f in files):
         if is_test_path(path):
             continue
@@ -289,8 +289,8 @@ def find_pitstops(files: Sequence[Path]) -> list[Pitstop]:
     return out
 
 
-def detect_pitstops(files: Sequence[Path]) -> list[Finding]:
-    findings: list[Finding] = []
+def detect_pitstops(files: Sequence[Path]) -> List[Finding]:
+    findings: List[Finding] = []
     for p in find_pitstops(files):
         findings.append(Finding(
             detector=p.kind,
@@ -348,12 +348,12 @@ class Profile:
     """
 
     def __init__(self) -> None:
-        self.calls: dict[str, Counter] = {"ast.parse": Counter(), "read": Counter(),
+        self.calls: Dict[str, Counter] = {"ast.parse": Counter(), "read": Counter(),
                                           "subprocess": Counter()}
-        self.seconds: dict[str, float] = {k: 0.0 for k in self.calls}
+        self.seconds: Dict[str, float] = {k: 0.0 for k in self.calls}
         self._saved: list = []
 
-    def __enter__(self) -> Profile:
+    def __enter__(self) -> "Profile":
         import subprocess
         import time
         prof = self
@@ -407,7 +407,7 @@ class Profile:
         for obj, name, original in self._saved:
             setattr(obj, name, original)
 
-    def redundancies(self) -> list[Redundancy]:
+    def redundancies(self) -> List[Redundancy]:
         out = []
         for what, counter in self.calls.items():
             calls = sum(counter.values())
@@ -415,7 +415,7 @@ class Profile:
                 out.append(Redundancy(what, len(counter), calls, self.seconds[what]))
         return sorted(out, key=lambda r: -r.repeated)
 
-    def render(self, total_seconds: float | None = None) -> str:
+    def render(self, total_seconds: Optional[float] = None) -> str:
         lines = ["measured redundancy (same input, done again):"]
         for r in self.redundancies():
             cost = f"{r.seconds:.2f}s"

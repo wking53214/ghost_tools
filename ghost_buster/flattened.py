@@ -38,6 +38,7 @@ from __future__ import annotations
 import difflib
 import re
 from pathlib import Path
+from typing import List, Optional, Set, Tuple
 
 from . import corpus
 from .schema import Category, Evidence, Finding, Layer, Severity, Status, _portable_path
@@ -55,15 +56,15 @@ _TOKEN = re.compile(r"[A-Za-z_]\w*|\d+(?:\.\d+)?|[^\sA-Za-z_\d]")
 _NAME = re.compile(r"[A-Za-z_]\w{3,}")
 
 
-def _tokens(text: str) -> list[str]:
+def _tokens(text: str) -> List[str]:
     return _TOKEN.findall(text)
 
 
-def _names(text: str) -> set[str]:
+def _names(text: str) -> Set[str]:
     return set(_NAME.findall(text))
 
 
-def _ratio(a: list[str], b: list[str]) -> float:
+def _ratio(a: List[str], b: List[str]) -> float:
     if not a or not b:
         return 0.0
     matcher = difflib.SequenceMatcher(None, a, b, autojunk=False)
@@ -72,12 +73,12 @@ def _ratio(a: list[str], b: list[str]) -> float:
     return matcher.ratio()
 
 
-def detect_flattened_copies(files: list[Path]) -> list[Finding]:
+def detect_flattened_copies(files: List[Path]) -> List[Finding]:
     py = sorted(f for f in files if f.suffix == ".py")
     broken = [p for p in py if corpus.failure(p) is not None]
     if not broken:
         return []
-    readable: list[tuple[Path, str, set[str]]] = []
+    readable: List[Tuple[Path, str, Set[str]]] = []
     for p in py:
         if corpus.parse(p) is None:
             continue
@@ -85,7 +86,7 @@ def detect_flattened_copies(files: list[Path]) -> list[Finding]:
         if text:
             readable.append((p, text, _names(text)))
 
-    out: list[Finding] = []
+    out: List[Finding] = []
     for path in broken:
         text = corpus.text(path)
         if not text or not text.strip():
@@ -94,7 +95,7 @@ def detect_flattened_copies(files: list[Path]) -> list[Finding]:
         if not names:
             continue
         tokens = _tokens(text)
-        best: tuple[float, Path] | None = None
+        best: Optional[Tuple[float, Path]] = None
         for other, other_text, other_names in readable:
             if len(names & other_names) < SHARED_NAMES * len(names):
                 continue

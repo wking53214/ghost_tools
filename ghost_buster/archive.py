@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 MARKER = ".ghost_archive"
 
@@ -34,7 +35,7 @@ class Archive:
                 f"candidacy is not assessed and the surgeon does not operate.")
 
 
-def marked(root: Path) -> Archive | None:
+def marked(root: Path) -> Optional[Archive]:
     """The archive marker if the repository carries one."""
     p = Path(root) / MARKER
     if not p.is_file():

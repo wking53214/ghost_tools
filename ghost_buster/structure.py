@@ -37,6 +37,7 @@ import json
 import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Dict, List, Optional, Set, Tuple
 
 from . import corpus
 from .schema import Category, Evidence, Finding, Layer, Severity, Status
@@ -47,7 +48,7 @@ DETECTOR = "structure"
 #: grouped by the boundary they cross. Membership is evidence that the
 #: module CAN reach that boundary, never that it does so on any given
 #: call path -- the model says "imports subprocess", not "runs commands".
-_BOUNDARIES: dict[str, tuple[str, ...]] = {
+_BOUNDARIES: Dict[str, Tuple[str, ...]] = {
     "filesystem": ("shutil", "tempfile", "glob", "fileinput"),
     "network": ("socket", "http", "urllib", "ftplib", "smtplib", "requests",
                 "httpx", "aiohttp", "websockets"),
@@ -76,7 +77,7 @@ _BOUNDARIES: dict[str, tuple[str, ...]] = {
 #: cross the filesystem is not wrong so much as useless, and a model whose
 #: numbers cannot be acted on is the failure mode this module exists to
 #: avoid.
-_BOUNDARY_CALLS: dict[str, tuple[str, ...]] = {
+_BOUNDARY_CALLS: Dict[str, Tuple[str, ...]] = {
     "filesystem": ("read_text", "write_text", "read_bytes", "write_bytes",
                    "mkdir", "rmdir", "unlink", "rename", "touch", "iterdir",
                    "rglob", "walk", "listdir", "remove", "makedirs", "stat"),
@@ -103,20 +104,20 @@ class ModuleFacts:
     dotted: str
     path: str
     is_package: bool = False
-    public_names: list[str] = field(default_factory=list)   # __all__, if declared
-    exported: list[str] = field(default_factory=list)       # top-level non-underscore defs
-    internal: list[str] = field(default_factory=list)       # top-level _underscore defs
-    imports_internal: list[str] = field(default_factory=list)
-    imports_external: list[str] = field(default_factory=list)
-    boundaries: list[str] = field(default_factory=list)
-    module_state: list[str] = field(default_factory=list)   # mutable top-level bindings
-    bindings: list[str] = field(default_factory=list)       # public top-level names bound
-    reexports: list[str] = field(default_factory=list)      # names bound by a top-level import
-    star_imports: list[str] = field(default_factory=list)   # `from X import *` targets
-    guarded: list[str] = field(default_factory=list)        # imported inside try/except ImportError
-    data_models: list[str] = field(default_factory=list)
-    entry_points: list[str] = field(default_factory=list)   # main(), __main__ guard
-    raises: list[str] = field(default_factory=list)
+    public_names: List[str] = field(default_factory=list)   # __all__, if declared
+    exported: List[str] = field(default_factory=list)       # top-level non-underscore defs
+    internal: List[str] = field(default_factory=list)       # top-level _underscore defs
+    imports_internal: List[str] = field(default_factory=list)
+    imports_external: List[str] = field(default_factory=list)
+    boundaries: List[str] = field(default_factory=list)
+    module_state: List[str] = field(default_factory=list)   # mutable top-level bindings
+    bindings: List[str] = field(default_factory=list)       # public top-level names bound
+    reexports: List[str] = field(default_factory=list)      # names bound by a top-level import
+    star_imports: List[str] = field(default_factory=list)   # `from X import *` targets
+    guarded: List[str] = field(default_factory=list)        # imported inside try/except ImportError
+    data_models: List[str] = field(default_factory=list)
+    entry_points: List[str] = field(default_factory=list)   # main(), __main__ guard
+    raises: List[str] = field(default_factory=list)
     #: Numbers written into the code where they can be changed: a top-level
     #: name bound to a number, and a number given as a parameter default on
     #: a module-level function or a method of a module-level class. Each
@@ -124,8 +125,8 @@ class ModuleFacts:
     #: or "Guard.__init__(max_unchanged=3) (line 40)". Whether a number is
     #: a threshold or a limit is not decided here; the name is the author's
     #: claim and is reported as written.
-    settings: list[str] = field(default_factory=list)
-    unresolved: list[str] = field(default_factory=list)
+    settings: List[str] = field(default_factory=list)
+    unresolved: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -136,30 +137,30 @@ class StructuralModel:
     root: str = ""
     ran: bool = False
     reason: str = ""
-    distribution: str | None = None
-    declared_dependencies: list[str] = field(default_factory=list)
-    dependency_sources: list[str] = field(default_factory=list)
+    distribution: Optional[str] = None
+    declared_dependencies: List[str] = field(default_factory=list)
+    dependency_sources: List[str] = field(default_factory=list)
     #: `[build-system].requires`. A declaration, but only for code that
     #: runs at build time: the frontend installs these into an isolated
     #: environment that no runtime import can see.
-    build_requires: list[str] = field(default_factory=list)
+    build_requires: List[str] = field(default_factory=list)
     #: Modules that run at build time, not at import time -- setup.py and
     #: friends. Their imports are satisfied by `build_requires`.
-    build_modules: list[str] = field(default_factory=list)
+    build_modules: List[str] = field(default_factory=list)
     #: What each packaging file declares, field by field, for the
     #: `parallel packaging metadata` check.
-    packaging_declarations: dict[str, dict[str, str]] = field(default_factory=dict)
-    console_scripts: dict[str, str] = field(default_factory=dict)
-    packages: list[str] = field(default_factory=list)
-    modules: list[ModuleFacts] = field(default_factory=list)
-    entry_points: list[str] = field(default_factory=list)
-    boundaries: dict[str, list[str]] = field(default_factory=dict)
-    test_modules: list[str] = field(default_factory=list)
-    unresolved: list[str] = field(default_factory=list)
+    packaging_declarations: Dict[str, Dict[str, str]] = field(default_factory=dict)
+    console_scripts: Dict[str, str] = field(default_factory=dict)
+    packages: List[str] = field(default_factory=list)
+    modules: List[ModuleFacts] = field(default_factory=list)
+    entry_points: List[str] = field(default_factory=list)
+    boundaries: Dict[str, List[str]] = field(default_factory=dict)
+    test_modules: List[str] = field(default_factory=list)
+    unresolved: List[str] = field(default_factory=list)
     #: package name -> "file:line" for names parked in a comment in a
     #: dependency file. Evidence about an unresolvable name, never a
     #: declaration: see commented_out_dependencies.
-    commented_out: dict[str, str] = field(default_factory=dict)
+    commented_out: Dict[str, str] = field(default_factory=dict)
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=2, sort_keys=False) + "\n"
@@ -171,14 +172,14 @@ class StructuralModel:
 class PyprojectFacts:
     """What pyproject.toml declares. A record rather than a tuple because
     the tuple had grown to four positions and was about to grow to six."""
-    name: str | None = None
-    dependencies: list[str] = field(default_factory=list)
-    scripts: dict[str, str] = field(default_factory=dict)
-    notes: list[str] = field(default_factory=list)
+    name: Optional[str] = None
+    dependencies: List[str] = field(default_factory=list)
+    scripts: Dict[str, str] = field(default_factory=dict)
+    notes: List[str] = field(default_factory=list)
     #: `[build-system].requires`, verbatim.
-    build_requires: list[str] = field(default_factory=list)
+    build_requires: List[str] = field(default_factory=list)
     #: `[project]` fields that setup.py also declares, for drift detection.
-    declarations: dict[str, str] = field(default_factory=dict)
+    declarations: Dict[str, str] = field(default_factory=dict)
 
 
 #: The fields a package can declare in two places at once. Compared as
@@ -261,7 +262,7 @@ def _read_pyproject(root: Path) -> PyprojectFacts:
     )
 
 
-def _read_setup_py(root: Path) -> dict[str, str] | None:
+def _read_setup_py(root: Path) -> Optional[Dict[str, str]]:
     """What a literal `setup(...)` call in setup.py declares, or None.
 
     Only literal keyword arguments are read. A value computed at import
@@ -279,7 +280,7 @@ def _read_setup_py(root: Path) -> dict[str, str] | None:
         tree = ast.parse(p.read_text(encoding="utf-8", errors="replace"))
     except (OSError, SyntaxError, ValueError):
         return None
-    out: dict[str, str] = {}
+    out: Dict[str, str] = {}
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
@@ -299,11 +300,11 @@ def _read_setup_py(root: Path) -> dict[str, str] | None:
     return out or None
 
 
-def _requirements_files(root: Path) -> list[Path]:
+def _requirements_files(root: Path) -> List[Path]:
     return sorted(p for p in root.glob("requirements*.txt") if p.is_file())
 
 
-def _read_requirements(paths: list[Path]) -> list[str]:
+def _read_requirements(paths: List[Path]) -> List[str]:
     out = []
     for p in paths:
         try:
@@ -316,7 +317,7 @@ def _read_requirements(paths: list[Path]) -> list[str]:
     return out
 
 
-def commented_out_dependencies(root: Path) -> dict[str, str]:
+def commented_out_dependencies(root: Path) -> Dict[str, str]:
     """Package name -> "file:line", for names parked in a COMMENT in a
     dependency file. Never a declaration; evidence about a name.
 
@@ -357,7 +358,7 @@ def commented_out_dependencies(root: Path) -> dict[str, str]:
     normalised the way `requirement_name` normalises a declaration and
     compared whole.
     """
-    out: dict[str, str] = {}
+    out: Dict[str, str] = {}
     for path in _requirements_files(root) + [root / "pyproject.toml"]:
         if not path.is_file():
             continue
@@ -388,7 +389,7 @@ def requirement_name(spec: str) -> str:
 
 # ------------------------------------------------------------ module facts
 
-def _boundary_for(module: str) -> str | None:
+def _boundary_for(module: str) -> Optional[str]:
     top = module.split(".", 1)[0]
     for boundary, names in _BOUNDARIES.items():
         if top in names or module in names:
@@ -396,7 +397,7 @@ def _boundary_for(module: str) -> str | None:
     return None
 
 
-def _number(node) -> str | None:
+def _number(node) -> Optional[str]:
     """The source text of a number literal, sign included, or None. A bool
     is an int to Python and a switch to a reader, so it is not a number
     here."""
@@ -410,7 +411,7 @@ def _number(node) -> str | None:
     return None
 
 
-def _default_settings(func, owner: str = "") -> list[str]:
+def _default_settings(func, owner: str = "") -> List[str]:
     """Number defaults on one function's parameters."""
     a = func.args
     positional = a.posonlyargs + a.args
@@ -445,7 +446,7 @@ def _model_kind(node: ast.ClassDef) -> bool:
     return False
 
 
-def analyse_module(path: Path, root: Path, package_roots: set[str]) -> ModuleFacts | None:
+def analyse_module(path: Path, root: Path, package_roots: Set[str]) -> Optional[ModuleFacts]:
     tree = corpus.parse(path)
     if tree is None:
         return None   # unassessable_file reports this; see mechanical.py
@@ -590,7 +591,7 @@ def _catches_import(handler: ast.ExceptHandler) -> bool:
     return False
 
 
-def _record_import(facts: ModuleFacts, module: str, package_roots: set[str]) -> None:
+def _record_import(facts: ModuleFacts, module: str, package_roots: Set[str]) -> None:
     top = module.split(".", 1)[0]
     if top in package_roots:
         facts.imports_internal.append(module)
@@ -614,7 +615,7 @@ def _record_import(facts: ModuleFacts, module: str, package_roots: set[str]) -> 
 _PACKAGE_PARENTS = ("src", "lib", "python")
 
 
-def _package_roots(root: Path) -> set[str]:
+def _package_roots(root: Path) -> Set[str]:
     """Top-level importable names this repository defines. Used only to
     split imports into internal and external -- not to claim anything
     about layering."""
@@ -711,7 +712,7 @@ def build_model(root, files) -> StructuralModel:
 
 def _finding(model: StructuralModel, kind: str, severity: Severity, file: str,
              summary: str, detail: str, attributes: dict,
-             identity_key: str | None = None) -> Finding:
+             identity_key: Optional[str] = None) -> Finding:
     return Finding(
         detector=DETECTOR, category=Category.ARCHITECTURE, layer=Layer.MECHANICAL,
         severity=severity, status=Status.CONFIRMED,
@@ -721,7 +722,7 @@ def _finding(model: StructuralModel, kind: str, severity: Severity, file: str,
     )
 
 
-def _external_imports(model: StructuralModel, stdlib: set[str]) -> dict[str, list[str]]:
+def _external_imports(model: StructuralModel, stdlib: Set[str]) -> Dict[str, List[str]]:
     """package name -> the modules that import it, for everything the
     repository reaches for and does not provide.
 
@@ -735,7 +736,7 @@ def _external_imports(model: StructuralModel, stdlib: set[str]) -> dict[str, lis
     ever imported. A build requirement a build-time file imports and
     nobody declared is still reported.
     """
-    imported: dict[str, list[str]] = {}
+    imported: Dict[str, List[str]] = {}
     build_declared = set(model.declared_dependencies) | set(model.build_requires)
     for facts in model.modules:
         if facts.dotted in model.test_modules:
@@ -752,7 +753,7 @@ def _external_imports(model: StructuralModel, stdlib: set[str]) -> dict[str, lis
     return imported
 
 
-def _packaging_findings(model: StructuralModel) -> list[Finding]:
+def _packaging_findings(model: StructuralModel) -> List[Finding]:
     """setup.py and pyproject.toml declaring the same package, differently.
 
     Two files that both say what this package is called, what version it
@@ -822,13 +823,13 @@ def _packaging_findings(model: StructuralModel) -> list[Finding]:
     )]
 
 
-def derive_findings(model: StructuralModel) -> list[Finding]:
+def derive_findings(model: StructuralModel) -> List[Finding]:
     """Only what the evidence establishes on its own. Nothing here is a
     judgement about architecture; each is a contradiction between two
     observed facts."""
     if not model.ran:
         return []
-    out: list[Finding] = []
+    out: List[Finding] = []
     # Before the guard below: packaging metadata is read from the files
     # themselves, so it is knowable even when no module was scanned, and
     # skipping it there would be an unreported blind spot.
@@ -980,13 +981,13 @@ def derive_findings(model: StructuralModel) -> list[Finding]:
     return out
 
 
-def _stdlib_names() -> set[str]:
+def _stdlib_names() -> Set[str]:
     import sys
     names = set(getattr(sys, "stdlib_module_names", ()))
     return names | {"__future__", "typing", "dataclasses"}
 
 
-def _import_to_distribution() -> dict[str, str]:
+def _import_to_distribution() -> Dict[str, str]:
     """Import name -> distribution name, for what is installed here.
 
     WHY THIS IS NOT OPTIONAL, AND WHY IT IS NOT SUFFICIENT
@@ -1095,7 +1096,7 @@ def render_model(model: StructuralModel) -> str:
     return "\n".join(L)
 
 
-def render_report(model: StructuralModel, findings: list[Finding]) -> str:
+def render_report(model: StructuralModel, findings: List[Finding]) -> str:
     """The one-line summary, on the same channel as every other check."""
     if not model.ran:
         return f"ghost_buster: structure scan did not run: {model.reason}"

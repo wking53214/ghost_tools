@@ -45,6 +45,7 @@ import io
 import re
 import tokenize
 from pathlib import Path
+from typing import List
 
 from . import corpus
 from .schema import Category, Evidence, Finding, Layer, Severity, Status, _portable_path
@@ -78,8 +79,8 @@ def _comment_text(source: str) -> str:
     return "\n".join(out)
 
 
-def detect_commented_out_modules(files: list[Path]) -> list[Finding]:
-    out: list[Finding] = []
+def detect_commented_out_modules(files: List[Path]) -> List[Finding]:
+    out: List[Finding] = []
     for path in sorted(f for f in files if f.suffix == ".py"):
         tree = corpus.parse(path)
         if tree is None or not _is_empty_module(tree):

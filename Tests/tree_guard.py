@@ -42,10 +42,10 @@ from __future__ import annotations
 import fnmatch
 import hashlib
 import os
-from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Dict, Iterable, Iterator, Sequence, Tuple
 
 # Caches and VCS internals churn for reasons that have nothing to do with
 # what a scan did. Anything outside this list counts, including a file the
@@ -64,7 +64,7 @@ class Snapshot:
     """
 
     root: str
-    entries: dict[str, str]
+    entries: Dict[str, str]
 
 
 def _entry(path: Path) -> str:
@@ -82,7 +82,7 @@ def _entry(path: Path) -> str:
 
 def snapshot(root: Path, ignore: Sequence[str] = IGNORE) -> Snapshot:
     root = Path(root)
-    entries: dict[str, str] = {}
+    entries: Dict[str, str] = {}
     for current, directories, files in os.walk(root, followlinks=False):
         directories[:] = [d for d in directories if d not in ignore]
         for name in list(directories) + files:
@@ -93,9 +93,9 @@ def snapshot(root: Path, ignore: Sequence[str] = IGNORE) -> Snapshot:
 
 @dataclass(frozen=True)
 class Changes:
-    modified: tuple[str, ...] = ()
-    deleted: tuple[str, ...] = ()
-    created: tuple[str, ...] = ()
+    modified: Tuple[str, ...] = ()
+    deleted: Tuple[str, ...] = ()
+    created: Tuple[str, ...] = ()
 
     def __bool__(self) -> bool:
         return bool(self.modified or self.deleted or self.created)

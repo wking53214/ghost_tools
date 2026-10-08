@@ -10,8 +10,7 @@ import pytest
 from ghost_buster.schema import Category, Evidence, Finding, FindingSet, Layer, Severity, Status
 from ghost_writer.cli import main as writer_main
 from ghost_writer.report import render_triage_report
-from ghost_writer.triage import apply_dispositions, pending
-from ghost_writer.triage import main as triage_main
+from ghost_writer.triage import apply_dispositions, main as triage_main, pending
 
 
 def _finding(summary, severity=Severity.MAJOR, detector="dead_code", category=Category.DEAD_CODE, detail="", file="a.py", line=3):

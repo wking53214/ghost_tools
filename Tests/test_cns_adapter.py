@@ -1,10 +1,11 @@
 """Optional CNS adapter — works with or without cns installed."""
 from __future__ import annotations
 
+
 import pytest
 
-from ghost_buster import cns_adapter
 from ghost_buster.schema import Status
+from ghost_buster import cns_adapter
 
 
 def test_cns_available_when_installed():
