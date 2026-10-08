@@ -53,29 +53,10 @@ MUTANTS = [
      "                     | set(by_file))",
      "    targets = sorted(set(by_file))"),
 
-    # Idempotence, both records.
+    # Idempotence.
     ("old notes are left in place and new ones appended", _A,
      "        without = _TRAILING.sub(\"\", content)",
      "        without = content"),
-    ("the README block is appended instead of replaced", _A,
-     "    opened, closed = _BEGIN_LINE.search(before), _END_LINE.search(before)",
-     "    opened, closed = None, None"),
-    ("a marker written as prose counts as a marker", _A,
-     '_BEGIN_LINE = re.compile(r"^" + re.escape(BEGIN) + r"[ \\t]*$", re.M)',
-     '_BEGIN_LINE = re.compile(re.escape(BEGIN))'),
-    ("the README is rewritten even when nothing changed", _A,
-     "    if after == before:\n        return False",
-     "    if False:\n        return False"),
-
-    # A clean run must leave a record that it ran.
-    ("a clean run writes no table at all", _A,
-     '    body = "\\n".join(rows) if rows else "| _none_ | | | |"',
-     '    body = "\\n".join(rows)'),
-
-    # Absolute paths in a table that gets committed.
-    ("the table carries machine paths", _A,
-     "def _relative(path: str, root: Path | None) -> str:\n    if root is None:",
-     "def _relative(path: str, root: Path | None) -> str:\n    return str(path)\n    if root is None:"),
 
     # The two sides of the note say different things on purpose.
     ("both sides of the pair get the same sentence", _A,

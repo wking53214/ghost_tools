@@ -528,7 +528,7 @@ def detect_name_disagreements(files: Sequence[Path]) -> List[Finding]:
     Reports; does not rename. A cross-repository rename touches call sites
     and tests in trees this scan was never asked to write to.
     `--annotate-names` is the one path that writes into a scanned tree, it is
-    opt-in, and it writes comments and a README table rather than code. That
+    opt-in, and it writes comments rather than code. It never writes a README. That
     it is the ONLY one is checked, not asserted: see
     Tests/test_tree_immutability.py.
     """

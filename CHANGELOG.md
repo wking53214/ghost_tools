@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+**ghost_buster no longer writes into READMEs.** Only Streamline writes READMEs now.
+
+- Removed the name-disagreement README table (`update_readme`, `render_section`,
+  the `ghost_buster:name-disagreements` markers and `--annotate-readme`).
+  `--annotate-names` still writes the inline comments, AST-verified, and
+  `annotate()` now returns `(disagreements, changed)`.
+- Removed the `doc_counts` and `count_block` remedies from `--operate`, with
+  their tests and mutants. `annotate` is the only remedy left.
+- Kept: detection of README lies (`doc_count_contradicted_by_run` and the
+  writability judgement). ghost_buster still says a README is wrong; it no
+  longer edits one.
+- Streamline owns README standards and README writing.
+
 **The structural model records numbers set in code, and a cryptography
 boundary.**
 
