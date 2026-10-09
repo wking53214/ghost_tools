@@ -1309,6 +1309,7 @@ def detect_dead_code(files: List[Path]) -> List[Finding]:
       ghost_buster's own codebase, see README) are still untraced.
     """
     definitions: Dict[str, List[Path]] = {}
+    nodes: Dict[tuple, ast.AST] = {}
     referenced_names: Set[str] = set()
     exported_names: Set[str] = set()
 
@@ -1338,6 +1339,7 @@ def detect_dead_code(files: List[Path]) -> List[Finding]:
                 if isinstance(node, ast.ClassDef) and _is_protocol_or_abc(node):
                     continue
                 definitions.setdefault(node.name, []).append(path)
+                nodes[(node.name, path)] = node
             if isinstance(node, ast.Assign):
                 for target in node.targets:
                     if isinstance(target, ast.Name) and target.id == "__all__":
@@ -1401,9 +1403,41 @@ def detect_dead_code(files: List[Path]) -> List[Finding]:
                     "positive on names only reached that way -- confirm before "
                     "deleting."
                 ),
-                evidence=Evidence(file=str(path)),
+                evidence=Evidence(file=str(path), **_span(nodes.get((name, path)))),
+                attributes=_dead_code_facts(name, path, nodes.get((name, path))),
             ))
     return findings
+
+
+def _span(node) -> dict:
+    """Where a definition sits, so a fixer need not re-parse the file."""
+    if node is None or getattr(node, "end_lineno", None) is None:
+        return {}
+    return {"line_start": node.lineno, "line_end": node.end_lineno}
+
+
+#: Hook names a framework calls by itself, found in the file the framework reads.
+_FRAMEWORK_FILES = {"conftest.py": "pytest_"}
+
+
+def _dead_code_facts(name: str, path: Path, node) -> Dict[str, str]:
+    """What a fixer needs to act on a dead_code finding, measured here.
+
+    `framework_hook` is "yes" when the name is one a framework calls by name
+    (a pytest_ hook in conftest.py): nothing references it because the framework
+    does, so the finding is almost certainly a false alarm and a fixer must
+    not act on it. Ghost measures; it never decides what to do about it.
+    """
+    if node is None:
+        return {}
+    prefix = _FRAMEWORK_FILES.get(Path(path).name)
+    return {
+        "name": name,
+        "kind": "class" if isinstance(node, ast.ClassDef) else "function",
+        "line_start": str(node.lineno),
+        "line_end": str(getattr(node, "end_lineno", node.lineno)),
+        "framework_hook": "yes" if prefix and name.startswith(prefix) else "no",
+    }
 
 
 # ---------------------------------------------------------------------------
