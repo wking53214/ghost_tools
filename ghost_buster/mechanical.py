@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional, Set, Tuple
 
 from . import corpus, forensics
+from .references import ReferenceIndex
 from .schema import Category, Evidence, Finding, Layer, Severity, Status, _portable_path
 
 DetectorFn = Callable[[List[Path]], List[Finding]]
@@ -1381,12 +1382,12 @@ def detect_dead_code(files: List[Path]) -> List[Finding]:
                                    ast.ClassDef)) and node.decorator_list:
                 referenced_names.add(node.name)
 
+    dead = {n: ps for n, ps in definitions.items()
+            if n not in exported_names and n not in referenced_names}
+    index = ReferenceIndex(files, parsed, set(dead)) if dead else None
+
     findings: List[Finding] = []
-    for name, def_paths in definitions.items():
-        if name in exported_names:
-            continue
-        if name in referenced_names:
-            continue
+    for name, def_paths in dead.items():
         for path in def_paths:
             findings.append(Finding(
                 detector="dead_code",
@@ -1404,7 +1405,7 @@ def detect_dead_code(files: List[Path]) -> List[Finding]:
                     "deleting."
                 ),
                 evidence=Evidence(file=str(path), **_span(nodes.get((name, path)))),
-                attributes=_dead_code_facts(name, path, nodes.get((name, path))),
+                attributes=_dead_code_facts(name, path, nodes.get((name, path)), index),
             ))
     return findings
 
@@ -1420,24 +1421,49 @@ def _span(node) -> dict:
 _FRAMEWORK_FILES = {"conftest.py": "pytest_"}
 
 
-def _dead_code_facts(name: str, path: Path, node) -> Dict[str, str]:
+def _dead_code_facts(name: str, path: Path, node, index: Optional[ReferenceIndex] = None) -> Dict[str, str]:
     """What a fixer needs to act on a dead_code finding, measured here.
 
-    `framework_hook` is "yes" when the name is one a framework calls by name
-    (a pytest_ hook in conftest.py): nothing references it because the framework
-    does, so the finding is almost certainly a false alarm and a fixer must
-    not act on it. Ghost measures; it never decides what to do about it.
+    `framework_hook` is "yes" when something outside the Python call graph
+    reaches the name: a pytest_ hook in conftest.py, a console script or plugin
+    entry point, or a string (getattr(mod, "name"), a list of names, a settings
+    file). `referenced_by` says which, in plain words, and is present only when
+    the flag is "yes". Nothing is called dead-for-sure here; a fixer must not
+    act on a "yes".
+
+    `dynamic_lookup_possible` is a repo-level fact: "yes" when the scanned code
+    does lookups by a computed name (importlib.import_module(x), getattr(o, x)),
+    which no static scan can resolve, so "dead" may be wrong even with
+    framework_hook "no". `dynamic_lookup_count` is how many such calls were seen.
+    Both appear when a project root (pyproject.toml, setup.cfg, setup.py or .git)
+    was found, or when a computed lookup was seen; with neither, nothing can be
+    claimed about the repo and the two are left out.
+
+    Ghost measures; it never decides what to do about it.
     """
     if node is None:
         return {}
+    why: List[str] = []
     prefix = _FRAMEWORK_FILES.get(Path(path).name)
-    return {
+    if prefix and name.startswith(prefix):
+        why.append(f"pytest hook in {Path(path).name}")
+    if index is not None:
+        why.extend(index.referenced_by(name, path))
+    facts = {
         "name": name,
         "kind": "class" if isinstance(node, ast.ClassDef) else "function",
         "line_start": str(node.lineno),
         "line_end": str(getattr(node, "end_lineno", node.lineno)),
-        "framework_hook": "yes" if prefix and name.startswith(prefix) else "no",
+        "framework_hook": "yes" if why else "no",
     }
+    if why:
+        facts["referenced_by"] = "; ".join(why)
+    if index is not None and (index.root is not None or index.dynamic):
+        facts["dynamic_lookup_possible"] = "yes" if index.dynamic else "no"
+        facts["dynamic_lookup_count"] = str(index.dynamic)
+        if index.notes:
+            facts["reference_scan_notes"] = "; ".join(index.notes)
+    return facts
 
 
 # ---------------------------------------------------------------------------

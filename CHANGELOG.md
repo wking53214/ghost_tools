@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+**dead_code now says what reaches a name from outside the Python call graph.** A red team showed
+Warden commenting out a console script, a plugin, a function named in settings.yaml and a getattr
+target. Findings now carry `referenced_by` and set `framework_hook` to `yes` for entry points
+(pyproject.toml, setup.cfg, setup.py) and string references (getattr, string collections, config
+files), and carry `dynamic_lookup_possible` and `dynamic_lookup_count` for computed lookups that
+cannot be resolved. Read-only. New module `ghost_buster/references.py`; tests in
+`Tests/test_dead_code_references.py`. 1817 passed, 39 skipped.
+
 **A setup.py that cannot be parsed is now recorded.** The packaging comparison used to treat it
 the same as a missing file, so no disagreement was checked and nothing said so. The structural
 model now leaves a note in `unresolved` saying the comparison did not run.
