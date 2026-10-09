@@ -1104,6 +1104,17 @@ def render_model(model: StructuralModel) -> str:
     L.append(f"  test modules        : {len(model.test_modules)}")
     L.append("")
 
+    total_lines = sum(m.lines for m in model.modules)
+    total_sites = sum(m.raise_sites for m in model.modules)
+    L.append("MATURITY MEASURE (reported, not judged)")
+    L.append(f"  lines               : {total_lines:,}")
+    L.append(f"  raise sites         : {total_sites:,}")
+    if total_sites:
+        L.append(f"  lines per raise     : {total_lines / total_sites:,.0f}")
+    else:
+        L.append("  lines per raise     : none (no raise sites)")
+    L.append("")
+
     L.append(f"UNRESOLVED ({len(model.unresolved)})")
     L.append("  Recorded rather than guessed. A model that omits what it could")
     L.append("  not follow reads like a model of a system with no dynamic behaviour.")

@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 
 from ghost_buster.pipeline import _collect_files
-from ghost_buster.structure import build_model
+from ghost_buster.structure import build_model, render_model
 
 
 def _model_for(tmp_path, source: str):
@@ -69,3 +69,15 @@ def test_the_counts_are_serialised_per_module(tmp_path):
 
     assert core["raise_sites"] == 1
     assert core["lines"] == 2
+
+
+def test_the_report_states_lines_per_raise(tmp_path):
+    model = _model_for(tmp_path, "def f():\n    raise RuntimeError('boom')\n")
+
+    assert "lines per raise     : 2" in render_model(model)
+
+
+def test_a_repo_without_raises_says_none_rather_than_dividing(tmp_path):
+    model = _model_for(tmp_path, "x = 1\n")
+
+    assert "lines per raise     : none (no raise sites)" in render_model(model)
