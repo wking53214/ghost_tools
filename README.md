@@ -50,6 +50,30 @@ Unrunnable check → finding, not a skip. Unreadable ledger fails the run. Non-g
 
 CLI over a git work tree. Findings: severity, `CONFIRMED`/`REASONED`, evidence. Calibration JSON per detector.
 
+### dead_code facts contract
+
+Each `dead_code` finding carries these attributes so a fixer need not re-derive them. Ghost only reads files to produce them; it measures and never decides.
+
+| attribute | meaning |
+|---|---|
+| `name` | the function or class name |
+| `kind` | `function` or `class` |
+| `line_start`, `line_end` | where the definition sits |
+| `framework_hook` | `yes` when something outside the Python call graph reaches the name, `no` otherwise. A `yes` means do not act on the finding. |
+| `referenced_by` | present only when `framework_hook` is `yes`: a short plain reason, such as `pyproject.toml console script 'tool'` or `named as a string in settings.yaml` |
+| `dynamic_lookup_possible` | `yes` when the scanned code looks names up by a computed value (`importlib.import_module(name)`, `__import__(name)`, `getattr(obj, name)`), `no` otherwise. When `yes`, "dead" may be wrong even if `framework_hook` is `no`. |
+| `dynamic_lookup_count` | how many computed lookups were seen |
+
+What counts as a reference:
+
+- Entry points in `pyproject.toml` (scripts, gui-scripts, entry-points, poetry scripts and plugins), `setup.cfg`, and literal strings in `setup.py`. The target's module must match the file that defines the name. If the target module cannot be found in the repo, the name alone is matched and the reason says so.
+- A string equal to the name as the second argument of `getattr`, `hasattr` or `setattr`, or inside a list, tuple, set or dict of strings in any scanned Python file.
+- The name as a whole word in a config or data file (yaml, yml, json, toml, ini, cfg, txt, conf, env) at the repo root or inside a folder such as `config`, `settings` or `.github`. Lock files, `requirements*.txt` and files over 1 MB are skipped. README and other markdown prose never count.
+
+Limits: `setup.py` is read with a text pattern, not run, so entry points built in code are missed. `pyproject.toml` and `setup.cfg` are read only for entry points, not for other settings. A computed lookup can be flagged but never resolved. The repo-level attributes appear when a project root (`pyproject.toml`, `setup.cfg`, `setup.py` or `.git`) is found or a computed lookup is seen. If `tomllib` is missing (Python 3.10), `pyproject.toml` is skipped and `reference_scan_notes` says so.
+
+Test suite at the time of writing: 1817 passed, 39 skipped.
+
 ## 7. Stack Integration Topology
 
 ```text
