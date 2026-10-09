@@ -176,7 +176,7 @@ def test_main_hands_the_presentation_to_present():
     calls the report printer itself."""
     tree = ast.parse((ROOT / "ghost_buster" / "cli.py").read_text())
     main = next(node for node in tree.body
-                if isinstance(node, ast.FunctionDef) and node.name == "main")
+                if isinstance(node, ast.FunctionDef) and node.name == "_main")
     called = {node.func.id for node in ast.walk(main)
               if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)}
     assert "_present" in called
@@ -202,7 +202,7 @@ def test_no_stage_reports_without_the_receipt_channel():
         if not isinstance(node, ast.FunctionDef):
             continue
         if node.name in ("to_stderr", "_resolve_join_mode", "_state",
-                         "_collect_files", "_head_commit"):
+                         "_collect_files", "_collect", "_head_commit"):
             continue
         names = [a.arg for a in node.args.args]
         assert "say" in names, f"{node.name} has no receipt channel"

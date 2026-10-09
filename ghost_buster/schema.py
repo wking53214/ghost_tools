@@ -58,11 +58,12 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from contextlib import contextmanager
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import PurePath
-from typing import Iterable, Any, Dict, List, Optional
+from typing import Iterable, Iterator, Any, Dict, List, Optional
 
 
 class Severity(str, Enum):
@@ -159,6 +160,52 @@ def _stable_id(*parts: str) -> str:
     return f"ghost-{digest[:12]}"
 
 
+#: The folder being scanned, set for the length of one scan by
+#: `scanning(root)`. While it is set, a file under it is identified by its
+#: path relative to it, in posix form, so an id does not depend on how the
+#: scan path was typed (`./x`, `x/`, absolute, a symlink to it, relative to
+#: another working directory). Outside a scan it is None and `_portable_path`
+#: behaves as it always did.
+_SCAN_ROOT: Optional[str] = None
+
+
+@contextmanager
+def scanning(root: Any) -> Iterator[None]:
+    """Identify files relative to `root` for the length of the block."""
+    global _SCAN_ROOT
+    previous = _SCAN_ROOT
+    _SCAN_ROOT = os.path.realpath(str(root))
+    try:
+        yield
+    finally:
+        _SCAN_ROOT = previous
+
+
+def _relative_to_scan_root(path: str) -> Optional[str]:
+    """`path` relative to the scan root in posix form, or None when no scan
+    is active or the file is outside the root."""
+    if _SCAN_ROOT is None or not os.path.isabs(path):
+        return None
+    # The root is fully resolved; resolve only the directory part of the
+    # file so a symlinked FILE keeps the name it was reported under.
+    head, tail = os.path.split(path)
+    full = os.path.join(os.path.realpath(head), tail)
+    rel = os.path.relpath(full, _SCAN_ROOT)
+    if rel == "." or rel == ".." or rel.startswith(".." + os.sep):
+        return None
+    return PurePath(rel).as_posix()
+
+
+def _legacy_portable_path(path: str) -> str:
+    """The path an id was hashed from before ids were scan-root relative."""
+    global _SCAN_ROOT
+    saved, _SCAN_ROOT = _SCAN_ROOT, None
+    try:
+        return _portable_path(path)
+    finally:
+        _SCAN_ROOT = saved
+
+
 def _portable_path(path: str) -> str:
     """The part of a path that identifies a file inside its project.
 
@@ -178,7 +225,9 @@ def _portable_path(path: str) -> str:
     marker), else fall back to the last two segments, which is stable enough
     to distinguish files and short enough not to carry a home directory.
     """
-    from pathlib import PurePath
+    rel = _relative_to_scan_root(path)
+    if rel is not None:
+        return rel
 
     pure = PurePath(path)
     # A path that is already relative is already portable: it was cut at
@@ -288,6 +337,11 @@ class Finding:
     #: used exactly as before.
     identity_key: Optional[str] = None
     id: str = field(init=False)
+    #: The id this finding had before ids were relative to the scan root, so
+    #: a baseline, ledger or case file written under the old spelling can
+    #: still be matched. None when it equals `id`. Never serialised.
+    legacy_id: Optional[str] = field(init=False, default=None, repr=False, compare=False)
+    _legacy_file: Optional[str] = field(init=False, default=None, repr=False, compare=False)
 
     def __post_init__(self):
         # Store the portable path, not the absolute one, so the baseline
@@ -307,9 +361,13 @@ class Finding:
         self.evidence.related_files = [
             _portable_path(p) for p in self.evidence.related_files
         ]
-        self.id = _stable_id(self.detector, portable,
-                             self.summary if self.identity_key is None
-                             else self.identity_key)
+        key = self.summary if self.identity_key is None else self.identity_key
+        self.id = _stable_id(self.detector, portable, key)
+        if _SCAN_ROOT is not None and self.evidence.absolute_file:
+            old = _legacy_portable_path(self.evidence.absolute_file)
+            old_id = _stable_id(self.detector, old, key)
+            if old_id != self.id:
+                self.legacy_id, self._legacy_file = old_id, old
         if self.confidence is not None and not (0.0 <= self.confidence <= 1.0):
             raise ValueError(f"confidence must be 0.0-1.0, got {self.confidence}")
         if self.layer == Layer.MECHANICAL and self.status == Status.REASONED:
@@ -433,6 +491,10 @@ class FindingSet:
     @classmethod
     def from_json(cls, text: str) -> "FindingSet":
         payload = json.loads(text)
+        # `ghost-buster --json` prints an object whose "findings" member is
+        # the list; baselines and older output are the bare list.
+        if isinstance(payload, dict) and "findings" in payload:
+            payload = payload["findings"]
         return cls([Finding.from_dict(p) for p in payload])
 
     def __len__(self) -> int:
@@ -582,5 +644,9 @@ def disambiguate_ids(findings: List[Finding]) -> int:
         for f in group:
             where = "|".join(str(part) for part in place(f))
             f.id = f"{base}-{hashlib.sha256(where.encode('utf-8')).hexdigest()[:6]}"
+            if f.legacy_id is not None:
+                old_where = "|".join(str(part) for part in (f._legacy_file,) + place(f)[1:])
+                f.legacy_id = (f"{f.legacy_id}-"
+                               f"{hashlib.sha256(old_where.encode('utf-8')).hexdigest()[:6]}")
             renamed += 1
     return renamed

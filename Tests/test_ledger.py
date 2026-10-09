@@ -284,7 +284,7 @@ def test_accepting_into_the_baseline_does_not_erase_memory(tmp_path, capsys):
     proj = tmp_path / "proj"
     proj.mkdir()
     (proj / "m.py").write_text("def used():\n    return used\n\ndef dead():\n    return 2\n")
-    base = ["--no-tests", "--no-secrets", "--no-branches",
+    base = ["--ledger", "--no-tests", "--no-secrets", "--no-branches",
             "--baseline", str(tmp_path / "b.json")]
     main([str(proj), *base])
     main([str(proj), "--accept", *base])
@@ -302,7 +302,7 @@ def test_history_is_reported_alongside_the_findings_not_instead_of_them(tmp_path
     make the memory a filter, which is the one thing it must never be."""
     proj = tmp_path / "proj"
     proj.mkdir()
-    base = ["--json", "--no-tests", "--no-secrets", "--no-branches",
+    base = ["--ledger", "--json", "--no-tests", "--no-secrets", "--no-branches",
             "--baseline", str(tmp_path / "b.json")]
     live = "def used():\n    return used\n"
     dead = live + "\ndef gone():\n    return 2\n"
@@ -323,12 +323,17 @@ def test_history_is_reported_alongside_the_findings_not_instead_of_them(tmp_path
     assert "dead_code" in detectors, "the defect it is about must ALSO still be reported"
 
 
-def test_ledger_is_on_by_default_and_writes_a_file(tmp_path, capsys):
+def test_ledger_is_opt_in_and_writes_a_file_when_asked(tmp_path, capsys):
+    """A default scan writes nothing into the folder it scans (see
+    test_default_scan_writes_nothing.py); --ledger is the request."""
     proj = tmp_path / "proj"
     proj.mkdir()
     (proj / "m.py").write_text("x = 1\n")
-    main([str(proj), "--no-tests", "--no-secrets", "--no-branches",
-          "--baseline", str(tmp_path / "b.json")])
+    common = ["--no-tests", "--no-secrets", "--no-branches", "--baseline", str(tmp_path / "b.json")]
+    main([str(proj), *common])
+    capsys.readouterr()
+    assert not (proj / ".ghost_ledger.json").exists()
+    main([str(proj), "--ledger", *common])
     capsys.readouterr()
     assert (proj / ".ghost_ledger.json").exists()
 
@@ -349,7 +354,7 @@ def test_a_corrupt_ledger_fails_the_run_rather_than_starting_over(tmp_path, caps
     proj.mkdir()
     (proj / "m.py").write_text("x = 1\n")
     (proj / ".ghost_ledger.json").write_text("{not json", encoding="utf-8")
-    rc = main([str(proj), "--no-tests", "--no-secrets", "--no-branches",
+    rc = main([str(proj), "--ledger", "--no-tests", "--no-secrets", "--no-branches",
                "--baseline", str(tmp_path / "b.json")])
     assert rc == 2
     assert "error: ledger" in capsys.readouterr().err

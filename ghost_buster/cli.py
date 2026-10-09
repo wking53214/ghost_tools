@@ -13,7 +13,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
+import traceback
 from pathlib import Path
 from typing import List, Optional, Dict
 
@@ -24,13 +26,23 @@ from .trust import check as trust_check, grant as trust_grant
 from .archive import marked as archive_marked
 from .priors import build as build_priors, render as render_priors, to_json as priors_json
 from .ledger import (
-    Ledger,
+    Ledger, NOT_APPLICABLE, RAN,
 )
 from . import readiness
 from .casefile import Casefile, Prior
 from .mutation import render_run
 from .schema import Finding, FindingSet, Severity
 from .pipeline import Stop, gather
+
+
+#: Exit codes. A caller must be able to tell "the scan ran and found
+#: something" from "the scan did not happen", so they never share a number.
+EXIT_CLEAN = 0      # scan ran; nothing new at MAJOR or above
+EXIT_FINDINGS = 1   # scan ran; new CRITICAL or MAJOR findings (this is not a failure of the tool)
+EXIT_USAGE = 2      # scan did not start: bad arguments, target missing or unreadable, unreadable baseline/ledger/casefile
+EXIT_CRASH = 3      # scan started and died: an unhandled error inside ghost_buster itself
+
+_BY_REQUEST = ("skipped at your request", "opt-in and not requested")
 
 
 # Directory names never descended into. `site-packages` is the load-bearing
@@ -68,13 +80,73 @@ def _print_report(new: List[Finding], known: List[Finding],
         print("  (nothing new)\n")
 
 
+class _Parser(argparse.ArgumentParser):
+    """argparse, except that a bad command line under --json still leaves
+    valid JSON on stdout (the reason is on stderr either way)."""
+
+    json_mode = False
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        print(f"{self.prog}: error: {message}", file=sys.stderr)
+        if self.json_mode:
+            print(_dump(_envelope("error", EXIT_USAGE, [], error=("usage", message))))
+        raise SystemExit(EXIT_USAGE)
+
+
+def _dump(payload) -> str:
+    return json.dumps(payload, indent=2, sort_keys=True)
+
+
+def _envelope(status, exit_code, findings, evidence=None, error=None) -> dict:
+    """What `--json` prints. `findings` is the same list of finding records
+    it always printed, now under a key, beside the things a bare list cannot
+    say: whether the scan finished, how much it looked at, and which checks
+    did not run and why. An empty `findings` with status "incomplete" is not
+    a clean result."""
+    scan = {"files_scanned": 0, "files_skipped": 0, "files_unparsable": 0, "unparsable": []}
+    unmeasured = []
+    if evidence is not None:
+        scan = {
+            "files_scanned": len(evidence.files),
+            "files_skipped": evidence.files_skipped,
+            "files_unparsable": len(evidence.unparsable),
+            "unparsable": [{"file": f, "reason": why} for f, why in evidence.unparsable],
+        }
+        for name, state in evidence.checks.items():
+            if state in (RAN, NOT_APPLICABLE):
+                continue
+            reason = evidence.reasons.get(name) or f"{name} did not run ({state})"
+            row = {"check": name, "state": state, "reason": reason,
+                   "by_request": reason.startswith(_BY_REQUEST)}
+            if name == "structural" and evidence.detector_failures:
+                row["detail"] = [{"detector": n, "error": w} for n, w in evidence.detector_failures]
+            unmeasured.append(row)
+        if evidence.unparsable:
+            unmeasured.append({
+                "check": "parse", "state": "unparsable", "by_request": False,
+                "reason": (f"{len(evidence.unparsable)} file(s) could not be parsed, so the code "
+                           "detectors skipped them"),
+            })
+    if status == "ok" and any(not u["by_request"] for u in unmeasured):
+        status = "incomplete"
+    return {
+        "status": status,
+        "exit_code": exit_code,
+        "error": None if error is None else {"kind": error[0], "message": error[1]},
+        "findings": [f.as_dict() for f in findings],
+        "scan": scan,
+        "unmeasured": unmeasured,
+    }
+
+
 def _build_parser() -> argparse.ArgumentParser:
     """Every flag in one place. Extracted from main() because ghost_buster's
     own `long_function` detector flagged main() at 194 lines against its
     threshold of 80 -- the argument table is the bulk of it and has no
     control flow, so lifting it out is the whole fix.
     """
-    parser = argparse.ArgumentParser(prog="ghost_buster")
+    parser = _Parser(prog="ghost_buster")
     # Consumed and exited on during parsing, so it works without the
     # required `path` positional -- which is the only way anyone would
     # ever type it.
@@ -250,9 +322,10 @@ def _build_parser() -> argparse.ArgumentParser:
         help="also print the full structural model in readable form",
     )
     parser.add_argument(
-        "--ledger", action=argparse.BooleanOptionalAction, default=True,
-        help="ON BY DEFAULT (--no-ledger to skip). Remember this run in "
-             "<path>/.ghost_ledger.json and report what only history can say: a "
+        "--ledger", action=argparse.BooleanOptionalAction, default=None,
+        help="OPT-IN (a default scan writes nothing into the folder it scans). Remember "
+             "this run in <path>/.ghost_ledger.json -- or in --ledger-path FILE, which "
+             "also turns this on -- and report what only history can say: a "
              "finding that was fixed and came back, one open for many runs with no "
              "decision recorded, one that keeps appearing and vanishing, and a check "
              "that has not actually run here in several runs. Strictly additive -- "
@@ -309,6 +382,8 @@ def _present(args, evidence, new, known, priors, archive, casefile_path) -> None
         print(f"serum candidacy: not assessed (archive: {archive.reason or 'no reason given'})")
     else:
         retired = Casefile(casefile_path).retired() if casefile_path.is_file() else set()
+        # A decision recorded under an older spelling of the id still applies.
+        retired |= {f.id for f in evidence.findings if f.legacy_id in retired}
         print(readiness.assess(evidence.findings, evidence.checks, retired).render())
     print()
     if evidence.profile is not None:
@@ -359,11 +434,21 @@ def _handle_priors_mode(args) -> int:
     return 0
 
 
+def _fail(args, code: int, kind: str, message: str) -> int:
+    """Say why the scan did not happen: a plain reason on stderr and, under
+    --json, valid JSON on stdout with status "error". Returns the code."""
+    print(message, file=sys.stderr)
+    if getattr(args, "json", False):
+        print(_dump(_envelope("error", code, [], error=(kind, message))))
+    return code
+
+
 def _validate_path(args) -> int:
     """Validate and gather arrival state from path."""
     if not args.path.is_dir():
-        print(f"error: {args.path} is not a directory", file=sys.stderr)
-        return 2
+        return _fail(args, EXIT_USAGE, "usage", f"error: {args.path} is not a directory")
+    if not os.access(args.path, os.R_OK | os.X_OK):
+        return _fail(args, EXIT_USAGE, "usage", f"error: {args.path} cannot be read (permission denied)")
     return None
 
 
@@ -372,20 +457,18 @@ def _load_baseline(baseline_path) -> Baseline:
     try:
         return Baseline(baseline_path)
     except (ValueError, OSError) as e:
-        print(f"error: baseline {baseline_path} could not be read: {type(e).__name__}: {e}", file=sys.stderr)
-        raise
+        raise Stop(f"error: baseline {baseline_path} could not be read: {type(e).__name__}: {e}") from e
 
 
 def _gather_evidence_safe(args):
     """Gather evidence with error handling."""
     try:
         return gather(args)
-    except Stop as e:
-        print(e, file=sys.stderr)
+    except Stop:
         raise
 
 
-def _handle_accept_mode(args, baseline, findings, baseline_path) -> int:
+def _handle_accept_mode(args, baseline, findings, baseline_path, evidence=None) -> int:
     """Handle --accept mode and exit early if active."""
     if not args.accept:
         return None
@@ -393,7 +476,7 @@ def _handle_accept_mode(args, baseline, findings, baseline_path) -> int:
     baseline.accept(findings)
     print(f"accepted {len(findings)} finding(s) into {baseline_path}", file=sys.stderr)
     if args.json:
-        print(FindingSet(findings).to_json())
+        print(_dump(_envelope("ok", EXIT_CLEAN, findings, evidence)))
     return 0
 
 
@@ -422,7 +505,30 @@ def _handle_dispatch_modes(args) -> int:
 
 
 def main(argv: List[str] = None) -> int:
+    """Run one scan and return its exit code (see EXIT_* above).
+
+    Anything the code below does not handle itself is a crash: it is
+    reported on stderr in one plain line, under --json it still leaves valid
+    JSON on stdout with status "error", and the exit code is EXIT_CRASH --
+    never the code that means "findings were found".
+    """
+    argv = list(sys.argv[1:] if argv is None else argv)
+    want_json = "--json" in argv
+    try:
+        return _main(argv)
+    except SystemExit:
+        raise
+    except KeyboardInterrupt:
+        raise
+    except Exception as e:  # noqa: BLE001 -- this is the crash boundary
+        message = f"ghost_buster: internal error, the scan did not complete: {type(e).__name__}: {e}"
+        traceback.print_exc()
+        return _fail(argparse.Namespace(json=want_json), EXIT_CRASH, "crash", message)
+
+
+def _main(argv: List[str]) -> int:
     parser = _build_parser()
+    parser.json_mode = "--json" in argv
     args = parser.parse_args(argv)
 
     # Setup phase
@@ -440,8 +546,8 @@ def main(argv: List[str] = None) -> int:
     # Gather evidence
     try:
         evidence = _gather_evidence_safe(args)
-    except Stop:
-        return 2
+    except Stop as e:
+        return _fail(args, EXIT_USAGE, "usage", str(e))
 
     findings = evidence.findings
     baseline_path = evidence.baseline_path
@@ -449,11 +555,11 @@ def main(argv: List[str] = None) -> int:
     # Load and validate baseline
     try:
         baseline = _load_baseline(baseline_path)
-    except (ValueError, OSError):
-        return 2
+    except Stop as e:
+        return _fail(args, EXIT_USAGE, "usage", str(e))
 
     # Accept mode
-    result = _handle_accept_mode(args, baseline, findings, baseline_path)
+    result = _handle_accept_mode(args, baseline, findings, baseline_path, evidence)
     if result is not None:
         return result
 
@@ -464,13 +570,15 @@ def main(argv: List[str] = None) -> int:
     if args.verify_chain:
         return _verify_chain(args)
 
+    code = EXIT_FINDINGS if any(f.severity in (Severity.CRITICAL, Severity.MAJOR) for f in new) else EXIT_CLEAN
+
     # Present results
     if args.json:
-        print(FindingSet(new).to_json())
+        print(_dump(_envelope("ok", code, new, evidence)))
     else:
         _present(args, evidence, new, known, priors, archive, casefile_path)
 
-    return 1 if any(f.severity in (Severity.CRITICAL, Severity.MAJOR) for f in new) else 0
+    return code
 
 
 if __name__ == "__main__":

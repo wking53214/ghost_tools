@@ -286,9 +286,10 @@ def test_the_cli_does_not_prompt_when_stdin_is_not_a_terminal(tmp_path, capsys, 
     build gets removed from the build."""
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
     root = _consumer(tmp_path)
-    main([str(root), "--no-tests", "--no-secrets", "--no-branches", "--no-ledger",
-          "--no-project", "--no-structure", "--baseline", str(tmp_path / "b.json")])
+    rc = main([str(root), "--no-tests", "--no-secrets", "--no-branches", "--no-ledger",
+               "--no-project", "--no-structure", "--baseline", str(tmp_path / "b.json")])
     err = capsys.readouterr().err
+    assert rc in (0, 1), "a prompt that reads a closed stdin is a crash, not a scan"
     assert "--join" in err, "it must still say the seams went unchecked"
     assert "boundary scan joined" not in err
 
@@ -296,9 +297,10 @@ def test_the_cli_does_not_prompt_when_stdin_is_not_a_terminal(tmp_path, capsys, 
 def test_single_repo_flag_skips_the_question(tmp_path, capsys, monkeypatch):
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     root = _consumer(tmp_path)
-    main([str(root), "--single-repo", "--no-tests", "--no-secrets", "--no-branches",
-          "--no-ledger", "--no-project", "--no-structure",
-          "--baseline", str(tmp_path / "b.json")])
+    rc = main([str(root), "--single-repo", "--no-tests", "--no-secrets", "--no-branches",
+               "--no-ledger", "--no-project", "--no-structure",
+               "--baseline", str(tmp_path / "b.json")])
+    assert rc in (0, 1), "a prompt that reads a closed stdin is a crash, not a scan"
     assert "boundary scan joined" not in capsys.readouterr().err
 
 
@@ -366,5 +368,5 @@ def test_a_seamless_repo_never_grows_a_boundary_blind_spot(tmp_path, capsys):
     main([str(root), "--single-repo", "--json", "--no-tests", "--no-secrets",
           "--no-branches", "--no-project", "--no-structure",
           "--ledger-path", str(ledger_path), "--baseline", str(tmp_path / "b.json")])
-    rows = json.loads(capsys.readouterr().out)
+    rows = json.loads(capsys.readouterr().out)["findings"]
     assert not [r for r in rows if r.get("attributes", {}).get("check") == "boundary"]

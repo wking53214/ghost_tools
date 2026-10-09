@@ -72,7 +72,36 @@ What counts as a reference:
 
 Limits: `setup.py` is read with a text pattern, not run, so entry points built in code are missed. `pyproject.toml` and `setup.cfg` are read only for entry points, not for other settings. A computed lookup can be flagged but never resolved. The repo-level attributes appear when a project root (`pyproject.toml`, `setup.cfg`, `setup.py` or `.git`) is found or a computed lookup is seen. If `tomllib` is missing (Python 3.10), `pyproject.toml` is skipped and `reference_scan_notes` says so.
 
-Test suite at the time of writing: 1817 passed, 39 skipped.
+### Exit codes
+
+| Code | Meaning | What a caller should do |
+|---|---|---|
+| 0 | The scan ran. Nothing new at MAJOR or CRITICAL. | Read `status` (below): 0 with `"incomplete"` is not a clean bill of health. |
+| 1 | The scan ran and found something new at MAJOR or CRITICAL. | Read the findings. This is the tool working. |
+| 2 | The scan did not start: bad arguments, target missing or unreadable, unreadable baseline, ledger or case file, nothing to scan. | Fix the command or the inputs. A plain reason is on stderr. |
+| 3 | The scan started and the tool crashed (an unhandled error inside ghost_buster). | Treat as "unknown", never as "findings". The reason is on stderr, with a traceback. |
+
+Anything other than 0 or 1 means no verdict was reached. `--verify-chain` keeps its own use of 1 (a break in the ledger chain).
+
+### `--json` output
+
+An object, always valid JSON, including on codes 2 and 3:
+
+- `status`: `"ok"` (every check that was supposed to run ran), `"incomplete"` (something that should have run did not, so an empty `findings` is not clean), or `"error"` (no scan; see `error`).
+- `exit_code`, and `error` (`null`, or `{"kind": "usage" | "crash", "message": "..."}`).
+- `findings`: the list of finding records (this used to be the whole output).
+- `scan`: `files_scanned`, `files_skipped` (left out by exclusion rules), `files_unparsable`, and `unparsable` (file and reason for each).
+- `unmeasured`: one row per check that did not run: `check`, `state` (`declined`, `could_not_run`, `not_run`), a plain `reason`, and `by_request` (true when you asked for that, such as `--no-tests`; false when the tool could not, such as no git or no gitleaks). A detector that raised shows up as `structural` with the detector names and errors in `detail`. Unparsable files show up as `parse`. `status` is `"incomplete"` when any row has `by_request` false.
+
+Readers that expect the bare list should read the `findings` key. `FindingSet.from_json` accepts both.
+
+### Ledger and finding ids
+
+The ledger is opt-in: a default scan writes nothing into the folder it scans. Use `--ledger` to keep history in `<path>/.ghost_ledger.json`, or `--ledger-path FILE` (which also turns it on) to keep it anywhere else. `--no-ledger` still works.
+
+A finding's id hashes the detector, the file's path relative to the scanned folder (posix slashes) and the summary, so the way the folder was typed (`./x`, `x/`, absolute, a symlink, another working directory) does not change it. Ids from earlier versions are still recognised by the baseline, the ledger history and retired case-file decisions for the same finding.
+
+Test suite at the time of writing: 1849 passed, 39 skipped.
 
 ## 7. Stack Integration Topology
 

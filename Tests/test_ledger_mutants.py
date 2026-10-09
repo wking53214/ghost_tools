@@ -73,13 +73,13 @@ MUTANTS = [
     ("history findings replace the run's findings instead of adding to them", _P,
      '    findings.extend(history)\n', '    findings = list(history)\n'),
     ("the ledger runs after the baseline diff, so --accept erases memory", _P,
-     '    if not args.ledger:\n',
-     '    if not args.ledger or args.accept:\n'),
+     '    wanted = args.ledger if args.ledger is not None else args.ledger_path is not None\n',
+     '    wanted = (args.ledger if args.ledger is not None else args.ledger_path is not None) and not args.accept\n'),
 
     # --- the CLI contract ---
-    ("the ledger silently returns to opt-in", _C,
-     '        "--ledger", action=argparse.BooleanOptionalAction, default=True,\n',
-     '        "--ledger", action=argparse.BooleanOptionalAction, default=False,\n'),
+    ("the ledger silently turns back on by default", _C,
+     '        "--ledger", action=argparse.BooleanOptionalAction, default=None,\n',
+     '        "--ledger", action=argparse.BooleanOptionalAction, default=True,\n'),
     ("declining the ledger leaves no receipt", _P,
      '        _skipped("ledger", "--no-ledger", say)\n', '        pass\n'),
     ("a corrupt ledger no longer fails the run", _P,

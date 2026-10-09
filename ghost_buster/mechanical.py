@@ -2467,7 +2467,7 @@ register(LIST_IN_LOOP)(lambda files: [f for f in detect_pitstops(files) if f.det
 register(INVARIANT_CALL)(lambda files: [f for f in detect_pitstops(files) if f.detector == INVARIANT_CALL])
 
 
-def run_all(files: Iterable[Path]) -> List[Finding]:
+def run_all(files: Iterable[Path], failures: Optional[List[Tuple[str, str]]] = None) -> List[Finding]:
     """Run every registered mechanical detector against the given file list.
 
     Detectors share one corpus: every file is read and parsed once, under
@@ -2479,10 +2479,21 @@ def run_all(files: Iterable[Path]) -> List[Finding]:
     three of them and invisible to fifteen.
 
     The corpus is reset at the start of every run so a scan never reads a
-    tree left over from a previous one."""
+    tree left over from a previous one.
+
+    With `failures` given, a detector that raises is recorded there as
+    (name, "ExcType: message") and the others still run, so the caller can
+    say which question went unasked. Without it the exception propagates, as
+    it always did."""
     file_list = list(files)
     corpus.reset()
     findings: List[Finding] = []
     for name, fn in registered_detectors().items():
-        findings.extend(fn(file_list))
+        if failures is None:
+            findings.extend(fn(file_list))
+            continue
+        try:
+            findings.extend(fn(file_list))
+        except Exception as e:  # noqa: BLE001 -- reported, not swallowed
+            failures.append((name, f"{type(e).__name__}: {e}"))
     return findings

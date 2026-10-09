@@ -491,6 +491,17 @@ class Ledger:
         if scanned is not None:
             run.counts["scanned"] = int(scanned)
 
+        # A history recorded under the id a finding had before ids were
+        # relative to the scan root is the same finding's history: carry it
+        # onto the current id, so the change of spelling is not read as one
+        # finding fixed and another found.
+        for f in findings:
+            old = f.legacy_id
+            if old and old != f.id and old in self.findings and f.id not in self.findings:
+                hist = self.findings.pop(old)
+                hist.finding_id = f.id
+                self.findings[f.id] = hist
+
         seen_now = {f.id for f in findings}
         by_id = {f.id: f for f in findings}
 

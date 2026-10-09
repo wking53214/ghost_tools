@@ -11,7 +11,7 @@ import json
 import subprocess
 
 from ghost_buster import cli as buster_cli
-from ghost_buster.mechanical import detect_dead_code
+from ghost_buster.schema import _stable_id
 
 QUIET = ["--no-branches", "--no-tests", "--no-secrets", "--no-project",
          "--no-correlate", "--no-ledger", "--no-structure", "--json"]
@@ -20,7 +20,7 @@ DEAD = "def orphan():\n    return 2\n"
 
 def _scan(root, capsys):
     buster_cli.main([str(root), *QUIET])
-    return json.loads(capsys.readouterr().out)
+    return json.loads(capsys.readouterr().out)["findings"]
 
 
 def _dead(rows):
@@ -66,19 +66,22 @@ def test_a_relative_scan_path_gives_the_same_answer(tmp_path, capsys, monkeypatc
     (root / "pkg" / "n.py").write_text(DEAD, encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     buster_cli.main(["tgt", *QUIET])
-    rows = json.loads(capsys.readouterr().out)
+    rows = json.loads(capsys.readouterr().out)["findings"]
     assert sorted(_dead(rows)) == ["orphan@m.py", "orphan@pkg/n.py"]
 
 
-def test_the_finding_id_does_not_change_with_the_shown_path(tmp_path, capsys):
+def test_the_finding_id_is_the_hash_of_the_shown_path(tmp_path, capsys):
+    """Since ids became scan-root relative (see
+    test_ids_ignore_how_the_path_was_typed.py) the shown path and the path
+    in the id are the same thing, so the two cannot drift apart again."""
     root = tmp_path / "tgt"
     (root / "a" / "b" / "c").mkdir(parents=True)
     (root / "m.py").write_text(DEAD, encoding="utf-8")
     (root / "a" / "b" / "c" / "m.py").write_text(DEAD, encoding="utf-8")
-    before = {str(f.evidence.absolute_file or f.evidence.file): f.id
-              for f in detect_dead_code([root / "m.py", root / "a" / "b" / "c" / "m.py"])}
     rows = _dead(_scan(root, capsys))
-    assert {r["evidence"]["absolute_file"]: r["id"] for r in rows.values()} == before
+    assert sorted(rows) == ["orphan@a/b/c/m.py", "orphan@m.py"]
+    for row in rows.values():
+        assert row["id"] == _stable_id("dead_code", row["evidence"]["file"], row["summary"])
 
 
 def test_a_markdown_finding_is_relative_to_the_scan_root_too(tmp_path, capsys):
