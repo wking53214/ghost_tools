@@ -57,9 +57,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from enum import Enum
+from pathlib import PurePath
 from typing import Iterable, Any, Dict, List, Optional
 
 
@@ -379,6 +381,34 @@ class Finding:
         if recorded:
             finding.id = recorded
         return finding
+
+
+def paths_from_scan_root(findings: List["Finding"], files: List[Any], root: Any) -> None:
+    """Show each finding's file relative to the folder that was scanned.
+
+    `Finding` cuts a path at the nearest project marker (.git, pyproject.toml)
+    or, when there is none, keeps the last two path pieces. Both are right for
+    the finding's id, which must not move, and wrong for a tool that joins the
+    path onto the scan folder: a root-level `m.py` in a folder named `tgt`
+    was reported as `tgt/m.py`, and a file three folders deep lost its first
+    folder. Run last, after the ledger, so history keeps the old spelling and
+    only what is shown changes. The id is left exactly as it was.
+    """
+    base = os.path.abspath(str(root))
+    shown = {}
+    for path in files:
+        full = os.path.abspath(str(path))
+        try:
+            shown[full] = PurePath(os.path.relpath(full, base)).as_posix()
+        except ValueError:      # another drive on Windows: leave it alone
+            continue
+    for finding in findings:
+        ev = finding.evidence
+        source = ev.absolute_file or ev.file
+        rel = shown.get(os.path.abspath(source)) if source else None
+        if rel is None or rel.startswith(".."):
+            continue
+        ev.file = rel
 
 
 class FindingSet:

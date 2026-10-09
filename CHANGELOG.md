@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+**A finding's file is now always shown relative to the folder that was scanned.** A red team found
+that a root-level `m.py` in a folder named `tgt` was reported as `tgt/m.py`: with no `.git` or
+`pyproject.toml` the path was cut to its last two pieces, so a tool that joined the path onto the
+scan folder looked for `tgt/tgt/m.py` and silently fixed nothing. It also meant a file three
+folders deep lost its first folder. Paths in the JSON now use forward slashes and are relative to
+the scan folder in every case. Finding ids, the ledger and every other field are unchanged (the
+rewrite happens last, after the ledger). Tests in `Tests/test_report_paths.py`.
+
 **dead_code now says what reaches a name from outside the Python call graph.** A red team showed
 Warden commenting out a console script, a plugin, a function named in settings.yaml and a getattr
 target. Findings now carry `referenced_by` and set `framework_hook` to `yes` for entry points

@@ -48,7 +48,7 @@ from .ledger import (
 from .mechanical import run_all
 from .mutation import run_mutations
 from .project import render_report as render_project_report, scan as scan_project
-from .schema import Finding, disambiguate_ids
+from .schema import Finding, disambiguate_ids, paths_from_scan_root
 from .secrets import render_report as render_secrets_report, scan as scan_secrets
 from .speed import Profile
 from .structure import (
@@ -495,6 +495,8 @@ def gather(args, say: Callable[[str], None] = to_stderr) -> Evidence:
     # agreed to stop hearing about would also stop being remembered, and
     # a regression years later would read as a first sighting.
     _record_in_ledger(args, files, findings, checks, baseline_path, say)
+
+    paths_from_scan_root(findings, files, args.path)
 
     return Evidence(files=files, findings=findings, checks=checks,
                     baseline_path=baseline_path, test_report=test_report,
