@@ -88,13 +88,16 @@ def test_a_json_scan_touches_nothing(tree, capsys):
     json.loads(capsys.readouterr().out)
 
 
-def test_the_ledger_is_the_only_thing_a_default_scan_creates(tree, capsys):
-    """The blanket claim `never writes` is too strong, and writing this guard
-    is what showed it. A default scan DOES write its own dotfile. What it
-    must never do is touch anything that was already there."""
+def test_a_default_scan_creates_nothing_and_the_ledger_only_when_asked(tree, capsys):
+    """A default scan writes nothing into the folder it scans. Asked for
+    with --ledger, the ledger is the only thing it creates, and it never
+    touches anything that was already there."""
     quiet = [f for f in QUIET if f != "--no-ledger"]
-    with unchanged(tree, may_create=[".ghost_ledger.json"]):
+    with unchanged(tree):
         buster_cli.main([str(tree), *quiet])
+    assert not (tree / ".ghost_ledger.json").exists()
+    with unchanged(tree, may_create=[".ghost_ledger.json"]):
+        buster_cli.main([str(tree), *quiet, "--ledger"])
     assert (tree / ".ghost_ledger.json").exists()
 
 

@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+**Honest exit codes, honest "not measured", a quiet default, stable ids.** Four problems from a red
+team, one change. Tests: `Tests/test_honest_exit_codes.py`, `Tests/test_honest_unmeasured.py`,
+`Tests/test_default_scan_writes_nothing.py`, `Tests/test_ids_ignore_how_the_path_was_typed.py`. 1849 passed, 39 skipped.
+
+- A crash used to exit 1, the same as "findings found". Now: 0 clean, 1 findings, 2 did not start,
+  3 crashed. A plain reason goes to stderr; under `--json` stdout is still valid JSON with
+  `status: "error"`. Table in the README.
+- **Breaking for readers of `--json`:** the output is now an object with `findings`, `scan`
+  (files scanned, skipped, unparsable), `unmeasured` (every check that did not run, with a reason
+  and whether you asked for that) and `status`. It used to be the bare list. A detector that
+  raises no longer kills the run; it is listed under `unmeasured`.
+- **Breaking:** the ledger is opt-in (`--ledger`, or `--ledger-path FILE`). A default scan used to
+  write `.ghost_ledger.json` into the scanned folder. An existing ledger is left untouched and the
+  run says so.
+- Finding ids now hash the path relative to the scanned folder, so `./x`, `x/`, an absolute path
+  or a symlink give the same id. Ids can change once for repositories with no `.git` or
+  `pyproject.toml` at the scan root (the old id kept the last two path pieces) or with a nested
+  `pyproject.toml`. Baselines, ledger history and retired case-file decisions written under the
+  old id still match; `--accept` rewrites the new one. Case-file decisions are matched for
+  readiness only; `ghost-triage` records keep their old ids.
+
 **A finding's file is now always shown relative to the folder that was scanned.** A red team found
 that a root-level `m.py` in a folder named `tgt` was reported as `tgt/m.py`: with no `.git` or
 `pyproject.toml` the path was cut to its last two pieces, so a tool that joined the path onto the

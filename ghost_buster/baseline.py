@@ -65,6 +65,16 @@ class Baseline:
         self.path.write_text(existing.to_json(), encoding="utf-8")
         self._known_ids = existing_ids
 
+    def _stored(self, f: Finding):
+        """The baseline entry for `f`, under its id or, failing that, the id
+        it had before ids were relative to the scan root (schema.legacy_id).
+        An entry written under the old spelling keeps suppressing the same
+        finding; `--accept` writes the new spelling."""
+        stored = self._known.get(f.id)
+        if stored is None and f.legacy_id is not None:
+            stored = self._known.get(f.legacy_id)
+        return stored
+
     def diff(self, current: List[Finding]) -> Tuple[List[Finding], List[Finding]]:
         """Split `current` into (new, already_known). `new` is what a
         report should actually surface; `already_known` still exists but
@@ -77,7 +87,7 @@ class Baseline:
         new: List[Finding] = []
         known: List[Finding] = []
         for f in current:
-            stored = self._known.get(f.id)
+            stored = self._stored(f)
             if stored is None:
                 new.append(f)
             elif _rank(f.severity) < _rank(stored.severity):
@@ -97,7 +107,7 @@ class Baseline:
         and a baseline written on another machine all looked the same as a
         clean repository (measured 2026-09-08: 137 of 137 entries in one
         committed baseline were inert and nothing said so)."""
-        seen = {f.id for f in current}
+        seen = {f.id for f in current} | {f.legacy_id for f in current if f.legacy_id}
         return [f for fid, f in self._known.items() if fid not in seen]
 
     def derive_findings(self, current: List[Finding]) -> List[Finding]:

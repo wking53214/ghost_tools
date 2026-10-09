@@ -179,7 +179,7 @@ def test_a_scan_of_the_sample_writes_nothing_and_carries_the_facts(tmp_path, cap
     root = _sample(tmp_path / "repo")
     with unchanged(root):
         buster_cli.main([str(root), *QUIET])
-    rows = [r for r in json.loads(capsys.readouterr().out) if r["detector"] == "dead_code"]
+    rows = [r for r in json.loads(capsys.readouterr().out)["findings"] if r["detector"] == "dead_code"]
     by_name = {r["attributes"]["name"]: r["attributes"] for r in rows
                if r["evidence"]["file"].endswith("handlers.py")}
     assert by_name["cli_entry"]["framework_hook"] == "yes"

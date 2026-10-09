@@ -33,7 +33,7 @@ MUTANTS = [
      "    return Evidence(files=files,",
      "    return Evidence(files=[],"),
     ("a stage stops being a stage and is inlined away", _PIPE,
-     "    _correlate(args, findings, checks, test_report, say)",
+     "    _correlate(args, findings, checks, test_report, say, reasons)",
      "    pass"),
     ("the ledger stage loses its receipt channel", _PIPE,
      "def _record_in_ledger(args, files, findings, checks, baseline_path, say) -> None:",

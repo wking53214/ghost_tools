@@ -126,7 +126,7 @@ def test_accept_with_json_emits_json_on_stdout(tmp_path, capsys):
     root = _checkout(tmp_path / "proj")
     assert main([str(root), "--accept", "--json"]) == 0
     out = capsys.readouterr()
-    accepted = json.loads(out.out)
+    accepted = json.loads(out.out)["findings"]
     assert isinstance(accepted, list) and accepted
     assert "accepted" in out.err
 
@@ -197,7 +197,7 @@ def _stale_baseline(tmp_path, monkeypatch, capsys, entries=3):
     monkeypatch.chdir(repo)
     main([str(repo), "--json", "--no-tests", "--no-secrets", "--no-branches",
           "--single-repo", "--no-ledger"])
-    return json.loads(capsys.readouterr().out)
+    return json.loads(capsys.readouterr().out)["findings"]
 
 
 def test_a_stale_baseline_is_a_finding_in_the_json(tmp_path, monkeypatch, capsys):
@@ -229,7 +229,7 @@ def test_a_baseline_that_still_matches_produces_no_such_finding(tmp_path, monkey
     capsys.readouterr()
     main([str(repo), "--json", "--no-tests", "--no-secrets", "--no-branches",
           "--single-repo", "--no-ledger"])
-    rows = json.loads(capsys.readouterr().out)
+    rows = json.loads(capsys.readouterr().out)["findings"]
     assert not [r for r in rows if r["detector"] == "stale_baseline"]
 
 

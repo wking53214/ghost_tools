@@ -22,19 +22,14 @@ _CORR = "ghost_buster/correlate.py"
 MUTANTS = [
     # (label, file, exact text to replace, replacement)
     ("the key is ignored and the summary decides again", _SCHEMA,
-     "        self.id = _stable_id(self.detector, portable,\n"
-     "                             self.summary if self.identity_key is None\n"
-     "                             else self.identity_key)",
-     "        self.id = _stable_id(self.detector, portable, self.summary)"),
+     "        key = self.summary if self.identity_key is None else self.identity_key\n",
+     "        key = self.summary\n"),
     ("an empty key falls back to the summary, silently undoing it", _SCHEMA,
-     "                             self.summary if self.identity_key is None",
-     "                             self.summary if not self.identity_key"),
+     "        key = self.summary if self.identity_key is None else self.identity_key\n",
+     "        key = self.summary if not self.identity_key else self.identity_key\n"),
     ("the key replaces the whole id, so every file collides", _SCHEMA,
-     "        self.id = _stable_id(self.detector, portable,\n"
-     "                             self.summary if self.identity_key is None\n"
-     "                             else self.identity_key)",
-     "        self.id = _stable_id(self.summary if self.identity_key is None\n"
-     "                             else self.identity_key)"),
+     "        self.id = _stable_id(self.detector, portable, key)\n",
+     "        self.id = _stable_id(key)\n"),
     ("the drift finding puts the measured bound back in its identity", _MECH,
      '                identity_key=f"claims {documented} test(s), stale",\n',
      ""),

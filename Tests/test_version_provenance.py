@@ -73,7 +73,7 @@ def test_the_ledger_records_the_version_of_the_code_that_ran(tmp_path):
            "PYTHONPATH": f"{site}:{ROOT}", "GHOST_TOOLS_TRUST": "-"}
     subprocess.run(
         [sys.executable, "-m", "ghost_buster.cli", str(target), "--no-tests", "--no-branches",
-         "--single-repo", "--no-correlate", "--no-secrets"],
+         "--single-repo", "--no-correlate", "--no-secrets", "--ledger"],
         capture_output=True, text=True, env=env, cwd=str(tmp_path), timeout=300)
 
     ledger = json.loads((target / ".ghost_ledger.json").read_text())
