@@ -9,13 +9,11 @@ scanned folder, posix slashes.
 from __future__ import annotations
 
 import json
-import os
 
 import pytest
 
 from ghost_buster import cli as buster_cli
 from ghost_buster import schema
-from ghost_buster.baseline import Baseline
 from ghost_buster.ledger import Ledger
 from ghost_buster.mechanical import detect_dead_code
 

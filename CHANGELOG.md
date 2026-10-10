@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+**CI is green again on main.** Three unused imports (two in `Tests/test_ids_ignore_how_the_path_was_typed.py`,
+one in `ghost_buster/cli.py`) failed the lint gate. The self-scan flagged the repeated "declined at your
+request" and "did not run" branches in `_run_repository_checks` as two new MAJOR findings, so they are now two
+small helpers with the same messages and the same `--json` reasons. The mutants that deleted the old call lines
+are retargeted to the new ones, and one mutant covers the helper itself (625 in all).
+
 **Red team round: dead_code false positives, silent baselines, git hardening, poison files.** Tests:
 `Tests/test_dead_code_uses.py`, `Tests/test_baseline_reported.py`, `Tests/test_scan_hardening.py`,
 `Tests/test_trusted_scan_writes.py`.

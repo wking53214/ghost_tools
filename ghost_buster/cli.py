@@ -32,7 +32,7 @@ from .ledger import (
 from . import readiness
 from .casefile import Casefile, Prior
 from .mutation import render_run
-from .schema import Finding, FindingSet, Severity
+from .schema import Finding, Severity
 from .pipeline import Stop, gather, parse_size, SKIP_LIST_CAP
 
 #: Where --json output goes. main() sets it to the real stdout before the

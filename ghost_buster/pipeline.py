@@ -411,6 +411,20 @@ def _state(report) -> str:
     return RAN if getattr(report, "ran", False) else COULD_NOT_RUN
 
 
+def _declined(checks: dict, reasons: dict, key: str, label: str, flag: str, say) -> None:
+    """Record a check the user turned off: announce it, and keep the state and
+    the reason in step so --json says the same thing the output did."""
+    _skipped(label, flag, say)
+    checks[key] = DECLINED
+    reasons[key] = f"skipped at your request ({flag})"
+
+
+def _note_if_not_run(checks: dict, reasons: dict, key: str, report, fallback: str) -> None:
+    """When a check did not run, keep the reason it gave, or the fallback."""
+    if checks[key] != RAN:
+        reasons[key] = getattr(report, "reason", "") or fallback
+
+
 
 def _run_repository_checks(args, findings: List[Finding], checks: dict, say, reasons=None):
     """The three checks that take a repository rather than a file list:
@@ -438,9 +452,7 @@ def _run_repository_checks(args, findings: List[Finding], checks: dict, say, rea
         findings.extend(branch_findings)
         checks["branches"] = _state(branch_report)
     else:
-        _skipped("branch scan", "--no-branches", say)
-        checks["branches"] = DECLINED
-        reasons["branches"] = "skipped at your request (--no-branches)"
+        _declined(checks, reasons, "branches", "branch scan", "--no-branches", say)
 
     test_report = None
     if args.tests and not args.trusted.trusted:
@@ -455,24 +467,18 @@ def _run_repository_checks(args, findings: List[Finding], checks: dict, say, rea
         say(render_test_report(test_report))
         findings.extend(test_findings)
         checks["tests"] = _state(test_report)
-        if checks["tests"] != RAN:
-            reasons["tests"] = getattr(test_report, "reason", "") or "test scan did not run"
+        _note_if_not_run(checks, reasons, "tests", test_report, "test scan did not run")
     else:
-        _skipped("test status scan", "--no-tests", say)
-        checks["tests"] = DECLINED
-        reasons["tests"] = "skipped at your request (--no-tests)"
+        _declined(checks, reasons, "tests", "test status scan", "--no-tests", say)
 
     if args.project:
         project_findings, project_report = scan_project(args.path)
         say(render_project_report(project_report))
         findings.extend(project_findings)
         checks["project"] = _state(project_report)
-        if checks["project"] != RAN:
-            reasons["project"] = getattr(project_report, "reason", "") or "project scan did not run"
+        _note_if_not_run(checks, reasons, "project", project_report, "project scan did not run")
     else:
-        _skipped("project scan", "--no-project", say)
-        checks["project"] = DECLINED
-        reasons["project"] = "skipped at your request (--no-project)"
+        _declined(checks, reasons, "project", "project scan", "--no-project", say)
 
     if args.secrets:
         secrets_findings, secrets_report = scan_secrets(
@@ -481,12 +487,9 @@ def _run_repository_checks(args, findings: List[Finding], checks: dict, say, rea
         say(render_secrets_report(secrets_report))
         findings.extend(secrets_findings)
         checks["secrets"] = _state(secrets_report)
-        if checks["secrets"] != RAN:
-            reasons["secrets"] = getattr(secrets_report, "reason", "") or "secrets scan did not run"
+        _note_if_not_run(checks, reasons, "secrets", secrets_report, "secrets scan did not run")
     else:
-        _skipped("secrets scan", "--no-secrets", say)
-        checks["secrets"] = DECLINED
-        reasons["secrets"] = "skipped at your request (--no-secrets)"
+        _declined(checks, reasons, "secrets", "secrets scan", "--no-secrets", say)
 
     return test_report
 
