@@ -86,7 +86,7 @@ MUTANTS = [
     ("build/ and dist/ no longer excluded", _P,
      '    "build", "dist",\n', ""),
     ("egg-info directories no longer excluded", _P,
-     '        if any(part.endswith(".egg-info") for part in p.parts[:-1]):\n            continue\n', ""),
+     '            elif d.endswith(".egg-info"):\n                dirnames.remove(d)\n                note_skipped("*.egg-info", 1, _count_candidates(str(full)))\n', ""),
 ]
 
 
