@@ -64,12 +64,15 @@ whitespace or this module has nothing to say.
 from __future__ import annotations
 
 import ast
+import hashlib
 import html
 import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Iterator, List, Sequence, Tuple
+
+from .skips import BAD_JSONL_LINE, UNREADABLE_FILE, SkipLog
 
 IDENTICAL = "identical"
 CONTAINED = "contained"
@@ -264,22 +267,29 @@ def _candidates(text: str) -> Iterator[str]:
                 yield block
 
 
-def harvest(paths: Sequence[Path]) -> List[Source]:
+def harvest(paths: Sequence[Path], skips: SkipLog | None = None) -> List[Source]:
     """Every candidate original under `paths`.
 
     Reads .json and .jsonl as data and everything else as text, so a
     directory of exported transcripts works as well as a raw export.
+
+    Pass a SkipLog to be told which files could not be read and which JSONL
+    lines were not valid JSON. The sources returned are the same either way.
     """
     sources: List[Source] = []
     seen: set = set()
     for path in _files(paths):
         try:
             raw = path.read_text(errors="replace")
-        except OSError:
+        except OSError as exc:
+            if skips is not None:
+                skips.note(UNREADABLE_FILE, str(path), f"{type(exc).__name__}: {exc}")
             continue
-        for text in _payloads(path, raw):
+        for text in _payloads(path, raw, skips):
             for candidate in _candidates(text):
-                key = hash(candidate)
+                # A digest, not hash(): the builtin is randomised per process,
+                # so what counted as a duplicate could differ between runs.
+                key = hashlib.sha256(candidate.encode("utf-8", "surrogatepass")).digest()
                 if key in seen:
                     continue
                 seen.add(key)
@@ -296,12 +306,14 @@ def _files(paths: Sequence[Path]) -> Iterator[Path]:
             yield entry
 
 
-def _payloads(path: Path, raw: str) -> Iterator[str]:
+def _payloads(path: Path, raw: str, skips: SkipLog | None = None) -> Iterator[str]:
     if path.suffix == ".jsonl":
-        for line in raw.splitlines():
+        for number, line in enumerate(raw.splitlines(), start=1):
             try:
                 yield from _strings(json.loads(line))
-            except ValueError:
+            except ValueError as exc:
+                if skips is not None and line.strip():
+                    skips.note(BAD_JSONL_LINE, f"{path}:{number}", str(exc))
                 continue
     elif path.suffix == ".json":
         try:
