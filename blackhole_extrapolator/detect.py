@@ -56,9 +56,20 @@ _SKIP_DIRS = frozenset({
 })
 
 
+def _skipped(path: Path, root: Path) -> bool:
+    """True if a skip-listed folder lies INSIDE root on the way to path.
+
+    Only the part of the path below `root` counts. The folders above it are
+    where the checkout happens to live (a CI workspace under `build/`, a
+    virtualenv's `env/`, a temp dir under `dist/`), which says nothing about
+    the code and must never hide it.
+    """
+    return bool(_SKIP_DIRS & set(path.relative_to(root).parts))
+
+
 def _source_files(root: Path) -> list[Path]:
     """Every .py under root worth analysing."""
-    return [p for p in root.rglob("*.py") if not _SKIP_DIRS & set(p.parts)]
+    return [p for p in root.rglob("*.py") if not _skipped(p, root)]
 
 
 def _available_modules(search_roots: Sequence[Path]) -> set[str]:
@@ -83,8 +94,8 @@ def _available_modules(search_roots: Sequence[Path]) -> set[str]:
         # `src/` holds only sub-packages, and `import src.rag` was reported
         # missing 38 times on the first full-library run.
         for path in root.rglob("*/"):
-            if path.is_dir() and not _SKIP_DIRS & set(path.parts) and \
-                    any(not _SKIP_DIRS & set(p.parts) for p in path.rglob("*.py")):
+            if path.is_dir() and not _skipped(path, root) and \
+                    any(not _skipped(p, root) for p in path.rglob("*.py")):
                 available.add(path.name)
     return available
 
