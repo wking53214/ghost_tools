@@ -611,7 +611,7 @@ def main(argv: List[str] = None) -> int:
     want_json = "--json" in argv
     _OUT["stream"] = sys.stdout
     try:
-        return _main(argv)
+        return _main_json_quiet(argv)
     except SystemExit:
         raise
     except KeyboardInterrupt:
@@ -638,21 +638,21 @@ def _baseline_info(args, baseline, baseline_path, known) -> dict:
     return info
 
 
-def _main(argv: List[str]) -> int:
+def _main_json_quiet(argv: List[str]) -> int:
+    """Parse, then run. Under --json stdout carries one JSON document and
+    nothing else: anything printed while the scan runs goes to stderr
+    instead (_emit writes the document to the real stdout). Parsing happens
+    first so `--help` and `--version` still print where they always did."""
     parser = _build_parser()
     parser.json_mode = "--json" in argv
     args = parser.parse_args(argv)
-
-    # Under --json stdout carries one JSON document and nothing else: anything
-    # printed while the scan runs goes to stderr instead (_emit writes the
-    # document to the real stdout).
     if args.json:
         with contextlib.redirect_stdout(sys.stderr):
-            return _run(args)
-    return _run(args)
+            return _main(args)
+    return _main(args)
 
 
-def _run(args) -> int:
+def _main(args) -> int:
     # Setup phase
     _setup_trust(args)
 
