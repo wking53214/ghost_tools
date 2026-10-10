@@ -201,7 +201,7 @@ def _declared_dependencies(root: Path) -> set[str]:
             # sentinel_os pins with a comment read as its one void.
             if line.startswith(("-", "git+", "http://", "https://")):
                 continue
-            token = re.split(r"[<>=!~;\[\s]", line, 1)[0]
+            token = re.split(r"[<>=!~;\[\s]", line, maxsplit=1)[0]
             if token:
                 names |= _import_names(token)  # ghost_buster: name-disagreement -- `token` is `dist` in the signature
     pyproject = root / "pyproject.toml"
