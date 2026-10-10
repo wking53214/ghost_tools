@@ -129,3 +129,30 @@ def test_a_test_importing_a_sibling_provided_module_is_wiring_not_an_orphan(tmp_
     assert EvidenceKind.ORPHANED_TEST in {e.kind for e in alone}
     with_sibling = scan(spine, siblings=[ccc])
     assert {e.kind for e in with_sibling} == {EvidenceKind.WIRING}
+
+
+def test_a_checkout_living_under_a_skip_listed_folder_is_still_read(tmp_path):
+    """Where the checkout sits says nothing about the code in it.
+
+    The skip list (build, dist, env, venv ...) exists to avoid walking vendored
+    or generated trees INSIDE a repository. It was applied to the whole absolute
+    path, so any checkout under a folder with one of those names, such as a CI
+    workspace in `build/` or a virtualenv's `env/`, looked empty: its modules
+    were never found and a sibling-provided import was reported as a void.
+    """
+    base = tmp_path / "build" / "env" / "dist"
+    spine = _repo(base, "spine", {"adapter.py": "from ccc import CCCSystem\n"})
+    ccc = _repo(base, "CCC", {"ccc/__init__.py": "class CCCSystem: ...\n"})
+    with_sibling = scan(spine, siblings=[ccc])
+    assert [e.kind for e in with_sibling] == [EvidenceKind.WIRING]
+    assert "sibling checkout `CCC`" in with_sibling[0].detail
+
+
+def test_a_skip_listed_folder_inside_the_checkout_is_still_skipped(tmp_path):
+    """The fix must not turn the skip list off: vendored trees stay unread."""
+    spine = _repo(tmp_path, "spine", {
+        "adapter.py": "from ccc import CCCSystem\n",
+        "build/ccc/__init__.py": "class CCCSystem: ...\n",
+    })
+    kinds = [e.kind for e in scan(spine)]
+    assert EvidenceKind.WIRING not in kinds

@@ -28,7 +28,7 @@ MUTANTS = [
      "        key = self.summary if self.identity_key is None else self.identity_key\n",
      "        key = self.summary if not self.identity_key else self.identity_key\n"),
     ("the key replaces the whole id, so every file collides", _SCHEMA,
-     "        self.id = _stable_id(self.detector, portable, key)\n",
+     "        self.id = _stable_id(self.detector, hashed, key)\n",
      "        self.id = _stable_id(key)\n"),
     ("the drift finding puts the measured bound back in its identity", _MECH,
      '                identity_key=f"claims {documented} test(s), stale",\n',

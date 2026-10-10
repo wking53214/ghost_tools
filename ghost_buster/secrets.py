@@ -106,6 +106,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from . import gitsafe
 from .schema import Category, Evidence, Finding, Layer, Severity, Status
 
 DETECTOR = "committed_secret"
@@ -236,8 +237,8 @@ def _is_git_repo(root: Path) -> bool:
     """See the module docstring: gitleaks itself does not reliably refuse
     a non-git directory, so this is checked before gitleaks is ever run."""
     try:
-        proc = subprocess.run(
-            ["git", "rev-parse", "--git-dir"], cwd=root,
+        proc = gitsafe.run(
+            ["rev-parse", "--git-dir"], cwd=root,
             capture_output=True, text=True, errors="replace", timeout=_GIT_CHECK_TIMEOUT,
         )
     except (OSError, subprocess.TimeoutExpired, ValueError):
@@ -395,6 +396,12 @@ def scan(root: Path, *, gitleaks_path: Optional[str] = None,
             binary, "detect", "--source", str(root), "--no-banner",
             "--report-format", "json", "--report-path", str(report_path),
             "--redact", "--exit-code", "0",
+            # gitleaks runs `git log -p` itself; keep the target's diff
+            # drivers (textconv, external diff) out of it. See gitsafe.py.
+            # Giving --log-opts REPLACES gitleaks' own defaults for the log
+            # command (gitleaks 8.28: `--full-history --all --diff-filter=tuxdb`),
+            # so those are repeated here to keep the same history in scope.
+            "--log-opts=--full-history --all --diff-filter=tuxdb --no-ext-diff --no-textconv",
         ]
         try:
             # No cwd: --source above is already absolute and is gitleaks'
@@ -402,6 +409,7 @@ def scan(root: Path, *, gitleaks_path: Optional[str] = None,
             # with cwd (see the resolve() comment above).
             proc = subprocess.run(
                 cmd, capture_output=True, text=True, errors="replace", timeout=timeout,
+                env=gitsafe.env(),
             )
         except subprocess.TimeoutExpired:
             report.reason = f"gitleaks did not finish within {timeout:.0f}s"

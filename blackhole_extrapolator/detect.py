@@ -57,12 +57,21 @@ _SKIP_DIRS = frozenset({
 })
 
 
+def _skipped(path: Path, root: Path) -> bool:
+    """True if a skip-listed folder lies INSIDE root on the way to path.
+
+    Only the part of the path below `root` counts. The folders above it are
+    where the checkout happens to live, which must never hide the code.
+    """
+    return bool(_SKIP_DIRS & set(path.relative_to(root).parts))
+
+
 def _partition_source_files(root: Path) -> tuple[list[Path], dict[str, int]]:
     """(.py files worth analysing, never-read count per excluded directory)."""
     included: list[Path] = []
     excluded: dict[str, int] = {}
     for p in root.rglob("*.py"):
-        hit = next((part for part in p.parts if part in _SKIP_DIRS), None)
+        hit = next((part for part in p.relative_to(root).parts if part in _SKIP_DIRS), None)
         if hit is None:
             included.append(p)
         else:
@@ -97,8 +106,8 @@ def _available_modules(search_roots: Sequence[Path]) -> set[str]:
         # `src/` holds only sub-packages, and `import src.rag` was reported
         # missing 38 times on the first full-library run.
         for path in root.rglob("*/"):
-            if path.is_dir() and not _SKIP_DIRS & set(path.parts) and \
-                    any(not _SKIP_DIRS & set(p.parts) for p in path.rglob("*.py")):
+            if path.is_dir() and not _skipped(path, root) and \
+                    any(not _skipped(p, root) for p in path.rglob("*.py")):
                 available.add(path.name)
     return available
 
@@ -204,7 +213,7 @@ def _declared_dependencies(root: Path) -> set[str]:
             # sentinel_os pins with a comment read as its one void.
             if line.startswith(("-", "git+", "http://", "https://")):
                 continue
-            token = re.split(r"[<>=!~;\[\s]", line, 1)[0]
+            token = re.split(r"[<>=!~;\[\s]", line, maxsplit=1)[0]
             if token:
                 names |= _import_names(token)  # ghost_buster: name-disagreement -- `token` is `dist` in the signature
     pyproject = root / "pyproject.toml"

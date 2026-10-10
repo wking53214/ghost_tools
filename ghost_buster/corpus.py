@@ -78,6 +78,25 @@ class Source:
         return self.tree is not None
 
 
+#: Largest file the scan will read, in bytes. A file over this is recorded as
+#: unassessable ("too large") and its bytes are never read: a multi-gigabyte
+#: "source file" otherwise exhausts memory and takes the whole scan with it.
+#: Configurable: `--max-file-size`, or the GHOST_MAX_FILE_BYTES variable.
+DEFAULT_MAX_FILE_BYTES = 5 * 1024 * 1024
+_MAX_FILE_BYTES = DEFAULT_MAX_FILE_BYTES
+
+
+def max_file_bytes() -> int:
+    return _MAX_FILE_BYTES
+
+
+def set_max_file_bytes(n: int) -> None:
+    """Set the size ceiling. Not cached-state: it applies from the next read,
+    and `reset()` (called at the start of every run) drops older verdicts."""
+    global _MAX_FILE_BYTES
+    _MAX_FILE_BYTES = int(n)
+
+
 _CACHE: Dict[Path, Source] = {}
 _STATS = {"reads": 0, "hits": 0}
 
@@ -93,10 +112,16 @@ def _stamp(path: Path) -> Optional[Stamp]:
 def _read(path: Path) -> Source:
     """The one policy. Every failure becomes a reason, never an exception."""
     stamp = _stamp(path)
+    if stamp is not None and stamp[1] > _MAX_FILE_BYTES:
+        return Source(path, None, None,
+                      f"too large: {stamp[1]} bytes is over the {_MAX_FILE_BYTES}-byte "
+                      "limit (--max-file-size), so it was not read", stamp)
     try:
         raw = path.read_bytes()
     except OSError as e:
         return Source(path, None, None, f"{type(e).__name__}: {e}", stamp)
+    except MemoryError:
+        return Source(path, None, None, "MemoryError: not enough memory to read it", stamp)
 
     try:
         encoding, _ = tokenize.detect_encoding(io.BytesIO(raw).readline)
@@ -114,6 +139,13 @@ def _read(path: Path) -> Source:
         return Source(path, text, None, f"SyntaxError{line}: {e.msg}", stamp)
     except ValueError as e:                  # null bytes
         return Source(path, text, None, f"ValueError: {e}", stamp)
+    except RecursionError:
+        # Pathologically nested source (thousands of brackets, a million-term
+        # expression). One such file must not take the scan down with it.
+        return Source(path, text, None,
+                      "RecursionError: too deeply nested to parse", stamp)
+    except MemoryError:
+        return Source(path, text, None, "MemoryError: not enough memory to parse it", stamp)
     return Source(path, text, tree, None, stamp)
 
 

@@ -202,7 +202,12 @@ def test_no_stage_reports_without_the_receipt_channel():
         if not isinstance(node, ast.FunctionDef):
             continue
         if node.name in ("to_stderr", "_resolve_join_mode", "_state",
-                         "_collect_files", "_collect", "_head_commit"):
+                         "_collect_files", "_collect", "_head_commit",
+                         # collection and size helpers: pure, print nothing
+                         "_collect_detail", "_walk_candidates", "_one_per_real_file",
+                         "_is_candidate", "_count_candidates", "render_skipped_dirs",
+                         "_max_file_bytes", "parse_size", "_withhold_oversize",
+                         "_unassessable", "_run_detectors"):
             continue
         names = [a.arg for a in node.args.args]
         assert "say" in names, f"{node.name} has no receipt channel"
