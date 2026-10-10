@@ -98,6 +98,16 @@ class Evidence:
     #: .py/.md files under the root that were left out (excluded directory,
     #: dot-file, egg-info, or a second name for a file already counted).
     files_skipped: int = 0
+    #: Excluded directory names met under the scan root, with how many
+    #: directories carried that name and how many .py/.md files sat inside.
+    #: {name: {"dirs": n, "files": m}}. The scan names what it did not look at.
+    skipped_dirs: Dict[str, Dict[str, int]] = field(default_factory=dict)
+    #: Symlinked directories whose files were NOT scanned (their target is
+    #: outside the scan root, or they point back into the tree being walked),
+    #: [(relative path, files behind it)].
+    symlinked_dirs: List[tuple] = field(default_factory=list)
+    #: The largest file read, in bytes (--max-file-size).
+    max_file_bytes: int = 0
 
 
 _EXCLUDED_DIRS = frozenset({
@@ -121,7 +131,39 @@ def _collect_files(root: Path, extra_excludes: Iterable[str] = ()) -> List[Path]
 
 
 def _collect(root: Path, extra_excludes: Iterable[str] = ()):
-    """(files, number of candidate files left out). See `_collect_files`."""
+    """(files, number of candidate files left out). See `_collect_detail`."""
+    found = _collect_detail(root, extra_excludes)
+    return found.files, found.skipped
+
+
+@dataclass
+class Collected:
+    files: List[Path]
+    skipped: int
+    #: {excluded dir name: {"dirs": directories with that name, "files": candidate files inside}}
+    skipped_dirs: Dict[str, Dict[str, int]]
+    #: [(posix path relative to root, candidate files behind the link)] for
+    #: symlinked directories that were not walked into and whose files are
+    #: not scanned under any other name.
+    symlinked_dirs: List[tuple]
+
+
+def _is_candidate(name: str) -> bool:
+    return name.endswith(".py") or name.endswith(".md")
+
+
+def _count_candidates(directory: str, limit: int = 200_000) -> int:
+    """Candidate files under `directory`, not following links; stops
+    counting at `limit` so a pathological tree cannot stall the scan."""
+    total = 0
+    for _dp, _dn, names in os.walk(directory, followlinks=False):
+        total += sum(1 for n in names if _is_candidate(n))
+        if total >= limit:
+            break
+    return total
+
+
+def _collect_detail(root: Path, extra_excludes: Iterable[str] = ()) -> Collected:
     """.py for every code detector, plus .md so doc_test_count_drift (v0.3)
     has something to read -- every other detector calls _parse() on
     whatever it's handed, which fails closed (returns None, gets skipped)
@@ -133,8 +175,15 @@ def _collect(root: Path, extra_excludes: Iterable[str] = ()):
     of a sibling repo -- and any dot-prefixed file. Exclusion is by directory
     NAME anywhere in the path, so pointing the scan directly at, say, a
     `venv/` would also come back empty; scan the project root.
+
+    What was skipped is NAMED (unreleased): every excluded directory name met
+    under the root is counted, with the files inside it, and a symlinked
+    directory is never walked into (a link could point outside the tree or
+    back into it) but is recorded with the files behind it, unless its
+    target is inside the root and so is scanned under its real name anyway.
     """
     excluded = _EXCLUDED_DIRS | set(extra_excludes)
+    root = Path(root)
     # Each real path once: a symlinked file is otherwise listed under both
     # names, and every function in it becomes its own near-duplicate.
     # Measured on OBSERVE, which keeps genuine symlinks.
@@ -152,11 +201,50 @@ def _collect(root: Path, extra_excludes: Iterable[str] = ()):
     # Nothing else here moves for a repository with no symlinks in it.
     seen_real: Dict[Path, int] = {}
     out: List[Path] = []
-    candidates = sorted(list(root.rglob("*.py")) + list(root.rglob("*.md")))
+    skipped_dirs: Dict[str, Dict[str, int]] = {}
+    symlinked: List[tuple] = []
+    candidates: List[Path] = []
+    # A root that itself sits under an excluded name excludes everything.
+    root_excluded = [part for part in root.parts if part in excluded]
+    real_root = os.path.realpath(str(root))
+
+    def note_skipped(name: str, dirs: int, files: int) -> None:
+        row = skipped_dirs.setdefault(name, {"dirs": 0, "files": 0})
+        row["dirs"] += dirs
+        row["files"] += files
+
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        here = Path(dirpath)
+        for d in list(dirnames):
+            full = here / d
+            if full.is_symlink():
+                dirnames.remove(d)           # os.walk would not descend anyway
+                if d in excluded:
+                    note_skipped(d, 1, 0)
+                    continue
+                target = os.path.realpath(str(full))
+                inside = target == real_root or target.startswith(real_root + os.sep)
+                if inside and not (target == real_root or real_root.startswith(target + os.sep)):
+                    continue                 # its files are scanned under their real names
+                loops = target == real_root or real_root.startswith(target + os.sep)
+                behind = 0 if loops or not os.path.isdir(target) else _count_candidates(target)
+                symlinked.append((PurePath(os.path.relpath(full, root)).as_posix(), behind))
+            elif d in excluded and not root_excluded:
+                dirnames.remove(d)
+                note_skipped(d, 1, _count_candidates(str(full)))
+            elif d.endswith(".egg-info"):
+                dirnames.remove(d)
+                note_skipped("*.egg-info", 1, _count_candidates(str(full)))
+        for n in filenames:
+            if _is_candidate(n):
+                candidates.append(here / n)
+    candidates.sort()
+    if root_excluded:
+        # Everything is under an excluded name; say which one.
+        note_skipped(root_excluded[0], 0, len(candidates))
+        return Collected([], len(candidates), skipped_dirs, symlinked)
     for p in candidates:
-        if not excluded.isdisjoint(p.parts) or p.name.startswith("."):
-            continue
-        if any(part.endswith(".egg-info") for part in p.parts[:-1]):
+        if p.name.startswith("."):
             continue
         real = p.resolve()
         already = seen_real.get(real)
@@ -166,8 +254,45 @@ def _collect(root: Path, extra_excludes: Iterable[str] = ()):
             continue
         seen_real[real] = len(out)
         out.append(p)
-    return out, len(candidates) - len(out)
+    total_candidates = len(candidates) + sum(r["files"] for r in skipped_dirs.values())
+    return Collected(out, total_candidates - len(out), skipped_dirs, symlinked)
 
+
+
+#: How many names a scan lists for skipped or symlinked directories before
+#: it says "and N more". The counts stay exact; only the list is capped.
+SKIP_LIST_CAP = 20
+
+
+def render_skipped_dirs(skipped: Dict[str, Dict[str, int]]) -> str:
+    rows = sorted(skipped.items(), key=lambda kv: (-kv[1]["files"], kv[0]))
+    shown = ", ".join(f"{name} ({v['dirs']} dir(s), {v['files']} file(s))"
+                      for name, v in rows[:SKIP_LIST_CAP])
+    return shown + (f", and {len(rows) - SKIP_LIST_CAP} more" if len(rows) > SKIP_LIST_CAP else "")
+
+
+def _max_file_bytes(args) -> int:
+    """--max-file-size, else $GHOST_MAX_FILE_BYTES, else the default."""
+    value = getattr(args, "max_file_size", None)
+    if value is None:
+        env = os.environ.get("GHOST_MAX_FILE_BYTES", "").strip()
+        if env:
+            try:
+                return parse_size(env)
+            except ValueError:
+                pass
+        return corpus.DEFAULT_MAX_FILE_BYTES
+    return int(value)
+
+
+def parse_size(text: str) -> int:
+    """'5242880', '512K', '5M', '1G' -> bytes."""
+    t = str(text).strip().upper().rstrip("B")
+    mult = {"K": 1024, "M": 1024 ** 2, "G": 1024 ** 3}.get(t[-1:], 1)
+    n = int(float(t[:-1] if mult != 1 else t) * mult)
+    if n < 1:
+        raise ValueError("size must be positive")
+    return n
 
 
 def _resolve_join_mode(args, files, say=to_stderr) -> List[Path]:
@@ -512,8 +637,26 @@ def gather(args, say: Callable[[str], None] = to_stderr) -> Evidence:
 
 def _gather(args, say) -> Evidence:
     baseline_path = args.baseline or (args.path / ".ghost_baseline.json")
-    files, files_skipped = _collect(args.path, args.exclude)
-    if not files:
+    corpus.set_max_file_bytes(_max_file_bytes(args))
+    found = _collect_detail(args.path, args.exclude)
+    files, files_skipped = found.files, found.skipped
+    # A file over the size limit is never read, by any detector: it stays in
+    # the scan's file list (so it is counted and named) but is withheld from
+    # every check and reported as unassessable with the reason.
+    oversize = []
+    limit = corpus.max_file_bytes()
+    for f in files:
+        try:
+            size = f.stat().st_size
+        except OSError:
+            continue
+        if size > limit:
+            oversize.append((f, size))
+    all_files = files
+    if oversize:
+        drop = {f for f, _ in oversize}
+        files = [f for f in files if f not in drop]
+    if not all_files:
         # A scan of nothing is not a clean scan. A checkout under a directory
         # named venv, node_modules or .tox, an empty directory, or a wrong
         # path all used to print "0 new finding(s)" and exit 0 (measured
@@ -521,7 +664,7 @@ def _gather(args, say) -> Evidence:
         raise Stop(f"error: no .py or .md files to scan under {args.path} "
                    f"(excluded directory names: "
                    f"{', '.join(sorted(_EXCLUDED_DIRS | set(args.exclude)))})")
-    say(f"ghost_buster: scanning {len(files)} file(s) under {args.path}")
+    say(f"ghost_buster: scanning {len(all_files)} file(s) under {args.path}")
     # Every check's state, recorded whatever it is. This dict is the reason
     # the ledger can notice a blind spot: "declined" and "could not run" are
     # facts worth remembering, not the absence of one.
@@ -543,6 +686,18 @@ def _gather(args, say) -> Evidence:
         say(f"ghost_buster: detector {name} FAILED and its findings are missing: {why}")
     unparsable = [(PurePath(os.path.relpath(p, args.path)).as_posix(), why)
                   for p, why in corpus.unparsed([f for f in files if f.suffix == ".py"])]
+    unparsable += [(PurePath(os.path.relpath(f, args.path)).as_posix(),
+                    f"too large: {size} bytes is over the {limit}-byte limit "
+                    "(--max-file-size), so it was not read")
+                   for f, size in oversize]
+    if found.skipped_dirs:
+        say("ghost_buster: skipped directories (not scanned): "
+            + render_skipped_dirs(found.skipped_dirs))
+    if found.symlinked_dirs:
+        say("ghost_buster: symlinked directories (not followed): "
+            + ", ".join(f"{n} ({c} file(s))" for n, c in found.symlinked_dirs[:SKIP_LIST_CAP])
+            + (f", and {len(found.symlinked_dirs) - SKIP_LIST_CAP} more"
+               if len(found.symlinked_dirs) > SKIP_LIST_CAP else ""))
     if unparsable:
         say(f"ghost_buster: {len(unparsable)} file(s) could not be parsed and were not analysed by the code detectors")
     if detector_failures:
@@ -576,9 +731,10 @@ def _gather(args, say) -> Evidence:
 
     paths_from_scan_root(findings, files, args.path)
 
-    return Evidence(files=files, findings=findings, checks=checks,
+    return Evidence(files=all_files, findings=findings, checks=checks,
                     baseline_path=baseline_path, test_report=test_report,
                     mutation_run=mutation_run, profile=profile,
                     profile_seconds=profile_seconds, reasons=reasons,
                     detector_failures=detector_failures, unparsable=unparsable,
-                    files_skipped=files_skipped)
+                    files_skipped=files_skipped, skipped_dirs=found.skipped_dirs,
+                    symlinked_dirs=found.symlinked_dirs, max_file_bytes=limit)

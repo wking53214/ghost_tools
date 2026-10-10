@@ -283,7 +283,7 @@ def _read_setup_py(root: Path) -> Optional[Dict[str, str]]:
         return None
     try:
         tree = ast.parse(p.read_text(encoding="utf-8", errors="replace"))
-    except (OSError, SyntaxError, ValueError):
+    except (OSError, SyntaxError, ValueError, RecursionError, MemoryError):
         return None
     out: Dict[str, str] = {}
     for node in ast.walk(tree):
@@ -314,7 +314,7 @@ def _setup_py_unreadable(root: Path) -> Optional[str]:
         return None
     try:
         ast.parse(p.read_text(encoding="utf-8", errors="replace"))
-    except (OSError, SyntaxError, ValueError) as exc:
+    except (OSError, SyntaxError, ValueError, RecursionError, MemoryError) as exc:
         return (f"setup.py could not be parsed ({exc.__class__.__name__}), so its "
                 "declarations were not compared with pyproject.toml")
     return None

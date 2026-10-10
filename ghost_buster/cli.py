@@ -12,6 +12,7 @@ opts in.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import sys
@@ -32,7 +33,21 @@ from . import readiness
 from .casefile import Casefile, Prior
 from .mutation import render_run
 from .schema import Finding, FindingSet, Severity
-from .pipeline import Stop, gather
+from .pipeline import Stop, gather, parse_size, SKIP_LIST_CAP
+
+#: Where --json output goes. main() sets it to the real stdout before the
+#: run, then points sys.stdout at stderr for the run itself, so nothing
+#: printed by library code can land in the middle of the JSON document.
+_OUT = {"stream": None}
+
+
+def _emit(text: str) -> None:
+    stream = _OUT["stream"] or sys.stdout
+    print(text, file=stream)
+    try:
+        stream.flush()
+    except (OSError, ValueError):
+        pass
 
 
 #: Exit codes. A caller must be able to tell "the scan ran and found
@@ -41,6 +56,7 @@ EXIT_CLEAN = 0      # scan ran; nothing new at MAJOR or above
 EXIT_FINDINGS = 1   # scan ran; new CRITICAL or MAJOR findings (this is not a failure of the tool)
 EXIT_USAGE = 2      # scan did not start: bad arguments, target missing or unreadable, unreadable baseline/ledger/casefile
 EXIT_CRASH = 3      # scan started and died: an unhandled error inside ghost_buster itself
+EXIT_INTERRUPTED = 130  # Ctrl-C (128 + SIGINT, the shell convention)
 
 _BY_REQUEST = ("skipped at your request", "opt-in and not requested")
 
@@ -90,7 +106,7 @@ class _Parser(argparse.ArgumentParser):
         self.print_usage(sys.stderr)
         print(f"{self.prog}: error: {message}", file=sys.stderr)
         if self.json_mode:
-            print(_dump(_envelope("error", EXIT_USAGE, [], error=("usage", message))))
+            _emit(_dump(_envelope("error", EXIT_USAGE, [], error=("usage", message))))
         raise SystemExit(EXIT_USAGE)
 
 
@@ -98,13 +114,22 @@ def _dump(payload) -> str:
     return json.dumps(payload, indent=2, sort_keys=True)
 
 
-def _envelope(status, exit_code, findings, evidence=None, error=None) -> dict:
+def _envelope(status, exit_code, findings, evidence=None, error=None,
+              baseline=None, extra=None) -> dict:
     """What `--json` prints. `findings` is the same list of finding records
     it always printed, now under a key, beside the things a bare list cannot
     say: whether the scan finished, how much it looked at, and which checks
     did not run and why. An empty `findings` with status "incomplete" is not
-    a clean result."""
-    scan = {"files_scanned": 0, "files_skipped": 0, "files_unparsable": 0, "unparsable": []}
+    a clean result.
+
+    `baseline` is `{"path": <str|null>, "suppressed": <int>}`: which baseline
+    file was in effect and how many findings it hid from `findings`. When it
+    hid some and the user did not name it with --baseline (it was found in
+    the scanned folder, where whoever controls the folder controls it), that
+    is an `unmeasured` row and the status is "incomplete"."""
+    scan = {"files_scanned": 0, "files_skipped": 0, "files_unparsable": 0, "unparsable": [],
+            "skipped_dirs": [], "skipped_dirs_more": 0, "symlinked_dirs": [],
+            "symlinked_dirs_more": 0, "python_files_analysed": 0, "max_file_bytes": None}
     unmeasured = []
     if evidence is not None:
         scan = {
@@ -112,6 +137,7 @@ def _envelope(status, exit_code, findings, evidence=None, error=None) -> dict:
             "files_skipped": evidence.files_skipped,
             "files_unparsable": len(evidence.unparsable),
             "unparsable": [{"file": f, "reason": why} for f, why in evidence.unparsable],
+            **_skip_listing(evidence),
         }
         for name, state in evidence.checks.items():
             if state in (RAN, NOT_APPLICABLE):
@@ -128,15 +154,55 @@ def _envelope(status, exit_code, findings, evidence=None, error=None) -> dict:
                 "reason": (f"{len(evidence.unparsable)} file(s) could not be parsed, so the code "
                            "detectors skipped them"),
             })
+        py_total = sum(1 for f in evidence.files if f.suffix == ".py")
+        analysed = py_total - sum(1 for f, _ in evidence.unparsable if f.endswith(".py"))
+        scan["python_files_analysed"] = analysed
+        if analysed <= 0:
+            unmeasured.append({
+                "check": "python", "state": "none_analysed", "by_request": False,
+                "reason": ("no Python file was analysed ("
+                           + ("none were found" if py_total == 0
+                              else f"{py_total} found, none could be read or parsed")
+                           + "), so every code check is empty rather than clean"),
+            })
+    if baseline is None:
+        baseline = {"path": None, "suppressed": 0}
+    elif baseline.get("suppressed", 0) > 0 and not baseline.get("explicit", False):
+        unmeasured.append({
+            "check": "baseline", "state": "suppressing", "by_request": False,
+            "reason": (f"{baseline['suppressed']} finding(s) were hidden by the baseline "
+                       f"{baseline['path']}, which was found in the scanned folder and not "
+                       "named with --baseline; whoever controls that folder controls what "
+                       "this report omits. Pass --baseline FILE to take it on purpose."),
+        })
+    baseline = {"path": baseline.get("path"), "suppressed": baseline.get("suppressed", 0)}
     if status == "ok" and any(not u["by_request"] for u in unmeasured):
         status = "incomplete"
-    return {
+    out = {
         "status": status,
         "exit_code": exit_code,
         "error": None if error is None else {"kind": error[0], "message": error[1]},
         "findings": [f.as_dict() for f in findings],
         "scan": scan,
+        "baseline": baseline,
         "unmeasured": unmeasured,
+    }
+    if extra:
+        out.update(extra)
+    return out
+
+
+def _skip_listing(evidence) -> dict:
+    """What the scan left out, by name. Lists are capped; counts are not."""
+    rows = sorted(evidence.skipped_dirs.items(), key=lambda kv: (-kv[1]["files"], kv[0]))
+    links = list(evidence.symlinked_dirs)
+    return {
+        "skipped_dirs": [{"name": n, "dirs": v["dirs"], "files": v["files"]}
+                         for n, v in rows[:SKIP_LIST_CAP]],
+        "skipped_dirs_more": max(0, len(rows) - SKIP_LIST_CAP),
+        "symlinked_dirs": [{"path": n, "files": c} for n, c in links[:SKIP_LIST_CAP]],
+        "symlinked_dirs_more": max(0, len(links) - SKIP_LIST_CAP),
+        "max_file_bytes": evidence.max_file_bytes or None,
     }
 
 
@@ -158,6 +224,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--baseline", type=Path, default=None,
         help="baseline file for delta reporting (default: <path>/.ghost_baseline.json)",
+    )
+    parser.add_argument(
+        "--max-file-size", type=parse_size, default=None, metavar="SIZE",
+        help="largest file to read, e.g. 5M or 262144 (default 5M, or $GHOST_MAX_FILE_BYTES). "
+             "A bigger file is not read; it is listed as unassessable with the reason.",
     )
     parser.add_argument(
         "--accept", action="store_true",
@@ -351,6 +422,17 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _chain_result(args, code, status, message, extra=None) -> int:
+    """--verify-chain's answer: text on stdout, or under --json the same
+    envelope every other mode uses, with the chain verdict under `chain`."""
+    if getattr(args, "json", False):
+        err = None if status != "error" else ("usage", message)
+        _emit(_dump(_envelope(status, code, [], error=err, extra={"chain": extra or {"report": message}})))
+    elif status != "error":
+        print(message)
+    return code
+
+
 def _verify_chain(args) -> int:
     """--verify-chain: read the ledger's own digest chain and report where
     it breaks. An alternate mode, not part of a scan -- it looks at the
@@ -358,17 +440,22 @@ def _verify_chain(args) -> int:
     scanned. See attest.verify for what a chain does and does not prove."""
     path = args.ledger_path or (args.path / ".ghost_ledger.json")
     if not path.is_file():
-        print(f"ghost_buster: chain: no ledger at {path}", file=sys.stderr)
-        return 2
+        msg = f"ghost_buster: chain: no ledger at {path}"
+        print(msg, file=sys.stderr)
+        return _chain_result(args, 2, "error", msg)
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as e:
-        print(f"error: ledger {path}: {e}", file=sys.stderr)
-        return 2
+        msg = f"error: ledger {path}: {e}"
+        print(msg, file=sys.stderr)
+        return _chain_result(args, 2, "error", msg)
     runs = raw.get("runs") or []
     breaks = attest.verify(runs)
-    print(attest.render(breaks, len(runs)))
-    return 1 if any("no link recorded" not in b.what for b in breaks) else 0
+    broken = any("no link recorded" not in b.what for b in breaks)
+    report = attest.render(breaks, len(runs))
+    return _chain_result(args, 1 if broken else 0, "ok", report,
+                         {"runs": len(runs), "broken": broken, "report": report,
+                          "breaks": [b.what for b in breaks]})
 
 
 def _present(args, evidence, new, known, priors, archive, casefile_path) -> None:
@@ -383,7 +470,7 @@ def _present(args, evidence, new, known, priors, archive, casefile_path) -> None
     else:
         retired = Casefile(casefile_path).retired() if casefile_path.is_file() else set()
         # A decision recorded under an older spelling of the id still applies.
-        retired |= {f.id for f in evidence.findings if f.legacy_id in retired}
+        retired |= {f.id for f in evidence.findings if any(i in retired for i in f.previous_ids)}
         print(readiness.assess(evidence.findings, evidence.checks, retired).render())
     print()
     if evidence.profile is not None:
@@ -430,7 +517,13 @@ def _handle_priors_mode(args) -> int:
     ledger_path = args.ledger_path or (args.path / ".ghost_ledger.json")
     ledger = Ledger(ledger_path) if ledger_path.is_file() else None
     rows = build_priors(Casefile(casefile_path), ledger)
-    print(priors_json(rows) if args.json else render_priors(rows, casefile_path, ledger_path if ledger else None))
+    # Under --json this is a bare list of per-detector rows, NOT the scan
+    # envelope: it is data about the case file, not a scan. See the README.
+    text = priors_json(rows) if args.json else render_priors(rows, casefile_path, ledger_path if ledger else None)
+    if args.json:
+        _emit(text)
+    else:
+        print(text)
     return 0
 
 
@@ -439,7 +532,7 @@ def _fail(args, code: int, kind: str, message: str) -> int:
     --json, valid JSON on stdout with status "error". Returns the code."""
     print(message, file=sys.stderr)
     if getattr(args, "json", False):
-        print(_dump(_envelope("error", code, [], error=(kind, message))))
+        _emit(_dump(_envelope("error", code, [], error=(kind, message))))
     return code
 
 
@@ -476,7 +569,8 @@ def _handle_accept_mode(args, baseline, findings, baseline_path, evidence=None) 
     baseline.accept(findings)
     print(f"accepted {len(findings)} finding(s) into {baseline_path}", file=sys.stderr)
     if args.json:
-        print(_dump(_envelope("ok", EXIT_CLEAN, findings, evidence)))
+        _emit(_dump(_envelope("ok", EXIT_CLEAN, findings, evidence,
+                              baseline={"path": str(baseline_path), "suppressed": 0, "explicit": True})))
     return 0
 
 
@@ -510,20 +604,38 @@ def main(argv: List[str] = None) -> int:
     Anything the code below does not handle itself is a crash: it is
     reported on stderr in one plain line, under --json it still leaves valid
     JSON on stdout with status "error", and the exit code is EXIT_CRASH --
-    never the code that means "findings were found".
+    never the code that means "findings were found". Ctrl-C is EXIT_INTERRUPTED
+    (130), also with an error envelope under --json.
     """
     argv = list(sys.argv[1:] if argv is None else argv)
     want_json = "--json" in argv
+    _OUT["stream"] = sys.stdout
     try:
         return _main(argv)
     except SystemExit:
         raise
     except KeyboardInterrupt:
-        raise
+        message = "ghost_buster: interrupted, the scan did not complete"
+        return _fail(argparse.Namespace(json=want_json), EXIT_INTERRUPTED, "interrupted", message)
     except Exception as e:  # noqa: BLE001 -- this is the crash boundary
         message = f"ghost_buster: internal error, the scan did not complete: {type(e).__name__}: {e}"
         traceback.print_exc()
         return _fail(argparse.Namespace(json=want_json), EXIT_CRASH, "crash", message)
+    finally:
+        _OUT["stream"] = None
+
+
+def _baseline_info(args, baseline, baseline_path, known) -> dict:
+    """What `--json` reports about the baseline, and what the human report
+    says when it hid findings the user never asked it to hide."""
+    present = Path(baseline_path).is_file()
+    info = {"path": str(baseline_path) if present else None,
+            "suppressed": len(known), "explicit": args.baseline is not None}
+    if info["suppressed"] and not info["explicit"] and not args.json:
+        print(f"ghost_buster: WARNING: {info['suppressed']} finding(s) hidden by {baseline_path}, "
+              "a baseline found in the scanned folder and not named with --baseline. "
+              "Pass --baseline FILE to use it on purpose.", file=sys.stderr)
+    return info
 
 
 def _main(argv: List[str]) -> int:
@@ -531,6 +643,16 @@ def _main(argv: List[str]) -> int:
     parser.json_mode = "--json" in argv
     args = parser.parse_args(argv)
 
+    # Under --json stdout carries one JSON document and nothing else: anything
+    # printed while the scan runs goes to stderr instead (_emit writes the
+    # document to the real stdout).
+    if args.json:
+        with contextlib.redirect_stdout(sys.stderr):
+            return _run(args)
+    return _run(args)
+
+
+def _run(args) -> int:
     # Setup phase
     _setup_trust(args)
 
@@ -540,6 +662,12 @@ def _main(argv: List[str]) -> int:
         return result
 
     result = _validate_path(args)
+    if result is not None:
+        return result
+
+    # --verify-chain reads the ledger, not the tree: it answers before
+    # anything is scanned.
+    result = _handle_dispatch_modes(args)
     if result is not None:
         return result
 
@@ -565,16 +693,13 @@ def _main(argv: List[str]) -> int:
 
     # Prepare output
     new, known, priors, archive, casefile_path = _prepare_output_data(args, evidence, baseline, findings)
-
-    # Dispatch modes
-    if args.verify_chain:
-        return _verify_chain(args)
+    info = _baseline_info(args, baseline, baseline_path, known)
 
     code = EXIT_FINDINGS if any(f.severity in (Severity.CRITICAL, Severity.MAJOR) for f in new) else EXIT_CLEAN
 
     # Present results
     if args.json:
-        print(_dump(_envelope("ok", code, new, evidence)))
+        _emit(_dump(_envelope("ok", code, new, evidence, baseline=info)))
     else:
         _present(args, evidence, new, known, priors, archive, casefile_path)
 

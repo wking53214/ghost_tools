@@ -71,8 +71,11 @@ class Baseline:
         An entry written under the old spelling keeps suppressing the same
         finding; `--accept` writes the new spelling."""
         stored = self._known.get(f.id)
-        if stored is None and f.legacy_id is not None:
-            stored = self._known.get(f.legacy_id)
+        if stored is None:
+            for old in f.previous_ids:
+                stored = self._known.get(old)
+                if stored is not None:
+                    break
         return stored
 
     def diff(self, current: List[Finding]) -> Tuple[List[Finding], List[Finding]]:
@@ -107,7 +110,7 @@ class Baseline:
         and a baseline written on another machine all looked the same as a
         clean repository (measured 2026-09-08: 137 of 137 entries in one
         committed baseline were inert and nothing said so)."""
-        seen = {f.id for f in current} | {f.legacy_id for f in current if f.legacy_id}
+        seen = {f.id for f in current} | {i for f in current for i in f.previous_ids}
         return [f for fid, f in self._known.items() if fid not in seen]
 
     def derive_findings(self, current: List[Finding]) -> List[Finding]:
