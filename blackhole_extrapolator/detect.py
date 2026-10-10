@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Iterable, Iterator, Sequence
 
 from .schema import EvidenceKind, NegativeEvidence
+from .skips import ScanReport
 
 _BUILTINS = frozenset(dir(builtins))
 
@@ -56,9 +57,22 @@ _SKIP_DIRS = frozenset({
 })
 
 
+def _partition_source_files(root: Path) -> tuple[list[Path], dict[str, int]]:
+    """(.py files worth analysing, never-read count per excluded directory)."""
+    included: list[Path] = []
+    excluded: dict[str, int] = {}
+    for p in root.rglob("*.py"):
+        hit = next((part for part in p.parts if part in _SKIP_DIRS), None)
+        if hit is None:
+            included.append(p)
+        else:
+            excluded[hit] = excluded.get(hit, 0) + 1
+    return included, excluded
+
+
 def _source_files(root: Path) -> list[Path]:
     """Every .py under root worth analysing."""
-    return [p for p in root.rglob("*.py") if not _SKIP_DIRS & set(p.parts)]
+    return _partition_source_files(root)[0]
 
 
 def _available_modules(search_roots: Sequence[Path]) -> set[str]:
@@ -936,22 +950,48 @@ def detect_orphaned_tests(test_paths: Iterable[Path],  # ghost_buster: name-disa
             )
 
 
+def _has_wildcard_binding(text: str) -> bool:
+    """Whether detect_dangling_names will skip this module for a wildcard."""
+    try:
+        return "*" in _bound_names(ast.parse(text))
+    except SyntaxError:
+        return False
+
+
 def scan(root: Path, siblings: Sequence[Path] = ()) -> list[NegativeEvidence]:
+    """Every mechanical negative-space signal under `root`.
+
+    See `scan_with_report` for the same result plus what was read and what
+    was left out."""
+    return scan_with_report(root, siblings)[0]
+
+
+def scan_with_report(
+    root: Path, siblings: Sequence[Path] = ()
+) -> tuple[list[NegativeEvidence], ScanReport]:
     """Every mechanical negative-space signal under `root`.
 
     `siblings` are other checkouts that may provide what this tree imports;
     they classify, they do not silence. A module a sibling provides comes
     back as WIRING evidence rather than disappearing, so the reader sees the
-    dependency and does not mistake it for a loss."""
+    dependency and does not mistake it for a loss.
+
+    The evidence is exactly what `scan` returns. The report says how many
+    files were analysed, how many .py files sit in directories scans never
+    enter, and which files the dangling-name check passed over because of a
+    wildcard import."""
     root = Path(root)
     providers = resolve_providers(root, siblings)
-    sources = _source_files(root)
+    sources, excluded = _partition_source_files(root)
     tests = [p for p in sources
              if p.name.startswith("test_") or "test" in p.parent.name.lower()]
 
     evidence: list[NegativeEvidence] = []
+    wildcard: list[str] = []
     for path in sources:
         text = path.read_text(errors="replace")
+        if _has_wildcard_binding(text):
+            wildcard.append(str(path))
         evidence.extend(detect_unparseable(path, text))
         evidence.extend(detect_destroyed_residue(path, text))
         evidence.extend(detect_debris_structure(path, text))
@@ -961,4 +1001,8 @@ def scan(root: Path, siblings: Sequence[Path] = ()) -> list[NegativeEvidence]:
     evidence.extend(detect_orphaned_tests(tests, [root], providers))  # ghost_buster: name-disagreement -- `tests` is `test_paths` in the signature
     from .rename import detect_rename_candidates
     evidence.extend(detect_rename_candidates(sources, evidence))
-    return evidence
+    return evidence, ScanReport(
+        files_scanned=len(sources),
+        excluded=excluded,
+        wildcard_modules=tuple(wildcard),
+    )

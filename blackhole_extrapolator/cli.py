@@ -27,6 +27,7 @@ from .recover import (
 )
 from .extrapolate import extrapolate, group_by_target
 from .schema import NON_SEEDING_KINDS, EvidenceKind, VoidKind
+from .skips import SkipLog
 
 _SKIP_DIRS = {".git", "__pycache__", "site-packages", ".venv", "venv",
               "node_modules", ".pytest_cache", ".ruff_cache", ".mypy_cache"}
@@ -231,7 +232,8 @@ def _recover_flattened(root: Path, corpora: List[Path], into: Path) -> int:
         print(f"No flattened files under {root}; nothing to recover.")
         return 0
 
-    sources = harvest(corpora)
+    skips = SkipLog()
+    sources = harvest(corpora, skips)
     if not sources:
         print(f"No candidate originals under {', '.join(str(c) for c in corpora)}. "
               "A corpus is any export or transcript tree holding the code with "
@@ -241,6 +243,9 @@ def _recover_flattened(root: Path, corpora: List[Path], into: Path) -> int:
     corpus = Corpus(sources)
     print(f"{len(corpus)} candidate original(s) harvested; "
           f"matching {len(flattened)} flattened file(s)", file=sys.stderr)
+    if skips:
+        print(f"note: {len(skips)} input(s) could not be read and are not in the corpus: "
+              f"{skips.counts()}", file=sys.stderr)
     results = recover(flattened, corpus)
 
     written, refused = [], []
