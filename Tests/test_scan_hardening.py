@@ -306,3 +306,33 @@ def test_a_baseline_written_under_the_old_nfd_id_still_matches(tmp_path):
     path.write_text(fs.to_json())
     new, known = Baseline(path).diff([f])
     assert known == [f] and new == []
+
+
+# -- 3b. gitleaks gets the same hardening ----------------------------------
+
+def test_gitleaks_runs_with_hardened_git_settings(tmp_path):
+    from ghost_buster import secrets
+    root = tmp_path / "tgt"
+    root.mkdir()
+    _git(root, "init", "-q", "-b", "main")
+    (root / "m.py").write_text("x = 1\n")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "one")
+    log = tmp_path / "gitleaks.log"
+    fake = tmp_path / "gitleaks"
+    fake.write_text(
+        "#!/bin/sh\n"
+        f"echo \"$@\" >> {log}\n"
+        f"echo \"CFG=$GIT_CONFIG_COUNT $GIT_CONFIG_KEY_0=$GIT_CONFIG_VALUE_0 EXT=$GIT_EXTERNAL_DIFF\" >> {log}\n"
+        "if [ \"$1\" = version ]; then echo 8.28.0; exit 0; fi\n"
+        "while [ $# -gt 0 ]; do if [ \"$1\" = --report-path ]; then echo '[]' > \"$2\"; fi; shift; done\n"
+        "exit 0\n")
+    fake.chmod(0o755)
+    os.environ["GIT_EXTERNAL_DIFF"] = "/bin/evil"
+    try:
+        secrets.scan(root, gitleaks_path=str(fake), timeout=30)
+    finally:
+        del os.environ["GIT_EXTERNAL_DIFF"]
+    text = log.read_text()
+    assert "--no-ext-diff --no-textconv" in text and "--full-history --all" in text
+    assert "diff.external=" in text and "EXT=\n" in text

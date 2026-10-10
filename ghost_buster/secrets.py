@@ -398,7 +398,10 @@ def scan(root: Path, *, gitleaks_path: Optional[str] = None,
             "--redact", "--exit-code", "0",
             # gitleaks runs `git log -p` itself; keep the target's diff
             # drivers (textconv, external diff) out of it. See gitsafe.py.
-            "--log-opts=--no-ext-diff --no-textconv",
+            # Giving --log-opts REPLACES gitleaks' own defaults for the log
+            # command (gitleaks 8.28: `--full-history --all --diff-filter=tuxdb`),
+            # so those are repeated here to keep the same history in scope.
+            "--log-opts=--full-history --all --diff-filter=tuxdb --no-ext-diff --no-textconv",
         ]
         try:
             # No cwd: --source above is already absolute and is gitleaks'
