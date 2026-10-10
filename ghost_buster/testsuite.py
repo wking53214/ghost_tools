@@ -407,12 +407,24 @@ class _PytestRunner:
         env = dict(os.environ)
         env["GHOST_TEST_STATUS_OUT"] = str(out)
         env["PYTHONDONTWRITEBYTECODE"] = "1"
+        # Keep the run from writing into the folder under scan where it can
+        # be asked not to (unreleased). pytest-benchmark creates `.benchmarks/`
+        # in the cwd and runs git there; hypothesis and coverage keep state
+        # beside the tests; git itself refreshes `.git/index`. The target's
+        # own test code can still write whatever it likes -- it is the
+        # target's code, run because you consented (see trust.py); a scan
+        # with --no-tests runs none of it.
+        # Only the lock setting from gitsafe: the target's tests may run git
+        # themselves and must see an ordinary git, or they fail for our reasons.
+        env["GIT_OPTIONAL_LOCKS"] = "0"
+        env["HYPOTHESIS_STORAGE_DIRECTORY"] = str(self.tmpdir / "hypothesis")
+        env["COVERAGE_FILE"] = str(self.tmpdir / ".coverage")
         existing = env.get("PYTHONPATH")
         env["PYTHONPATH"] = str(self.tmpdir) + (os.pathsep + existing if existing else "")
         # --continue-on-collection-errors: without it one uncollectable test
         # module aborts the whole run before any test executes, and the
         # scan would report that module alone as the suite's entire status.
-        cmd = [self.python, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-p", _PLUGIN_MODULE,
+        cmd = [self.python, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-p", "no:benchmark", "-p", _PLUGIN_MODULE,
                "--continue-on-collection-errors"]
         cmd.extend(nodeids or [])
         try:

@@ -49,6 +49,7 @@ from typing import Dict, List, Optional, Sequence
 
 from .schema import Category, Evidence, Finding, Layer, Severity, Status
 from . import attest
+from . import gitsafe
 from .schema import authoritative, primary
 
 DETECTOR = "ledger"
@@ -158,9 +159,8 @@ def renames_between(root: Path, before: str, after: str) -> Dict[str, str]:
     if not before or not after or before == after:
         return {}
     try:
-        out = subprocess.run(
-            ["git", "-C", str(root), "diff", "--name-status", "-M",
-             before, after],
+        out = gitsafe.run(
+            ["diff", "--name-status", "-M", before, after], root=root,
             capture_output=True, text=True, timeout=30,
         )
     except (OSError, subprocess.SubprocessError):
@@ -194,8 +194,8 @@ def _head_commit(root: Path) -> str:
     """Best effort. A repository is not required to use this tool, so a
     missing commit is recorded as empty rather than raising."""
     try:
-        out = subprocess.run(
-            ["git", "-C", str(root), "rev-parse", "HEAD"],
+        out = gitsafe.run(
+            ["rev-parse", "HEAD"], root=root,
             capture_output=True, text=True, timeout=10,
         )
         return out.stdout.strip() if out.returncode == 0 else ""
@@ -496,11 +496,11 @@ class Ledger:
         # onto the current id, so the change of spelling is not read as one
         # finding fixed and another found.
         for f in findings:
-            old = f.legacy_id
-            if old and old != f.id and old in self.findings and f.id not in self.findings:
-                hist = self.findings.pop(old)
-                hist.finding_id = f.id
-                self.findings[f.id] = hist
+            for old in f.previous_ids:
+                if old in self.findings and f.id not in self.findings:
+                    hist = self.findings.pop(old)
+                    hist.finding_id = f.id
+                    self.findings[f.id] = hist
 
         seen_now = {f.id for f in findings}
         by_id = {f.id: f for f in findings}

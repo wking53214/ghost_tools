@@ -47,6 +47,18 @@ than discovered later:
     it revokes consent. That direction fails closed, which is why it is
     left as it is.
 
+  * THE REMOTE IS READ FROM THE TARGET. `git remote get-url origin` reads
+    the checkout's own `.git/config`, which whoever wrote the checkout also
+    wrote. A different folder whose config says `url = <your trusted
+    repository>` is trusted as that repository, and its tests run on the
+    next default scan. This is the same fact as the point above, seen from
+    the attacker's side, and it is NOT closed: the only offline signal that
+    could tell a forged remote from a real clone is the path, and binding
+    consent to the path would end "a fresh clone does not ask again", which
+    is the reason consent is recorded against a name. The git call itself is
+    hardened (gitsafe.py), so reading the remote cannot run the target's
+    code. If you scan folders you did not make, use `--no-tests`.
+
 The model this assumes is "do I trust this project", the same question a
 CI configuration answers when it runs a suite. It is NOT "do I trust this
 exact code", which would require re-consent per commit and would make the
@@ -63,6 +75,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional
+
+from . import gitsafe
 
 ENV = "GHOST_TOOLS_TRUST"
 TRUST_ALL = "-"
@@ -95,8 +109,8 @@ def identity(root: Path) -> str:
     """What consent is recorded against: the origin remote, normalised, or
     the resolved path when there is none."""
     try:
-        r = subprocess.run(["git", "-C", str(root), "remote", "get-url", "origin"],
-                           capture_output=True, text=True, timeout=10)
+        r = gitsafe.run(["remote", "get-url", "origin"], root=root,
+                        capture_output=True, text=True, timeout=10)
         if r.returncode == 0 and r.stdout.strip():
             return _normalise_remote(r.stdout)
     except (OSError, subprocess.SubprocessError):
