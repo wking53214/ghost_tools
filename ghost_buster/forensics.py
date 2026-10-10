@@ -51,6 +51,7 @@ which is the only way the comparison means anything.
 from __future__ import annotations
 
 import subprocess
+from . import gitsafe
 from enum import Enum
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Set, Tuple
@@ -104,8 +105,8 @@ def _git(root: Path, *args: str) -> Optional[str]:
     some of them as answers.
     """
     try:
-        out = subprocess.run(
-            ["git", "-C", str(root), *args],
+        out = gitsafe.run(
+            args, root=root,
             capture_output=True, timeout=_TIMEOUT,
         )
     except (OSError, subprocess.SubprocessError):

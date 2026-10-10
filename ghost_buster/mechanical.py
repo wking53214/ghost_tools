@@ -885,7 +885,7 @@ def _analyse_sources(sources: Dict[str, str]) -> Tuple[Set[str], Set[str]]:
     for name, text in sources.items():
         try:
             tree = ast.parse(text)
-        except (SyntaxError, ValueError):
+        except (SyntaxError, ValueError, RecursionError, MemoryError):
             continue
         path = Path(name)
         (tests if _looks_like_a_test(path) else library)[path] = tree
@@ -1264,6 +1264,138 @@ def _is_collection(value) -> bool:
     return False
 
 
+_ANNOTATION_STRING_CALLS = frozenset({"cast", "TypeVar", "NewType", "NamedTuple", "TypedDict"})
+
+
+def _names_in_string(text: str) -> Set[str]:
+    """Identifiers inside a string used as a type: `"Foo"`, `"list[Foo] | None"`,
+    `"pkg.Foo"`. Anything that is not an expression is not a type and yields
+    nothing."""
+    if not isinstance(text, str) or len(text) > 2000:
+        return set()
+    try:
+        tree = ast.parse(text.strip(), mode="eval")
+    except (SyntaxError, ValueError, RecursionError, MemoryError):
+        return set()
+    out: Set[str] = set()
+    for sub in ast.walk(tree):
+        if isinstance(sub, ast.Name):
+            out.add(sub.id)
+        elif isinstance(sub, ast.Attribute):
+            out.add(sub.attr)
+        elif isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+            out |= _names_in_string(sub.value)      # "Optional['Foo']"
+    return out
+
+
+def _strings_in(node) -> Set[str]:
+    """Names found in every string constant under `node`, read as a type."""
+    out: Set[str] = set()
+    for sub in ast.walk(node):
+        if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+            out |= _names_in_string(sub.value)
+    return out
+
+
+def _all_exports(tree) -> Set[str]:
+    """Names listed in `__all__`, however it is built: `__all__ = [...]`,
+    `__all__: list[str] = [...]`, `__all__ += [...]`, `__all__ = a + b`,
+    `__all__.extend([...])` / `.append("x")`."""
+    out: Set[str] = set()
+
+    def strings(value) -> None:
+        for sub in ast.walk(value):
+            if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+                out.add(sub.value)
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            if any(isinstance(t, ast.Name) and t.id == "__all__" for t in node.targets):
+                strings(node.value)
+        elif isinstance(node, (ast.AugAssign, ast.AnnAssign)):
+            t = node.target
+            if isinstance(t, ast.Name) and t.id == "__all__" and node.value is not None:
+                strings(node.value)
+        elif isinstance(node, ast.Call):
+            fn = node.func
+            if (isinstance(fn, ast.Attribute) and fn.attr in ("extend", "append", "update", "add")
+                    and isinstance(fn.value, ast.Name) and fn.value.id == "__all__"):
+                for a in node.args:
+                    strings(a)
+    return out
+
+
+def _uses_beyond_identifiers(tree, stars: Set[str]) -> Set[str]:
+    """Names this tree USES in ways a scan for identifiers misses:
+
+      * `from x import y` uses `y` (this is also how a re-export in an
+        `__init__.py` reaches the name it re-exports, and what an
+        `if TYPE_CHECKING:` import is). `from x import *` uses everything
+        public in `x`: the module's last name goes into `stars`.
+      * a string annotation or forward reference (`def f(a: "Foo")`,
+        `x: "list[Foo]"`, `Optional["Foo"]`, `Dict[str, "Foo"]`,
+        `cast("Foo", v)`, `TypeVar("T", bound="Foo")`).
+    """
+    out: Set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                if alias.name == "*":
+                    if node.module:
+                        stars.add(node.module.split(".")[-1])
+                else:
+                    out.add(alias.name)
+        elif isinstance(node, ast.arg) and node.annotation is not None:
+            out |= _strings_in(node.annotation)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.returns is not None:
+            out |= _strings_in(node.returns)
+        elif isinstance(node, ast.AnnAssign):
+            out |= _strings_in(node.annotation)
+        elif isinstance(node, ast.Subscript):
+            out |= _strings_in(node.slice)
+        elif isinstance(node, ast.Call):
+            fn = node.func
+            fname = fn.id if isinstance(fn, ast.Name) else getattr(fn, "attr", None)
+            if fname in _ANNOTATION_STRING_CALLS:
+                for a in node.args:
+                    out |= _strings_in(a)
+                for kw in node.keywords:
+                    if kw.arg in ("bound", "default") or kw.arg is None:
+                        out |= _strings_in(kw.value)
+    return out
+
+
+def _stub_uses(parsed: Dict[Path, ast.AST]) -> Set[str]:
+    """Names appearing in `.pyi` stub files that sit beside the scanned
+    modules. A stub is the module's declared public surface: a name in it is
+    used by definition, even when no Python file ever calls it."""
+    out: Set[str] = set()
+    stars: Set[str] = set()
+    seen: Set[Path] = set()
+    for directory in sorted({Path(p).parent for p in parsed}):
+        try:
+            stubs = sorted(directory.glob("*.pyi"))
+        except OSError:
+            continue
+        for stub in stubs[:500]:
+            if stub in seen:
+                continue
+            seen.add(stub)
+            tree = corpus.parse(stub)
+            if tree is None:
+                continue
+            out.add(stub.stem)
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Name):
+                    out.add(node.id)
+                elif isinstance(node, ast.Attribute):
+                    out.add(node.attr)
+                elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                    out.add(node.name)
+            out |= _uses_beyond_identifiers(tree, stars) | _all_exports(tree)
+    return out
+
+
 @register("dead_code")
 def detect_dead_code(files: List[Path]) -> List[Finding]:
     """Flags a module-level def/class whose name never appears as an
@@ -1330,6 +1462,15 @@ def detect_dead_code(files: List[Path]) -> List[Finding]:
             continue
         parsed[path] = tree
 
+    # What a scan for identifiers does not see (unreleased): `from x import y`,
+    # `__all__` however it is built, names inside string annotations, and
+    # the declared surface of sibling .pyi stubs. All of these are USES.
+    star_modules: Set[str] = set()
+    for tree in parsed.values():
+        referenced_names |= _uses_beyond_identifiers(tree, star_modules)
+        exported_names |= _all_exports(tree)
+    referenced_names |= _stub_uses(parsed)
+
     for path, tree in parsed.items():
         for node in tree.body:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
@@ -1339,15 +1480,13 @@ def detect_dead_code(files: List[Path]) -> List[Finding]:
                     continue
                 if isinstance(node, ast.ClassDef) and _is_protocol_or_abc(node):
                     continue
+                if (not node.name.startswith("_")
+                        and (Path(path).stem in star_modules
+                             or (Path(path).stem == "__init__" and Path(path).parent.name in star_modules))):
+                    # `from this_module import *` makes every public name a use.
+                    referenced_names.add(node.name)
                 definitions.setdefault(node.name, []).append(path)
                 nodes[(node.name, path)] = node
-            if isinstance(node, ast.Assign):
-                for target in node.targets:
-                    if isinstance(target, ast.Name) and target.id == "__all__":
-                        if isinstance(node.value, (ast.List, ast.Tuple)):
-                            for elt in node.value.elts:
-                                if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
-                                    exported_names.add(elt.value)
 
     for path, tree in parsed.items():
         for node in ast.walk(tree):

@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+**Red team round: dead_code false positives, silent baselines, git hardening, poison files.** Tests:
+`Tests/test_dead_code_uses.py`, `Tests/test_baseline_reported.py`, `Tests/test_scan_hardening.py`,
+`Tests/test_trusted_scan_writes.py`.
+
+- `dead_code` counts as USES: `from x import y` (re-exports in `__init__.py`, `TYPE_CHECKING`
+  imports), `from m import *`, `__all__` in every form (`+=`, annotated, `.extend`, `a + b`),
+  names in string annotations and forward references, and names in sibling `.pyi` stubs.
+  Computed lookups through `globals()`, `vars()`, `locals()`, `__dict__`, `sys.modules` and
+  `getattr` set `dynamic_lookup_possible: yes` with a count, and a literal prefix
+  (`"_cmd_" + x`) flags every name that starts with it.
+- `--json` gains `baseline: {path, suppressed}`. A baseline found in the scanned folder that hides
+  findings, and was not named with `--baseline`, is an `unmeasured` row and `status: "incomplete"`.
+  A human run warns on stderr. CI's self-scan now passes `--baseline` explicitly.
+- Every git command is hardened (`ghost_buster/gitsafe.py`): a target's `diff.external`,
+  `core.fsmonitor`, hooks and textconv drivers no longer run, and git no longer refreshes
+  `.git/index`. Also applied to gitleaks. The `origin`-forging limit of the trust record is
+  documented, not closed (README, `trust.py`).
+- A file the parser cannot survive (`RecursionError`, `MemoryError`) is listed as unassessable and
+  the scan continues. New `--max-file-size` (default 5 MB): bigger files are not read.
+- Skipped directories are named with counts in the output (capped at 20 listed); symlinked
+  directories are never followed and are listed with the files behind them. A scan that analysed
+  no Python file is `incomplete`, not `ok`.
+- `--json` is always one valid JSON document: Ctrl-C exits 130 with an error envelope,
+  `--verify-chain --json` uses the envelope (and scans nothing), and stray prints go to stderr.
+  `--priors --json` stays a bare list, documented.
+- Finding ids hash the path in NFC. Ids of non-ASCII paths in decomposed form change once; the old
+  spelling still matches baselines, ledgers and case files.
+- A trusted scan no longer creates `.benchmarks/` or rewrites `.git/index` in the target.
+
 **Honest exit codes, honest "not measured", a quiet default, stable ids.** Four problems from a red
 team, one change. Tests: `Tests/test_honest_exit_codes.py`, `Tests/test_honest_unmeasured.py`,
 `Tests/test_default_scan_writes_nothing.py`, `Tests/test_ids_ignore_how_the_path_was_typed.py`. 1849 passed, 39 skipped.

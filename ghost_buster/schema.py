@@ -56,6 +56,7 @@ tool is designed not to repeat.
 from __future__ import annotations
 
 import hashlib
+import unicodedata
 import json
 import os
 from contextlib import contextmanager
@@ -158,6 +159,15 @@ def _stable_id(*parts: str) -> str:
     -- which is exactly the property baseline diffing needs."""
     digest = hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
     return f"ghost-{digest[:12]}"
+
+
+def _nfc(text: str) -> str:
+    """A path in Unicode normalisation form C. macOS hands back decomposed
+    names (NFD) and Linux, Windows and git usually hand back composed ones
+    (NFC), so the same file `cafe\u0301.py` / `caf\u00e9.py` hashed to two
+    different ids on two machines and a committed baseline matched on one
+    and went inert on the other."""
+    return unicodedata.normalize("NFC", text)
 
 
 #: The folder being scanned, set for the length of one scan by
@@ -342,6 +352,9 @@ class Finding:
     #: still be matched. None when it equals `id`. Never serialised.
     legacy_id: Optional[str] = field(init=False, default=None, repr=False, compare=False)
     _legacy_file: Optional[str] = field(init=False, default=None, repr=False, compare=False)
+    #: (id, path) pairs this finding had under the spelling in use before
+    #: paths were hashed in NFC. Only present when NFC changed the path.
+    _pre_nfc: List[tuple] = field(init=False, default_factory=list, repr=False, compare=False)
 
     def __post_init__(self):
         # Store the portable path, not the absolute one, so the baseline
@@ -362,12 +375,21 @@ class Finding:
             _portable_path(p) for p in self.evidence.related_files
         ]
         key = self.summary if self.identity_key is None else self.identity_key
-        self.id = _stable_id(self.detector, portable, key)
+        # Hashed in NFC so the same file has the same id whichever
+        # normalisation the filesystem reported it in. `evidence.file` keeps
+        # the spelling the filesystem used. The id it had before this is kept
+        # as a previous id, so an existing baseline still matches.
+        hashed = _nfc(portable)
+        self.id = _stable_id(self.detector, hashed, key)
+        if hashed != portable:
+            self._pre_nfc.append((_stable_id(self.detector, portable, key), portable))
         if _SCAN_ROOT is not None and self.evidence.absolute_file:
             old = _legacy_portable_path(self.evidence.absolute_file)
-            old_id = _stable_id(self.detector, old, key)
+            old_id = _stable_id(self.detector, _nfc(old), key)
             if old_id != self.id:
                 self.legacy_id, self._legacy_file = old_id, old
+            if old != _nfc(old):
+                self._pre_nfc.append((_stable_id(self.detector, old, key), old))
         if self.confidence is not None and not (0.0 <= self.confidence <= 1.0):
             raise ValueError(f"confidence must be 0.0-1.0, got {self.confidence}")
         if self.layer == Layer.MECHANICAL and self.status == Status.REASONED:
@@ -377,6 +399,14 @@ class Finding:
                 "the finding is either present (CONFIRMED) or it wasn't "
                 "produced at all. REASONED is reserved for the semantic layer."
             )
+
+    @property
+    def previous_ids(self) -> List[str]:
+        """Every earlier spelling of this finding's id, for matching a
+        baseline, ledger or case file written by an older version."""
+        out = [self.legacy_id] if self.legacy_id else []
+        out.extend(i for i, _ in self._pre_nfc)
+        return [i for i in dict.fromkeys(out) if i != self.id]
 
     def as_dict(self) -> Dict[str, Any]:
         return {
@@ -636,7 +666,7 @@ def disambiguate_ids(findings: List[Finding]) -> int:
         # Identical findings (same place, same detail) are one finding
         # reported twice, not two findings; they keep the shared id.
         def place(f: Finding):
-            return (f.evidence.file, f.evidence.line_start or 0,
+            return (_nfc(f.evidence.file), f.evidence.line_start or 0,
                     f.evidence.line_end or 0, f.detail)
         distinct = {place(f) for f in group}
         if len(distinct) < 2:
@@ -645,8 +675,12 @@ def disambiguate_ids(findings: List[Finding]) -> int:
             where = "|".join(str(part) for part in place(f))
             f.id = f"{base}-{hashlib.sha256(where.encode('utf-8')).hexdigest()[:6]}"
             if f.legacy_id is not None:
-                old_where = "|".join(str(part) for part in (f._legacy_file,) + place(f)[1:])
+                old_where = "|".join(str(part) for part in (_nfc(f._legacy_file),) + place(f)[1:])
                 f.legacy_id = (f"{f.legacy_id}-"
                                f"{hashlib.sha256(old_where.encode('utf-8')).hexdigest()[:6]}")
+            f._pre_nfc = [
+                (f"{pid}-{hashlib.sha256('|'.join(str(x) for x in (pfile,) + place(f)[1:]).encode('utf-8')).hexdigest()[:6]}",
+                 pfile)
+                for pid, pfile in f._pre_nfc]
             renamed += 1
     return renamed

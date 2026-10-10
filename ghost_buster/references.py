@@ -35,6 +35,41 @@ _TARGET = re.compile(r"^\s*([A-Za-z_][\w.]*)\s*:\s*([A-Za-z_][\w.]*)")
 _SETUP_PY = re.compile(r"""["']\s*[\w.\-]+\s*=\s*([A-Za-z_][\w.]*)\s*:\s*([A-Za-z_][\w.]*)""")
 
 
+#: Calls that read a namespace table by key: globals().get(name), sys.modules.get(name).
+_TABLE_GETTERS = {"get", "pop", "setdefault", "__getitem__"}
+_NAMESPACE_CALLS = {"globals", "vars", "locals"}
+
+
+def _is_namespace(node) -> bool:
+    """globals(), vars(...), locals(), sys.modules, anything.__dict__."""
+    if isinstance(node, ast.Call):
+        fn = node.func
+        return isinstance(fn, ast.Name) and fn.id in _NAMESPACE_CALLS
+    if isinstance(node, ast.Attribute):
+        if node.attr == "__dict__":
+            return True
+        return node.attr == "modules" and isinstance(node.value, ast.Name) and node.value.id == "sys"
+    return False
+
+
+def _constant_prefix(key) -> str:
+    """The literal text a computed key starts with, or ''."""
+    if isinstance(key, ast.BinOp) and isinstance(key.op, (ast.Add, ast.Mod)):
+        left = key.left
+        if isinstance(left, ast.Constant) and isinstance(left.value, str):
+            return left.value.split("%")[0]
+        return _constant_prefix(left)
+    if isinstance(key, ast.JoinedStr) and key.values:
+        first = key.values[0]
+        if isinstance(first, ast.Constant) and isinstance(first.value, str):
+            return first.value
+    if isinstance(key, ast.Call) and isinstance(key.func, ast.Attribute) and key.func.attr == "format":
+        base = key.func.value
+        if isinstance(base, ast.Constant) and isinstance(base.value, str):
+            return base.value.split("{")[0]
+    return ""
+
+
 def find_repo_root(files: Iterable[Path]) -> Optional[Path]:
     """Nearest folder at or above the scanned files holding a project marker, else None."""
     paths = [os.path.abspath(str(p)) for p in files]
@@ -152,6 +187,9 @@ class ReferenceIndex:
         self.entries: Dict[Tuple[str, str], str] = {}
         self.string_refs: Dict[str, str] = {}
         self.dynamic = 0
+        #: Constant prefixes of computed names ("_cmd_" in globals()["_cmd_" + x]),
+        #: {prefix: file}. A name starting with one is probably reached by it.
+        self.prefix_refs: Dict[str, str] = {}
         self._file_modules: Dict[str, Set[str]] = {}
         if self.root is not None:
             self.entries, self.notes = entry_points(self.root)
@@ -193,11 +231,16 @@ class ReferenceIndex:
                         if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
                             note(arg.value)
                         else:
-                            self.dynamic += 1
+                            self._computed(arg, rel)
                     elif fname in ("import_module", "__import__") and node.args:
                         arg = node.args[0]
                         if not (isinstance(arg, ast.Constant) and isinstance(arg.value, str)):
                             self.dynamic += 1
+                    elif fname in _TABLE_GETTERS and isinstance(fn, ast.Attribute) \
+                            and _is_namespace(fn.value) and node.args:
+                        self._computed(node.args[0], rel)
+                elif isinstance(node, ast.Subscript) and _is_namespace(node.value):
+                    self._computed(node.slice, rel)
                 elif isinstance(node, (ast.List, ast.Tuple, ast.Set)):
                     for e in node.elts:
                         if isinstance(e, ast.Constant):
@@ -206,6 +249,23 @@ class ReferenceIndex:
                     for e in (*node.keys, *node.values):
                         if isinstance(e, ast.Constant):
                             note(e.value)
+
+    def _computed(self, key, rel: str) -> None:
+        """A lookup in a namespace table (globals(), vars(), locals(),
+        sys.modules, obj.__dict__) by `key`. A literal string is a plain
+        reference (the name is spelled out); anything else is a computed
+        lookup no scan can resolve, and counts. A constant prefix
+        (`"_cmd_" + x`, `f"_cmd_{x}"`) is remembered."""
+        if isinstance(key, ast.Constant) and isinstance(key.value, str):
+            if key.value in self.candidates:
+                self.string_refs.setdefault(key.value, rel)
+            return
+        if isinstance(key, ast.Name) and key.id == "__name__":
+            return                  # sys.modules[__name__]: this module, spelled out
+        self.dynamic += 1
+        prefix = _constant_prefix(key)
+        if prefix and len(prefix) >= 2:
+            self.prefix_refs.setdefault(prefix, rel)
 
     def _scan_config(self) -> None:
         for path in self._config_files():
@@ -254,6 +314,10 @@ class ReferenceIndex:
                     why.append(f"{label} (module '{module}' not found, matched by name only)")
         if name in self.string_refs:
             why.append(f"named as a string in {self.string_refs[name]}")
+        for prefix, where in sorted(self.prefix_refs.items()):
+            if name.startswith(prefix):
+                why.append(f"may be reached by a computed lookup with prefix '{prefix}' in {where}")
+                break
         return why
 
     def _module_on_disk(self, module: str) -> bool:

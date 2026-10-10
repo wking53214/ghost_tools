@@ -118,6 +118,11 @@ class ModuleFacts:
     data_models: List[str] = field(default_factory=list)
     entry_points: List[str] = field(default_factory=list)   # main(), __main__ guard
     raises: List[str] = field(default_factory=list)
+    #: Maturity measure, not a finding: how many `raise X` statements the
+    #: module has (a bare `raise` re-raises and is not counted), and how many
+    #: physical lines it has. Their ratio is reported, never judged.
+    raise_sites: int = 0
+    lines: int = 0
     #: Numbers written into the code where they can be changed: a top-level
     #: name bound to a number, and a number given as a parameter default on
     #: a module-level function or a method of a module-level class. Each
@@ -278,7 +283,7 @@ def _read_setup_py(root: Path) -> Optional[Dict[str, str]]:
         return None
     try:
         tree = ast.parse(p.read_text(encoding="utf-8", errors="replace"))
-    except (OSError, SyntaxError, ValueError):
+    except (OSError, SyntaxError, ValueError, RecursionError, MemoryError):
         return None
     out: Dict[str, str] = {}
     for node in ast.walk(tree):
@@ -309,7 +314,7 @@ def _setup_py_unreadable(root: Path) -> Optional[str]:
         return None
     try:
         ast.parse(p.read_text(encoding="utf-8", errors="replace"))
-    except (OSError, SyntaxError, ValueError) as exc:
+    except (OSError, SyntaxError, ValueError, RecursionError, MemoryError) as exc:
         return (f"setup.py could not be parsed ({exc.__class__.__name__}), so its "
                 "declarations were not compared with pyproject.toml")
     return None
@@ -471,6 +476,8 @@ def analyse_module(path: Path, root: Path, package_roots: Set[str]) -> Optional[
     facts = ModuleFacts(
         dotted=dotted, path=str(rel), is_package=(path.name == "__init__.py"),
     )
+    text = corpus.text(path)
+    facts.lines = 0 if text is None else len(text.splitlines())
 
     for node in tree.body:
         # __all__ is the only DECLARED public surface. Everything else is
@@ -554,6 +561,7 @@ def analyse_module(path: Path, root: Path, package_roots: Set[str]) -> Optional[
             elif node.module:
                 _record_import(facts, node.module, package_roots)
         elif isinstance(node, ast.Raise) and node.exc is not None:
+            facts.raise_sites += 1
             exc = node.exc.func if isinstance(node.exc, ast.Call) else node.exc
             name = exc.attr if isinstance(exc, ast.Attribute) else getattr(exc, "id", "")
             if name and name not in facts.raises:
@@ -1094,6 +1102,17 @@ def render_model(model: StructuralModel) -> str:
     L.append(f"  data representations: "
              f"{sum(len(m.data_models) for m in model.modules)}")
     L.append(f"  test modules        : {len(model.test_modules)}")
+    L.append("")
+
+    total_lines = sum(m.lines for m in model.modules)
+    total_sites = sum(m.raise_sites for m in model.modules)
+    L.append("MATURITY MEASURE (reported, not judged)")
+    L.append(f"  lines               : {total_lines:,}")
+    L.append(f"  raise sites         : {total_sites:,}")
+    if total_sites:
+        L.append(f"  lines per raise     : {total_lines / total_sites:,.0f}")
+    else:
+        L.append("  lines per raise     : none (no raise sites)")
     L.append("")
 
     L.append(f"UNRESOLVED ({len(model.unresolved)})")

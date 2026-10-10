@@ -84,6 +84,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Set, Tuple
 
+from . import gitsafe
 from .schema import Category, Evidence, Finding, Layer, Severity, Status
 
 DETECTOR = "unmerged_branch"
@@ -108,8 +109,8 @@ def _run(root: Path, args: List[str], *, input_text: Optional[str] = None,  # gh
     # A replaced byte still yields a deterministic patch-id for the same
     # input, which is all the squash check needs.
     try:
-        result = subprocess.run(
-            ["git", *args], cwd=root, input=input_text,
+        result = gitsafe.run(
+            args, cwd=root, input=input_text,
             capture_output=True, text=True, errors="replace", timeout=timeout,
         )
     except (OSError, subprocess.TimeoutExpired, ValueError):
