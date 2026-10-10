@@ -102,7 +102,8 @@ MUTANTS = [
      '        "--project", action=argparse.BooleanOptionalAction, default=True,\n',
      '        "--project", action=argparse.BooleanOptionalAction, default=False,\n'),
     ("declining the project scan leaves no receipt", _PL,
-     '        _skipped("project scan", "--no-project", say)\n', '        pass\n'),
+     '        _declined(checks, reasons, "project", "project scan", "--no-project", say)\n',
+     '        pass\n'),
 ]
 
 

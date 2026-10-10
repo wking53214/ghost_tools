@@ -207,7 +207,9 @@ def test_no_stage_reports_without_the_receipt_channel():
                          "_collect_detail", "_walk_candidates", "_one_per_real_file",
                          "_is_candidate", "_count_candidates", "render_skipped_dirs",
                          "_max_file_bytes", "parse_size", "_withhold_oversize",
-                         "_unassessable", "_run_detectors"):
+                         "_unassessable", "_run_detectors",
+                         # pure: records a reason in a dict, prints nothing
+                         "_note_if_not_run"):
             continue
         names = [a.arg for a in node.args.args]
         assert "say" in names, f"{node.name} has no receipt channel"
