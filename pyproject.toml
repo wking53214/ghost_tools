@@ -33,9 +33,10 @@ ghost-buster = "ghost_buster.cli:main"
 ghost-writer = "ghost_writer.cli:main"
 ghost-triage = "ghost_writer.triage:main"
 blackhole-extrapolator = "blackhole_extrapolator.cli:main"
+stack-census = "stack_census.cli:main"
 
 [tool.setuptools]
-packages = ["ghost_buster", "ghost_writer", "ghost_writer.polish", "blackhole_extrapolator"]
+packages = ["ghost_buster", "ghost_writer", "ghost_writer.polish", "blackhole_extrapolator", "stack_census"]
 
 [tool.setuptools.package-data]
 "ghost_writer.polish" = ["LICENSE"]
