@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+**Ghost Tools installs from git again.** #89 deleted `ghost_writer/polish` but left it in `pyproject.toml`'s
+package list, so every `pip install` from git failed with `package directory 'ghost_writer/polish' does not
+exist` (URE's CI installs this way). The entry is gone, `calibration.json` now ships beside the module that reads
+it, and `Tests/test_packaging.py` checks that every listed package, data file and console script exists, because
+the suite runs from source and never builds the package.
+
 **New: `stack-census`, a read-only census of a folder of clones.** Package `stack_census`; tests in
 `Tests/test_stack_census.py`; notes in `docs/STACK_CENSUS.md`. For each repo it reports last commit, 30-day and
 total commits, checked-out branch, license, CI and README status line; reads which repo pins which other repo
