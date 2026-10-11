@@ -15,6 +15,10 @@ class KeyIdentity:
     environment: str
     rotation_policy: str
 
+def _missing_key_id() -> str:
+    raise SigningError("HORSEMEN_KEY_ID must name the key in HORSEMEN_SIGNING_SECRET")
+
+
 class ProductionSigner:
     DEV_DEFAULT_MARKER = "INSECURE_DEV_ONLY_DO_NOT_USE_IN_PRODUCTION"
     def __init__(self, secret=None, key_identity=None, production=False):
@@ -39,12 +43,25 @@ class ProductionSigner:
             else:
                 self._secret = secret
                 self.key_identity = key_identity or KeyIdentity("dev-supplied", "caller-supplied-dev", "development", "n/a-dev")
-    def sign(self, message: bytes) -> str:
+    def _value(self, message: bytes) -> str:
         if self.production and self._secret == self.DEV_DEFAULT_MARKER.encode("utf-8"):
             raise SigningError("Refusing to sign in production with development default key")
         return hmac.new(self._secret, message, hashlib.sha256).hexdigest()
-    def verify(self, message: bytes, signature: str) -> bool:
-        return hmac.compare_digest(self.sign(message), signature)
+    def sign(self, message: bytes) -> dict:
+        """The stack-wide signature block: algorithm, key_id and value together."""
+        return {
+            "algorithm": "hmac-sha256",
+            "key_id": self.key_identity.key_id,
+            "value": self._value(message),
+        }
+    def verify(self, message: bytes, block) -> bool:
+        """True only for a block made under this signer's key ID with the same value."""
+        if not isinstance(block, dict) or block.get("algorithm") != "hmac-sha256":
+            return False
+        if block.get("key_id") != self.key_identity.key_id:
+            return False
+        value = block.get("value")
+        return isinstance(value, str) and hmac.compare_digest(self._value(message), value)
     @classmethod
     def from_env(cls, production=True):
         secret = os.environ.get("HORSEMEN_SIGNING_SECRET")
@@ -53,7 +70,7 @@ class ProductionSigner:
         if production:
             return cls(secret=secret.encode("utf-8"),
                        key_identity=KeyIdentity(
-                           os.environ.get("HORSEMEN_KEY_ID", "env-key"),
+                           os.environ.get("HORSEMEN_KEY_ID") or _missing_key_id(),
                            os.environ.get("HORSEMEN_KEY_PROVENANCE", "environment-variable"),
                            "production",
                            os.environ.get("HORSEMEN_KEY_ROTATION", "unspecified-must-set")),
