@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+**New: `stack-census`, a read-only census of a folder of clones.** Package `stack_census`; tests in
+`Tests/test_stack_census.py`; notes in `docs/STACK_CENSUS.md`. For each repo it reports last commit, 30-day and
+total commits, checked-out branch, license, CI and README status line; reads which repo pins which other repo
+from manifests (`pyproject.toml`, `requirements*.txt`, `setup.*`, `Dockerfile`, workflows); and reads the
+Graveyard to mark wholly retired repos and to flag a live pin to one. Output is a table, `--json`, or a draft
+`CENSUS.md` entry (`--entry`) whose decision line is left blank. It assigns no tier and writes nothing: hints
+are starting points, and what git cannot say is `?`, never zero.
+
 **CI is green again on main.** Three unused imports (two in `Tests/test_ids_ignore_how_the_path_was_typed.py`,
 one in `ghost_buster/cli.py`) failed the lint gate. The self-scan flagged the repeated "declined at your
 request" and "did not run" branches in `_run_repository_checks` as two new MAJOR findings, so they are now two
