@@ -1,6 +1,6 @@
 # ghost_tools
 
-Codebase **integrity toolkit**: things that are present and wrong, documentation drift, duplication, dead/vacuous tests, secrets, structural ghosts. Version per README title / CHANGELOG (v1.5.x lineage). Assurance loop: **this scanner ← [`SWIZZLE`](https://github.com/wking53214/SWIZZLE) + [`ASSAY`](https://github.com/wking53214/ASSAY) specimens**.
+Codebase **integrity toolkit**: things that are present and wrong, documentation drift, duplication, dead/vacuous tests, secrets, structural ghosts. Version 1.9.1 (`pyproject.toml`; see CHANGELOG.md). Assurance loop: **this scanner ← [`SWIZZLE`](https://github.com/wking53214/SWIZZLE) + [`ASSAY`](https://github.com/wking53214/ASSAY) specimens**.
 
 ## 1. Pipeline Position & Role
 
@@ -22,7 +22,7 @@ Seven rules (each from a real defect): silence is the defect; fail-closed; say w
 
 Defaults, all 24 detectors and the mutant census: [docs/REFERENCE.md](docs/REFERENCE.md), checked by the test suite.
 
-~185 Python files, ~1926 functions, ~86 TODOs. Stdlib-oriented CLI. Kernel scan measures duplication/drift against private `CNS` schema when present.
+199 Python files, about 2,218 function definitions and 5 TODO comments (counted 2026-10-12, excluding `Tests/fixtures`). Stdlib-oriented CLI. Kernel scan measures duplication/drift against private `CNS` schema when present.
 
 ## 2b. Optional CNS adapter
 
@@ -41,7 +41,7 @@ modified by this package.
 
 ## 4. Brutally Honest Current Status & Gaps
 
-Crowded category (ruff, mutmut, Sonar). Differentiation is fail-closed silence reporting + SWIZZLE adversarial loop. Calibration records with no corpus must say so. 86 TODOs. CNS-aware scan needs private CNS. Commercial audit used this tool on the portfolio and found real vacuous tests — that is the existence proof, not a market.
+Crowded category (ruff, mutmut, Sonar). Differentiation is fail-closed silence reporting + SWIZZLE adversarial loop. Calibration records with no corpus must say so. 5 TODO comments. CNS-aware scan needs private CNS. Commercial audit used this tool on the portfolio and found real vacuous tests. That is the existence proof, not a market.
 
 ## 5. Core Invariants & Guarantees
 
@@ -121,7 +121,12 @@ The ledger is opt-in: a default scan writes nothing into the folder it scans. Us
 
 A finding's id hashes the detector, the file's path relative to the scanned folder (posix slashes) and the summary, so the way the folder was typed (`./x`, `x/`, absolute, a symlink, another working directory) does not change it. The path is hashed in Unicode NFC form, so a file name written composed (Linux, git) or decomposed (macOS) has one id; the report still shows the name the filesystem gave. Ids from earlier versions, including the spelling an unnormalised non-ASCII path had before, are still recognised by the baseline, the ledger history and retired case-file decisions for the same finding.
 
-Test suite at the time of writing: 1849 passed, 39 skipped.
+Test suite, run 2026-10-12 on CPython 3.13 with all seven circuit checkouts on `PYTHONPATH`: 1935 passed, 39 skipped, 0 failed, 0 expected-to-fail. The skips are not bugs. 38 need the `gitleaks` binary and 1 needs the private `cns` package:
+
+- `Tests/test_secrets.py`, `Tests/test_secrets_disclosure.py`, `Tests/test_secrets_mutants.py` (38 skipped): skip with "gitleaks is not installed". To run them, put a `gitleaks` binary (v8, from the gitleaks project releases) on `PATH` and run `pytest` again. The machine this was checked on could not download it, so these stayed skipped.
+- `Tests/test_cns_adapter.py` (1 skipped): "cns not installed". It needs the private `CNS` package, which is not public. These cannot run outside that package.
+
+No test in the suite is marked expected-to-fail.
 
 ## 7. Stack Integration Topology
 
