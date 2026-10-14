@@ -29,7 +29,15 @@ put back.
 Calibrated on the seven circuit repositories (2,733 test functions): 14 assertless smoke tests, 0 stubs, 0
 mock-only, 0 status claims; records in `calibration.json`. Two mutant suites (`Tests/test_testshape_mutants.py`,
 `Tests/test_statusclaim_mutants.py`) prove the tests can fail, which, for a detector about tests that cannot,
-seemed only right. 27 detectors; 644 mutants in 47 files.
+seemed only right. 27 detectors; 646 mutants in 47 files.
+
+**Red team of the three new detectors.** Three ways past them were found by attacking them and are closed:
+an assertion that cannot fail (`assert True`, `assert 1`, `assert x == x`) no longer counts as an assertion,
+so a test that does work and then asserts a tautology is `assertless_test` again; two test classes with a
+method of the same name are two findings with two ids (the identity key now carries the class name); and a
+status label dressed up for a scanner (a soft hyphen or zero-width space inside the word, a non-breaking
+space or hyphen between the words, `**bold**` markers, full-width letters) is read the way a person reads it
+(NFKC, invisible characters and emphasis stripped) before the phrases are matched. Tests and mutants for each.
 
 **`list_membership_in_loop` findings carry the facts a fixer needs.** The finding's `attributes` now hold
 `name` (the container), `container` (`list` or `tuple`, from the literal Ghost saw) and `defined_at` (the line

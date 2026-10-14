@@ -35,7 +35,8 @@ wrong far more often than right: pytest suites assert through
 through helpers of their own. So a test is assertless only when its body
 holds none of these, anywhere inside it:
 
-    * an `assert` or `raise` statement;
+    * an `assert` or `raise` statement, except an assert that cannot fail
+      (`assert True`, `assert 1`, `assert x == x`), which counts as nothing;
     * a call whose name (leading underscores stripped) starts with `assert`,
       `check`, `verify`, `expect`, `ensure`, `require` or `confirm`, or is
       `raises`, `warns`, `fail`, `deprecated_call` or `approx` (`pytest.raises`
@@ -176,6 +177,19 @@ def _is_stub(body: Sequence[ast.stmt]) -> bool:
     return True
 
 
+def _tautology(node: ast.Assert) -> bool:
+    """`assert True`, `assert 1`, `assert x == x`: an assert statement that cannot fail.
+
+    The cheapest way to satisfy "the test must assert something" without asserting anything, and
+    the one an agent under pressure to pass reaches for first. Red-teamed 2026-10-14."""
+    test = node.test
+    if isinstance(test, ast.Constant):
+        return bool(test.value)
+    if isinstance(test, ast.Compare) and len(test.ops) == 1 and isinstance(test.ops[0], (ast.Eq, ast.Is, ast.LtE, ast.GtE)):
+        return ast.dump(test.left) == ast.dump(test.comparators[0])
+    return False
+
+
 def _shape(func: ast.AST, helpers: Set[str]) -> Optional[str]:
     """None, "stub", "assertless" or "mock_only" for one test function."""
     body = _body_without_docstring(func)
@@ -184,7 +198,10 @@ def _shape(func: ast.AST, helpers: Set[str]) -> Optional[str]:
     plain: List[ast.AST] = []
     mock: List[ast.Call] = []
     for node in ast.walk(func):
-        if isinstance(node, (ast.Assert, ast.Raise)):
+        if isinstance(node, ast.Assert):
+            if not _tautology(node):
+                plain.append(node)
+        elif isinstance(node, ast.Raise):
             plain.append(node)
         elif isinstance(node, ast.Call):
             name = _call_name(node)
@@ -198,14 +215,17 @@ def _shape(func: ast.AST, helpers: Set[str]) -> Optional[str]:
 
 
 def _test_functions(tree: ast.Module):
-    """Every test function: module-level `test_*`, and `test*` methods of a class."""
+    """(qualified name, function) for every test: module-level `test_*`, and `test*` methods of a class.
+
+    The qualified name (`TestA.test_runs`) is the finding's identity, so two classes with a method of
+    the same name are two findings, not one that hides the other."""
     for node in tree.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_"):
-            yield node
+            yield node.name, node
         elif isinstance(node, ast.ClassDef):
             for item in node.body:
                 if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and item.name.startswith("test"):
-                    yield item
+                    yield f"{node.name}.{item.name}", item
 
 
 #: shape -> (detector, severity, what the summary says after the test's name, the detail).
@@ -227,7 +247,7 @@ _SHAPES = {
 }
 
 
-def _finding(path: Path, func: ast.AST, shape: str) -> Finding:
+def _finding(path: Path, func: ast.AST, shape: str, qualified: str) -> Finding:
     detector, severity, says, detail = _SHAPES[shape]
     return Finding(
         detector=detector,
@@ -238,7 +258,7 @@ def _finding(path: Path, func: ast.AST, shape: str) -> Finding:
         summary=f"{path.name}:{func.lineno} test '{func.name}' {says}",
         detail=detail,
         # The test is the defect, not the line it starts on; an edit above it must not make a new finding.
-        identity_key=f"{shape}: {func.name}",
+        identity_key=f"{shape}: {qualified}",
         evidence=Evidence(file=str(path), line_start=func.lineno,
                           line_end=getattr(func, "end_lineno", None)),
         attributes={"shape": shape, "name": func.name},
@@ -254,12 +274,12 @@ def find_shapes(files: Sequence[Path]) -> List[Finding]:
         if tree is None:
             continue
         helpers = _local_asserting_helpers(tree, path)
-        for func in _test_functions(tree):
+        for qualified, func in _test_functions(tree):
             if _excused(func):
                 continue
             shape = _shape(func, helpers)
             if shape is not None:
-                findings.append(_finding(path, func, shape))
+                findings.append(_finding(path, func, shape, qualified))
     return findings
 
 

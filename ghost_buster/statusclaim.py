@@ -54,6 +54,7 @@ changelog ("Every git command is hardened"), excluded on both rules.
 from __future__ import annotations
 
 import re
+import unicodedata
 from pathlib import Path
 from typing import List, Optional, Sequence
 
@@ -95,6 +96,22 @@ def _strip_code_spans(line: str) -> str:
     return re.sub(r"`[^`]*`", lambda m: " " * len(m.group(0)), line)
 
 
+#: Characters that change how a line looks to a scanner and not to a reader: zero-width joiners
+#: and spaces, the soft hyphen, the byte order mark; plus Markdown emphasis markers.
+_INVISIBLE = re.compile("[​‌‍⁠﻿­*_]")
+
+
+def _as_read(line: str) -> str:
+    """The line as a reader sees it: compatibility-normalised (full-width letters, ligatures),
+    invisible characters and emphasis markers removed, non-breaking spaces and hyphens made plain.
+
+    Red-teamed 2026-10-14: `Produc­tion ready`, `Production ready`, `**Production** ready`
+    and full-width letters all read as the claim and all slipped past the plain pattern."""
+    text = unicodedata.normalize("NFKC", line)
+    text = _INVISIBLE.sub("", text)
+    return text.replace(" ", " ").replace("‑", "-").replace("‐", "-")
+
+
 def _quoted(line: str, start: int, end: int) -> bool:
     """Inside double quotes, or a phrase wrapped in quotes of its own (`'Production-ready'`)."""
     before = line[:start]
@@ -106,7 +123,7 @@ def _quoted(line: str, start: int, end: int) -> bool:
 
 def _claim_on(line: str) -> Optional[tuple]:
     """(kind, phrase, start) for the first reportable claim on a prose line, else None."""
-    text = _strip_code_spans(line)
+    text = _as_read(_strip_code_spans(line))
     for kind, pattern in _CLAIMS:
         for m in pattern.finditer(text):
             before, after = text[:m.start()], text[m.end():]
