@@ -38,7 +38,7 @@ jobs:
       - name: Test
         run: python -m pytest -q
       - name: Lint (hard gate)
-        run: ruff check .
+        run: python -m ruff check .  # the pinned install, never a ruff that happens to be on PATH
 
   self-scan:
     # The tool that argues silence is the defect scans itself on every push.
