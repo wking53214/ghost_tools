@@ -90,7 +90,7 @@ def test_the_identity_survives_an_edit_above_the_claim(tmp_path):
 
 
 def test_one_finding_per_line_and_no_crash_on_bad_bytes(tmp_path):
-    files = _doc(tmp_path, "Production ready and battle-tested, on one line.\n")
+    _doc(tmp_path, "Production ready and battle-tested, on one line.\n")
     (tmp_path / "bad.md").write_bytes(b"\xff\xfe production ready")
     found = detect_status_claims(sorted(tmp_path.rglob("*.md")))
     assert [f.attributes["kind"] for f in found] == ["production_ready"]
