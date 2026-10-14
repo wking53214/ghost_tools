@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+**`list_membership_in_loop` findings carry the facts a fixer needs.** The finding's `attributes` now hold
+`name` (the container), `container` (`list` or `tuple`, from the literal Ghost saw) and `defined_at` (the line
+its module-level assignment starts on), beside the existing `kind`. The Drafter's set-literal fixer reads these
+instead of the summary sentence. `loop_invariant_call` findings are unchanged. `Tests/test_speed.py` checks the
+attributes.
+
 **Ghost Tools installs from git again.** #89 deleted `ghost_writer/polish` but left it in `pyproject.toml`'s
 package list, so every `pip install` from git failed with `package directory 'ghost_writer/polish' does not
 exist` (URE's CI installs this way). The entry is gone, `calibration.json` now ships beside the module that reads
