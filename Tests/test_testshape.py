@@ -65,7 +65,7 @@ def test_every_way_of_asserting_counts(tmp_path):
 
 
         def test_assert_statement():
-            assert 1
+            assert len("x")
 
 
         def test_pytest_raises():
@@ -179,6 +179,43 @@ def test_the_findings_say_what_they_are(tmp_path):
     assert stub.detector == ASSERTLESS and stub.category is Category.VACUOUS_CHECK and stub.status is Status.CONFIRMED
     assert "does nothing" in stub.summary and stub.evidence.line_start == 1
     assert mock.detector == MOCK_ONLY and "only against a mock" in mock.summary and mock.evidence.line_start == 5
+
+
+def test_an_assert_that_cannot_fail_is_no_assertion(tmp_path):
+    found = _shapes(tmp_path, '''\
+        def test_true():
+            run()
+            assert True
+
+
+        def test_one():
+            run()
+            assert 1
+
+
+        def test_same():
+            x = run()
+            assert x == x
+
+
+        def test_real():
+            x = run()
+            assert x == 1
+
+
+        def test_identity_check_is_real():
+            x = run()
+            assert x is None
+    ''')
+    assert [n for n, _, _ in found] == ["test_true", "test_one", "test_same"]
+
+
+def test_two_classes_with_the_same_method_name_are_two_findings(tmp_path):
+    files = _tree(tmp_path, {"tests/test_c.py": (
+        "class TestA:\n    def test_runs(self):\n        pass\n\n\n"
+        "class TestB:\n    def test_runs(self):\n        pass\n")})
+    found = find_shapes(files)
+    assert len(found) == 2 and len({f.id for f in found}) == 2
 
 
 def test_the_identity_survives_an_edit_above_the_test(tmp_path):

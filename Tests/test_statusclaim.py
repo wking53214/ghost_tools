@@ -63,6 +63,19 @@ def test_honest_quoted_and_code_sentences_are_not_claims(tmp_path, line):
     assert _kinds(tmp_path, f"# T\n\n{line}\n") == []
 
 
+@pytest.mark.parametrize("line", [
+    "Produc­tion ready.",            # soft hyphen
+    "Production ready.",             # non-breaking space
+    "Production‑ready.",             # non-breaking hyphen
+    "**Production** ready.",              # emphasis markers
+    "__Battle__-_tested_.",
+    "Pro​duction ready.",            # zero-width space
+    "Ｐｒｏｄｕｃｔｉｏｎ ready.",   # full-width letters
+])
+def test_a_claim_dressed_up_for_a_scanner_still_reads_as_a_claim(tmp_path, line):
+    assert len(_kinds(tmp_path, f"# T\n\n{line}\n")) == 1
+
+
 def test_a_fenced_block_is_not_prose(tmp_path):
     assert _kinds(tmp_path, "# T\n\n```\nstatus: production ready\n```\n\nAfter the fence: battle-tested.\n") == \
         [("battle_tested", "battle-tested", 7)]
