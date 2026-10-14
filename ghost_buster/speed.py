@@ -104,6 +104,12 @@ class Pitstop:
     line: int
     kind: str
     what: str
+    #: For a list membership: the container's name, whether it is a `list` or `tuple`
+    #: literal, and the line its assignment starts on. A fixer takes these as Ghost's
+    #: facts instead of re-reading the summary sentence. Empty for an invariant call.
+    name: str = ""
+    container: str = ""
+    defined_at: int = 0
 
 
 # A membership test against a constant this small is not a scan worth
@@ -117,12 +123,20 @@ def _list_literals_bound(tree: ast.Module) -> Dict[str, int]:
     """Names bound to a list or tuple literal at module level, with the
     literal's length. The one case where the tree KNOWS the container is a
     list and not something a set would break, and knows how long it is."""
-    out: Dict[str, int] = {}
+    return {name: length for name, (length, _, _) in _literal_facts(tree).items()}
+
+
+def _literal_facts(tree: ast.Module) -> Dict[str, tuple]:
+    """Name -> (length, "list" or "tuple", line of the assignment) for every
+    module-level list or tuple literal. A name bound twice keeps its last
+    binding, which is the one a later membership test sees."""
+    out: Dict[str, tuple] = {}
     for node in tree.body:
         if isinstance(node, ast.Assign) and isinstance(node.value, (ast.List, ast.Tuple)):
+            container = "list" if isinstance(node.value, ast.List) else "tuple"
             for t in node.targets:
                 if isinstance(t, ast.Name):
-                    out[t.id] = len(node.value.elts)
+                    out[t.id] = (len(node.value.elts), container, node.lineno)
     return out
 
 
@@ -257,6 +271,7 @@ def find_pitstops(files: Sequence[Path]) -> List[Pitstop]:
         if tree is None:
             continue
         lists = _list_literals_bound(tree)
+        facts = _literal_facts(tree)
         for loop in ast.walk(tree):
             if not isinstance(loop, _LOOPS):
                 continue
@@ -272,8 +287,11 @@ def find_pitstops(files: Sequence[Path]) -> List[Pitstop]:
                             and isinstance(node.ops[0], (ast.In, ast.NotIn))
                             and isinstance(node.comparators[0], ast.Name)
                             and lists.get(node.comparators[0].id, 0) > _SMALL_LITERAL):
+                        bound = node.comparators[0].id
                         _add(out, seen, Pitstop(path, node.lineno, LIST_IN_LOOP,
-                                                f"`in {node.comparators[0].id}`, a module-level list"))
+                                                f"`in {bound}`, a module-level list",
+                                                name=bound, container=facts[bound][1],
+                                                defined_at=facts[bound][2]))
                     # a call whose arguments cannot change between iterations
                     if (isinstance(node, ast.Call)
                             and isinstance(node.func, ast.Name)
@@ -313,7 +331,10 @@ def detect_pitstops(files: Sequence[Path]) -> List[Finding]:
                   "see `ghost-buster --profile`."
             ),
             evidence=Evidence(file=str(p.path), line_start=p.line),
-            attributes={"kind": p.kind},
+            # A fixer reads the container's name, kind and line from here, as Ghost's facts.
+            attributes={"kind": p.kind} if p.kind != LIST_IN_LOOP else {
+                "kind": p.kind, "name": p.name, "container": p.container,
+                "defined_at": str(p.defined_at)},
         ))
     return findings
 

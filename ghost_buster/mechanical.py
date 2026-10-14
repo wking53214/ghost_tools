@@ -2577,6 +2577,10 @@ from .copies import detect_drifted_copies                      # noqa: E402
 from .deadend import DETECTOR as DEAD_END_DETECTOR             # noqa: E402
 from .deadend import detect_dead_end_calls                     # noqa: E402
 from .speed import INVARIANT_CALL, LIST_IN_LOOP, detect_pitstops  # noqa: E402
+from .statusclaim import DETECTOR as STATUS_CLAIM_DETECTOR     # noqa: E402
+from .statusclaim import detect_status_claims                  # noqa: E402
+from .testshape import ASSERTLESS, MOCK_ONLY                   # noqa: E402
+from .testshape import detect_assertless_tests, detect_mock_only_tests  # noqa: E402
 from .swallowed import DETECTOR as SWALLOWED_DETECTOR          # noqa: E402
 from .swallowed import detect_swallowed_exceptions             # noqa: E402
 from .naming import (                                            # noqa: E402
@@ -2604,6 +2608,11 @@ register(UNDEFINED_SELF_DETECTOR)(detect_undefined_self_methods)
 # the name the finding carries, so both must be visible to a baseline.
 register(LIST_IN_LOOP)(lambda files: [f for f in detect_pitstops(files) if f.detector == LIST_IN_LOOP])
 register(INVARIANT_CALL)(lambda files: [f for f in detect_pitstops(files) if f.detector == INVARIANT_CALL])
+# Tests that cannot fail, tests that check only a mock, and status labels a reader will trust
+# (2026-10-14: the "looks done, isn't" failure modes from this project's own history).
+register(ASSERTLESS)(detect_assertless_tests)
+register(MOCK_ONLY)(detect_mock_only_tests)
+register(STATUS_CLAIM_DETECTOR)(detect_status_claims)
 
 
 def run_all(files: Iterable[Path], failures: Optional[List[Tuple[str, str]]] = None) -> List[Finding]:

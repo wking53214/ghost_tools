@@ -2,6 +2,41 @@
 
 ## Unreleased
 
+**Three detectors for the "looks done, isn't" failures.** From this project's own history (tests whose
+assertions sat behind guards that were never true; a README claiming "RL Ready" for things that had not
+shipped) and the research on how AI-assisted workflows fail: the common thread is trusting that something is
+verified when it is not.
+
+- `assertless_test` (`ghost_buster/testshape.py`): a `test_*` function (or a `test*` method of a test class)
+  whose body is only `pass` or `...` is MAJOR, because it cannot fail and is counted; one that does work but
+  asserts nothing anywhere (no `assert` or `raise`, no assert*/check*/verify*-style call, `raises`, `warns`,
+  `fail`, and no call to an asserting helper defined in the file, in a module beside it, or in `conftest.py`)
+  is MINOR, because it can fail only by raising. `xfail` and `skip` tests are left alone.
+- `mock_only_test` (same module): a test whose every assertion is a Mock assertion (`assert_called...`,
+  `assert_awaited...`). It proves the code called the mock, nothing about the real collaborator.
+- `unverified_status_claim` (`ghost_buster/statusclaim.py`): a status label in a `.md` file that a reader will
+  take as a verdict ("production ready", "enterprise grade", "battle-tested", "fully tested", "100% coverage",
+  a Title-Case "Something Ready"), outside code, not negated, quoted or attributed, and not in a changelog.
+  CONFIRMED that the phrase is there; the detail says how many test files the scan saw and hands the label
+  over for independent re-verification. It does not decide whether the claim is true.
+
+All three carry an `identity_key` that names the test or the label, not its line, so an edit above it is
+not a new finding; and a status phrase that a critic is discussing (`'Production-ready': claim not backed by
+any measurement`, which is what Burnish writes into a README) is a report, not a claim. Both were found by
+running the whole circuit: the first draft made every Burnish finish introduce two "new" findings and get
+put back.
+
+Calibrated on the seven circuit repositories (2,733 test functions): 14 assertless smoke tests, 0 stubs, 0
+mock-only, 0 status claims; records in `calibration.json`. Two mutant suites (`Tests/test_testshape_mutants.py`,
+`Tests/test_statusclaim_mutants.py`) prove the tests can fail, which, for a detector about tests that cannot,
+seemed only right. 27 detectors; 644 mutants in 47 files.
+
+**`list_membership_in_loop` findings carry the facts a fixer needs.** The finding's `attributes` now hold
+`name` (the container), `container` (`list` or `tuple`, from the literal Ghost saw) and `defined_at` (the line
+its module-level assignment starts on), beside the existing `kind`. The Drafter's set-literal fixer reads these
+instead of the summary sentence. `loop_invariant_call` findings are unchanged. `Tests/test_speed.py` checks the
+attributes.
+
 **Ghost Tools installs from git again.** #89 deleted `ghost_writer/polish` but left it in `pyproject.toml`'s
 package list, so every `pip install` from git failed with `package directory 'ghost_writer/polish' does not
 exist` (URE's CI installs this way). The entry is gone, `calibration.json` now ships beside the module that reads
