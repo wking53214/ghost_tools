@@ -1788,6 +1788,182 @@
         },
         "note": null
       }
+    },
+    {
+      "name": "assertless_test",
+      "kind": "detector",
+      "date": "2026-10-14",
+      "corpus": "2026-10-14: the seven circuit repositories at ASSAY 37b6180c, BURNISH 62cc973b, DRAFTER b098496f, JUDGE e616e22d, SWIZZLE 6495082e, WARDEN 89f2e7d9, ghost_tools 5f68364d (2,733 test functions; 622 .py files scanned)",
+      "before": {
+        "reported": 19,
+        "note": "first draft: assert/raise statements, assert*/check*/verify*-style calls and helpers defined in the same file counted as assertions"
+      },
+      "after": {
+        "reported": 14,
+        "stubs": 0,
+        "note": "after counting helpers imported from a module beside the test file (ghost_tools' `from tree_guard import unchanged`); every one of the 14 is a smoke test that can fail only by raising (SWIZZLE 12, WARDEN 1, ghost_tools 1), reported MINOR; no stub (MAJOR) exists in the corpus"
+      },
+      "exclusions": [
+        "a test marked xfail, skip or skipif",
+        "a file that is not a test file by name or folder",
+        "a test that calls any assert*/check*/verify*/expect*/ensure*/require*/confirm* function, raises, warns, fail, approx or deprecated_call, or a local asserting helper"
+      ],
+      "disclosed": [
+        "a smoke test that checks only that code runs is reported as assertless, which is true; whether that was the intent is a person's call",
+        "a helper imported from the product package (not a sibling test module) is not read, so a test that asserts only through such a helper is reported"
+      ],
+      "source": "ghost_buster/testshape.py docstring; CHANGELOG Unreleased",
+      "reproduce": {
+        "command": "python -m ghost_buster.cli <repo> --json --single-repo --no-tests --no-secrets --no-ledger --no-structure --no-project --no-correlate --no-branches, once per repository, then filter findings to the detector",
+        "tool_version": "ghost_tools after 1.9.1 (Unreleased, 2026-10-14)",
+        "corpus_manifest": {
+          "ASSAY": {
+            "branch": "ccr-4f987431-3ecs3l",
+            "commit": "37b6180cad54"
+          },
+          "BURNISH": {
+            "branch": "ccr-4f987431-3ecs3l",
+            "commit": "62cc973badc1"
+          },
+          "DRAFTER": {
+            "branch": "ccr-4f987431-3ecs3l",
+            "commit": "b098496fb347"
+          },
+          "JUDGE": {
+            "branch": "ccr-4f987431-3ecs3l",
+            "commit": "e616e22d8e73"
+          },
+          "SWIZZLE": {
+            "branch": "ccr-4f987431-3ecs3l",
+            "commit": "6495082e8cf2"
+          },
+          "WARDEN": {
+            "branch": "ccr-4f987431-3ecs3l",
+            "commit": "89f2e7d9555f"
+          },
+          "ghost_tools": {
+            "branch": "ccr-4f987431-3ecs3l",
+            "commit": "5f68364d9d2a"
+          }
+        },
+        "note": ""
+      }
+    },
+    {
+      "name": "mock_only_test",
+      "kind": "detector",
+      "date": "2026-10-14",
+      "corpus": "2026-10-14: the seven circuit repositories at ASSAY 37b6180c, BURNISH 62cc973b, DRAFTER b098496f, JUDGE e616e22d, SWIZZLE 6495082e, WARDEN 89f2e7d9, ghost_tools 5f68364d (2,733 test functions; 622 .py files scanned)",
+      "before": {
+        "reported": 0
+      },
+      "after": {
+        "reported": 0,
+        "note": "no test in the corpus asserts only through Mock assertions; the shape is tested on hand-built files (Tests/test_testshape.py)"
+      },
+      "exclusions": [
+        "a test with any assertion that is not a Mock assertion (assert_called..., assert_awaited...)",
+        "a test marked xfail, skip or skipif"
+      ],
+      "disclosed": [
+        "precision on a real corpus is not yet measured: the corpus held no instance"
+      ],
+      "source": "ghost_buster/testshape.py docstring; CHANGELOG Unreleased",
+      "reproduce": {
+        "command": "python -m ghost_buster.cli <repo> --json --single-repo --no-tests --no-secrets --no-ledger --no-structure --no-project --no-correlate --no-branches, once per repository, then filter findings to the detector",
+        "tool_version": "ghost_tools after 1.9.1 (Unreleased, 2026-10-14)",
+        "corpus_manifest": {
+          "ASSAY": {
+            "branch": "ccr-4f987431-3ecs3l",
+            "commit": "37b6180cad54"
+          },
+          "BURNISH": {
+            "branch": "ccr-4f987431-3ecs3l",
+            "commit": "62cc973badc1"
+          },
+          "DRAFTER": {
+            "branch": "ccr-4f987431-3ecs3l",
+            "commit": "b098496fb347"
+          },
+          "JUDGE": {
+            "branch": "ccr-4f987431-3ecs3l",
+            "commit": "e616e22d8e73"
+          },
+          "SWIZZLE": {
+            "branch": "ccr-4f987431-3ecs3l",
+            "commit": "6495082e8cf2"
+          },
+          "WARDEN": {
+            "branch": "ccr-4f987431-3ecs3l",
+            "commit": "89f2e7d9555f"
+          },
+          "ghost_tools": {
+            "branch": "ccr-4f987431-3ecs3l",
+            "commit": "5f68364d9d2a"
+          }
+        },
+        "note": ""
+      }
+    },
+    {
+      "name": "unverified_status_claim",
+      "kind": "detector",
+      "date": "2026-10-14",
+      "corpus": "2026-10-14: the seven circuit repositories at ASSAY 37b6180c, BURNISH 62cc973b, DRAFTER b098496f, JUDGE e616e22d, SWIZZLE 6495082e, WARDEN 89f2e7d9, ghost_tools 5f68364d (2,733 test functions; 622 .py files scanned)",
+      "before": {
+        "candidate_lines": 1,
+        "note": "one candidate across every .md in the corpus: a CHANGELOG line saying `Every git command is hardened (...)`"
+      },
+      "after": {
+        "reported": 0,
+        "note": "the one candidate is excluded twice over: it is in a changelog, and a bare `hardened` is not a reportable phrase"
+      },
+      "exclusions": [
+        "CHANGELOG, HISTORY, NEWS and RELEASES files",
+        "a claim negated or attributed earlier in the same sentence, or inside quotation marks",
+        "text inside backticks or a fenced code block",
+        "a bare `hardened` (usually `hardened against X`, a mechanism)"
+      ],
+      "disclosed": [
+        "the finding confirms the phrase is there; it does not decide whether the claim is true",
+        "the corpus held no live instance, so precision on real READMEs is unmeasured; the phrase list comes from this project's own recorded history (`RL Ready`, `Multi-AI Orchestration Ready`, `production ready`)"
+      ],
+      "source": "ghost_buster/statusclaim.py docstring; CHANGELOG Unreleased",
+      "reproduce": {
+        "command": "python -m ghost_buster.cli <repo> --json --single-repo --no-tests --no-secrets --no-ledger --no-structure --no-project --no-correlate --no-branches, once per repository, then filter findings to the detector",
+        "tool_version": "ghost_tools after 1.9.1 (Unreleased, 2026-10-14)",
+        "corpus_manifest": {
+          "ASSAY": {
+            "branch": "ccr-4f987431-3ecs3l",
+            "commit": "37b6180cad54"
+          },
+          "BURNISH": {
+            "branch": "ccr-4f987431-3ecs3l",
+            "commit": "62cc973badc1"
+          },
+          "DRAFTER": {
+            "branch": "ccr-4f987431-3ecs3l",
+            "commit": "b098496fb347"
+          },
+          "JUDGE": {
+            "branch": "ccr-4f987431-3ecs3l",
+            "commit": "e616e22d8e73"
+          },
+          "SWIZZLE": {
+            "branch": "ccr-4f987431-3ecs3l",
+            "commit": "6495082e8cf2"
+          },
+          "WARDEN": {
+            "branch": "ccr-4f987431-3ecs3l",
+            "commit": "89f2e7d9555f"
+          },
+          "ghost_tools": {
+            "branch": "ccr-4f987431-3ecs3l",
+            "commit": "5f68364d9d2a"
+          }
+        },
+        "note": ""
+      }
     }
   ]
 }

@@ -20,7 +20,7 @@ stack-census              what each repo promises and what pins it (docs/STACK_C
 
 Seven rules (each from a real defect): silence is the defect; fail-closed; say what was established (`CONFIRMED` vs `REASONED`); measured before built (`ghost_buster/calibration.json`); memory only adds (ledger never suppresses); tree unmodified except declared comment surgery; a human decides.
 
-Defaults, all 24 detectors and the mutant census: [docs/REFERENCE.md](docs/REFERENCE.md), checked by the test suite.
+Defaults, all 27 detectors and the mutant census: [docs/REFERENCE.md](docs/REFERENCE.md), checked by the test suite. Which failure of AI-assisted work each horseman catches, and which none does: [docs/FAILURE_MODES.md](docs/FAILURE_MODES.md).
 
 199 Python files, about 2,218 function definitions and 5 TODO comments (counted 2026-10-12, excluding `Tests/fixtures`). Stdlib-oriented CLI. Kernel scan measures duplication/drift against private `CNS` schema when present.
 

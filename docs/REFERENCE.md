@@ -14,7 +14,7 @@ state on every run** -- performed, impossible, or declined.
 
 | Check | Default | Turn off with |
 |---|---|---|
-| the twenty-four registered detectors | on | (always run) |
+| the twenty-seven registered detectors | on | (always run) |
 | unmerged branches | on | `--no-branches` |
 | test status | on, for a trusted repository (`--trust`, once) | `--no-tests` |
 | committed secrets | on | `--no-secrets` |
@@ -102,6 +102,9 @@ history (`git show 93143f5^:README.md`).
 | `commented_out_module` | a file that parses and defines nothing because its code is all in comments (ASSAY 3.1) | MAJOR |
 | `undefined_self_method` | `self.name()` on a fully visible class that has no `name` anywhere (ASSAY 3.2) | MAJOR |
 | `flattened_copy` | an unparseable file that is a readable one with its whitespace destroyed (ASSAY 3.3) | MAJOR |
+| `assertless_test` | a test whose body is only `pass` or `...` (MAJOR), or that asserts nothing anywhere and can fail only by raising (MINOR) | MAJOR |
+| `mock_only_test` | a test whose every assertion is a Mock assertion: it proves the code called the mock, nothing about the real collaborator | MINOR |
+| `unverified_status_claim` | a status label in prose a reader will trust ("production ready", "battle-tested", "100% coverage", "RL Ready") that nothing in the tree is read to back; negated, quoted, coded and changelog uses excluded | MINOR |
 
 One detector reads more than the files on disk. `unreachable_declared_state`
 grades a declared-but-unproduced enum member by what the evidence costs to
@@ -139,6 +142,6 @@ flapping and persistent findings, blind spots, and trajectory. See
 
 ## Tests
 
-`test_mutation.py` and the 45 `Tests/*_mutants.py` files run pytest in
+`test_mutation.py` and the 47 `Tests/*_mutants.py` files run pytest in
 scratch copies with one piece of the code broken at a time, and fail if the
 suite still passes: each test file is held to catching the defect it names.
