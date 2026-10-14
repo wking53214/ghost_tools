@@ -31,6 +31,12 @@ mock-only, 0 status claims; records in `calibration.json`. Two mutant suites (`T
 `Tests/test_statusclaim_mutants.py`) prove the tests can fail, which, for a detector about tests that cannot,
 seemed only right. 27 detectors; 646 mutants in 47 files.
 
+**The bytecode test no longer passes on the environment's behaviour under Warden.**
+`test_scan_writes_nothing_into_the_project` now also clears `PYTHONPYCACHEPREFIX`; Warden runs a target's suite
+with bytecode redirected out of the tree, so under Warden the mutant that deletes the scanner's own
+`PYTHONDONTWRITEBYTECODE` export survived. Found when the circuit ran on ghost_tools itself: Warden reported
+the suite red (1 of 2001) and wrote nothing.
+
 **Red team of the three new detectors.** Three ways past them were found by attacking them and are closed:
 an assertion that cannot fail (`assert True`, `assert 1`, `assert x == x`) no longer counts as an assertion,
 so a test that does work and then asserts a tautology is `assertless_test` again; two test classes with a

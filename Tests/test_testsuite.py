@@ -487,7 +487,12 @@ def test_scan_writes_nothing_into_the_project(tmp_path, monkeypatch):
     # the nested mutation harness inherited it, and the mutant that deletes
     # testsuite.py's own export survived -- the test had been passing on the
     # environment's behaviour rather than the code's.
+    # PYTHONPYCACHEPREFIX is the same hole from the other side: Warden runs a
+    # target's suite with bytecode redirected out of the tree, so under Warden
+    # the mutant that deletes the export survived again (found when the circuit
+    # ran on ghost_tools itself).
     monkeypatch.delenv("PYTHONDONTWRITEBYTECODE", raising=False)
+    monkeypatch.delenv("PYTHONPYCACHEPREFIX", raising=False)
     proj = _project(tmp_path, {"test_ok.py": "def test_ok():\n    assert True\n"})
     findings, report = scan(proj)
     assert findings == []
