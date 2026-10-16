@@ -370,3 +370,13 @@ def check_report(report: Any) -> ReportCheck:
             named = f" ({label})" if isinstance(label, str) and label else ""
             problems.append(f"findings[{index}]{named}: {exc}")
     return ReportCheck(rows=tuple(rows), problems=tuple(problems))
+
+
+def cns_chain() -> Any:
+    """A ``cns.gate.GateChain`` holding the finding gate in the ``alpha`` slot.
+
+    ``omega`` stays empty: Ghost reports findings and does not judge a run's result,
+    so ``complete()`` is ``False`` by design. A consumer that wants a complete chain
+    supplies the ``omega`` end from a repository that has one (the Judge).
+    """
+    return _cns_module("cns.gate").GateChain(alpha=(FindingGate(),))

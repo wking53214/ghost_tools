@@ -15,7 +15,7 @@ gate = pytest.importorskip("cns.gate")
 pytest.importorskip("cns.finding")
 
 from ghost_buster import cns_adapter  # noqa: E402
-from ghost_buster.cns_adapter import FindingGate  # noqa: E402
+from ghost_buster.cns_adapter import FindingGate, cns_chain  # noqa: E402
 from ghost_buster.schema import (  # noqa: E402
     Category, Evidence, Finding, Layer, Severity, Status,
 )
@@ -273,3 +273,32 @@ def test_resolve_treats_the_finding_gate_like_any_other_gate():
     assert gate.resolve([passing, other(gate.GateOutcome.RETRY)]) is gate.GateOutcome.RETRY
     assert gate.unbound([passing, retry, breach]) == ()
     assert gate.unbound([FindingGate().check("nothing")]) == ("ghost.finding_established",)
+
+
+def test_the_chain_holds_the_finding_gate_at_the_alpha_end_only():
+    chain = cns_chain()
+    assert isinstance(chain, gate.GateChain)
+    assert len(chain.alpha) == 1 and isinstance(chain.alpha[0], FindingGate)
+    assert chain.omega == ()
+    assert chain.misplaced() == ()
+
+
+def test_the_chain_is_not_complete_by_design():
+    # Ghost reports findings; it does not judge a run's result. The omega end
+    # comes from a repository that has one, so complete() stays False here.
+    assert cns_chain().complete() is False
+
+
+def test_each_call_builds_its_own_chain():
+    first, second = cns_chain(), cns_chain()
+    assert first.alpha[0] is not second.alpha[0]
+
+
+def test_a_chain_given_an_omega_gate_from_elsewhere_is_complete():
+    judge_like = type("Omega", (), {
+        "name": "other.omega", "position": gate.GatePosition.OMEGA,
+        "check": lambda self, c: gate.GateResult(
+            "other.omega", gate.GatePosition.OMEGA, gate.GateOutcome.PASS, "ok", "x", "y")})()
+    ours = cns_chain()
+    joined = gate.GateChain(alpha=ours.alpha, omega=(judge_like,))
+    assert joined.complete() and joined.misplaced() == ()
