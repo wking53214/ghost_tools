@@ -11,6 +11,8 @@ treat a domain Status as a GateOutcome without an explicit mapping.
 from __future__ import annotations
 
 import importlib
+import json
+import os
 from dataclasses import dataclass
 from enum import Enum
 from types import ModuleType
@@ -302,3 +304,69 @@ class FindingGate:
         outcome, reason = mapped
         return self._result(self._gate.GateOutcome(outcome), reason, subject, digest)
 
+
+
+@dataclass(frozen=True)
+class ReportCheck:
+    """What :func:`check_report` found: the rows that meet ``cns.finding/1`` and the problems."""
+
+    rows: Tuple[Any, ...] = ()
+    problems: Tuple[str, ...] = ()
+
+    @property
+    def ok(self) -> bool:
+        """True when every finding in the report met the row and the report could be read."""
+        return not self.problems
+
+
+def _findings_of(report: Any) -> list:
+    """The findings in a report as Ghost writes it, or raise ValueError saying what is wrong.
+
+    ``report`` is parsed JSON (the object ``ghost-buster --json`` prints, or the old
+    bare list), JSON text, or a path to a file holding either.
+    """
+    if isinstance(report, os.PathLike):
+        try:
+            with open(report, encoding="utf-8") as handle:
+                report = handle.read()
+        except (OSError, UnicodeDecodeError) as exc:
+            raise ValueError(f"the report could not be read ({exc})") from exc
+    if isinstance(report, str):
+        try:
+            report = json.loads(report)
+        except ValueError as exc:
+            raise ValueError(f"the report is not JSON ({exc})") from exc
+    if isinstance(report, Mapping):
+        if "findings" not in report:
+            raise ValueError("the report is an object with no findings member")
+        report = report["findings"]
+    if not isinstance(report, list):
+        raise ValueError(f"the findings are {type(report).__name__}, not a list")
+    return report
+
+
+def check_report(report: Any) -> ReportCheck:
+    """Check every finding in Ghost's own JSON report against ``cns.finding.Finding``.
+
+    This is the source-side check: Warden reads these findings against the same row at
+    read time, and this finds a drifting field in ghost_tools' own CI instead. It reads
+    the old bare list and the object with a ``findings`` member the same way, changes
+    nothing, and decides nothing: it returns the rows that met the row and one problem
+    per finding that did not. A report that cannot be read at all is a problem, not a
+    crash. An empty report is ``ok``; whether an empty report means a clean tree is
+    the report's ``status`` and ``unmeasured``, which this does not read.
+    """
+    row = _cns_module("cns.finding").Finding
+    try:
+        found = _findings_of(report)
+    except ValueError as exc:
+        return ReportCheck(problems=(str(exc),))
+    rows, problems = [], []
+    for index, record in enumerate(found):
+        try:
+            rows.append(row.from_dict(record))
+        except (ValueError, TypeError) as exc:
+            label = record.get("id") if isinstance(record, Mapping) else None
+            named = f" ({label})" if isinstance(label, str) and label else ""
+            problems.append(f"findings[{index}]{named}: {exc}")
+    return ReportCheck(rows=tuple(rows), problems=tuple(problems))
