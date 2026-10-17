@@ -346,6 +346,11 @@ class Finding:
     #: which part is this morning's arithmetic. Left None, the summary is
     #: used exactly as before.
     identity_key: Optional[str] = None
+    #: The text the id was hashed from before this detector stated an
+    #: `identity_key` (its summary). When set, the id that text produced stays
+    #: a previous id, so a baseline, ledger or case file written before the
+    #: change still matches. Opt-in: detectors that do not set it are unchanged.
+    previous_key: Optional[str] = None
     id: str = field(init=False)
     #: The id this finding had before ids were relative to the scan root, so
     #: a baseline, ledger or case file written under the old spelling can
@@ -381,6 +386,8 @@ class Finding:
         # as a previous id, so an existing baseline still matches.
         hashed = _nfc(portable)
         self.id = _stable_id(self.detector, hashed, key)
+        if self.previous_key is not None and self.previous_key != key:
+            self._pre_nfc.append((_stable_id(self.detector, hashed, self.previous_key), hashed))
         if hashed != portable:
             self._pre_nfc.append((_stable_id(self.detector, portable, key), portable))
         if _SCAN_ROOT is not None and self.evidence.absolute_file:
