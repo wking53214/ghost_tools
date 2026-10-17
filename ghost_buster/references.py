@@ -116,7 +116,7 @@ def entry_points(root: Path) -> Tuple[Dict[Tuple[str, str], str], List[str]]:
         try:
             import tomllib
         except ImportError:
-            tomllib = None
+            tomllib = None  # type: ignore[assignment]  # the 3.10 fallback: tomllib does not exist there to type
             notes.append("pyproject.toml entry points not read: tomllib is missing on this Python (3.10)")
         if tomllib is not None:
             try:
@@ -197,7 +197,7 @@ class ReferenceIndex:
                 self._file_modules[os.path.abspath(str(p))] = self._modules(Path(p))
         self._scan_python(parsed)
         if self.root is not None:
-            self._scan_config()
+            self._scan_config(self.root)
 
     def _rel(self, path: Path) -> str:
         if self.root is not None:
@@ -208,19 +208,22 @@ class ReferenceIndex:
         return Path(path).name
 
     def _modules(self, path: Path) -> Set[str]:
+        root = self.root
+        if root is None:
+            return set()
         try:
-            rel = Path(os.path.abspath(str(path))).relative_to(self.root)
+            rel = Path(os.path.abspath(str(path))).relative_to(root)
         except ValueError:
             return set()
-        return module_names_for(rel, self.root)
+        return module_names_for(rel, root)
 
     def _scan_python(self, parsed: Dict[Path, ast.AST]) -> None:
         for path, tree in sorted(parsed.items(), key=lambda kv: str(kv[0])):
             rel = self._rel(path)
 
-            def note(value):
+            def note(value, _rel=rel):
                 if isinstance(value, str) and value in self.candidates:
-                    self.string_refs.setdefault(value, rel)
+                    self.string_refs.setdefault(value, _rel)
 
             for node in ast.walk(tree):
                 if isinstance(node, ast.Call):
@@ -246,9 +249,9 @@ class ReferenceIndex:
                         if isinstance(e, ast.Constant):
                             note(e.value)
                 elif isinstance(node, ast.Dict):
-                    for e in (*node.keys, *node.values):
-                        if isinstance(e, ast.Constant):
-                            note(e.value)
+                    for item in (*node.keys, *node.values):  # a `**spread` key is None
+                        if isinstance(item, ast.Constant):
+                            note(item.value)
 
     def _computed(self, key, rel: str) -> None:
         """A lookup in a namespace table (globals(), vars(), locals(),
@@ -267,17 +270,17 @@ class ReferenceIndex:
         if prefix and len(prefix) >= 2:
             self.prefix_refs.setdefault(prefix, rel)
 
-    def _scan_config(self) -> None:
-        for path in self._config_files():
+    def _scan_config(self, root: Path) -> None:
+        for path in self._config_files(root):
             text = _read(path)
             if text is None:
                 continue
-            rel = path.relative_to(self.root).as_posix()
+            rel = path.relative_to(root).as_posix()
             for word in set(re.findall(r"\w+", text)):
                 if word in self.candidates:
                     self.string_refs.setdefault(word, f"{rel}")
 
-    def _config_files(self) -> List[Path]:
+    def _config_files(self, root: Path) -> List[Path]:
         out: List[Path] = []
 
         def wanted(p: Path) -> bool:
@@ -286,10 +289,10 @@ class ReferenceIndex:
                 return False
             return p.suffix.lower() in _CONFIG_EXTS or n == ".env" or n.startswith(".env.")
 
-        for entry in sorted(self.root.iterdir()):
+        for entry in sorted(root.iterdir()):
             if entry.is_file() and wanted(entry):
                 out.append(entry)
-        for d in sorted(self.root.iterdir()):
+        for d in sorted(root.iterdir()):
             if d.is_dir() and d.name.lower() in _CONFIG_DIRS and d.name not in _SKIP_DIRS:
                 base = len(d.parts)
                 for dirpath, dirs, names in os.walk(d):
@@ -310,7 +313,7 @@ class ReferenceIndex:
                     continue
                 if module in mine:
                     why.append(label)
-                elif module not in known and not self._module_on_disk(module):
+                elif module not in known and not self._module_on_disk(self.root, module):
                     why.append(f"{label} (module '{module}' not found, matched by name only)")
         if name in self.string_refs:
             why.append(f"named as a string in {self.string_refs[name]}")
@@ -320,9 +323,9 @@ class ReferenceIndex:
                 break
         return why
 
-    def _module_on_disk(self, module: str) -> bool:
+    def _module_on_disk(self, root: Path, module: str) -> bool:
         rel = Path(*module.split("."))
-        for base in (self.root, self.root / "src", self.root / "lib"):
+        for base in (root, root / "src", root / "lib"):
             if (base / rel).with_suffix(".py").is_file() or (base / rel / "__init__.py").is_file():
                 return True
         return False

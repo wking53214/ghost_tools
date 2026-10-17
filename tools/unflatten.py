@@ -69,6 +69,7 @@ import keyword
 import re
 import sys
 import tokenize
+from typing import List
 from pathlib import Path
 
 STMT_KW = {"def", "class", "if", "elif", "else", "for", "while", "try", "except", "finally", "with",
@@ -84,8 +85,10 @@ COMPOUND = {"def", "class", "if", "elif", "else", "for", "while", "try", "except
 NBSP = " "
 
 CODE_RESUMES = re.compile(
-    r" (?=(?:def |class |if |elif |else:|for |while |return\b|import |from |with |try:|except\b|finally:|raise |assert |"
-    r"pass\b|continue\b|break\b|print\(|self\.|@|[A-Za-z_][A-Za-z_0-9.]*(?:, ?[A-Za-z_][A-Za-z_0-9.]*)*(?:\[[^\]]*\])? ?(?:=|\+=|-=)[^=]|"
+    r" (?=(?:def |class |if |elif |else:|for |while |return\b|import |from |with |try:|except\b|finally:|"
+    r"raise |assert |"
+    r"pass\b|continue\b|break\b|print\(|self\.|@|"
+    r"[A-Za-z_][A-Za-z_0-9.]*(?:, ?[A-Za-z_][A-Za-z_0-9.]*)*(?:\[[^\]]*\])? ?(?:=|\+=|-=)[^=]|"
     r"[A-Za-z_][A-Za-z_0-9.]*\())")
 
 
@@ -189,7 +192,8 @@ def split_statements(tokens):
             if t.type == tokenize.OP and s == "@":
                 boundary = True
             elif t.type == tokenize.NAME and s in STMT_KW and s not in ("else", "if", "for", "yield"):
-                boundary = not (s == "import" and cur[0].string == "from" and not any(x.string == "import" for x in cur))
+                boundary = not (s == "import" and cur[0].string == "from"
+                                and not any(x.string == "import" for x in cur))
                 if prev.string == "async" and s in ("def", "with"):
                     boundary = False
             elif t.type == tokenize.NAME and s == "else":
@@ -287,11 +291,14 @@ def render(stmt):
         join = " "
         if s in NO_SPACE_BEFORE or prev.string in NO_SPACE_AFTER or (prev.string == "@" and len(out) == 1):
             join = ""
-        elif s in ("(", "[") and ((prev.type == tokenize.NAME and not keyword.iskeyword(prev.string)) or prev.string in CLOSE or prev.type == tokenize.STRING):
+        elif s in ("(", "[") and ((prev.type == tokenize.NAME and not keyword.iskeyword(prev.string))
+                                  or prev.string in CLOSE or prev.type == tokenize.STRING):
             join = ""
         elif depth > 0 and (s == "=" or prev.string == "="):
             join = ""
-        elif prev.string in ("-", "+", "~") and (len(out) < 2 or out[-2] in "(,=[:{" or out[:-1].rstrip().endswith(("return", "in", "=", ",", "(", "[", "{", ":", "yield"))):
+        elif prev.string in ("-", "+", "~") and (
+                len(out) < 2 or out[-2] in "(,=[:{"
+                or out[:-1].rstrip().endswith(("return", "in", "=", ",", "(", "[", "{", ":", "yield"))):
             join = ""
         elif s == "**" and depth > 0 and prev.string in ("(", ","):
             join = ""
@@ -370,7 +377,8 @@ def reconstruct(text, top_names=()):
         elif is_comment[k]:
             # a numbered or ruled section comment ("# 3. Data Alignment", "# ----") is a
             # top-level landmark far more often than a note inside a block
-            cands = ([0] + list(range(cur, 0, -1))) if SECTION.match(lines[k]) else ([cur] + list(range(cur - 1, -1, -1)))
+            cands = ([0] + list(range(cur, 0, -1))) if SECTION.match(lines[k]) else (
+                [cur] + list(range(cur - 1, -1, -1)))
             heuristic[k] = len(cands) > 1
         elif k > 0 and heads[k - 1]:
             cands = [cur + 1]
@@ -410,7 +418,8 @@ def reconstruct(text, top_names=()):
                                           and firsts[opener_of(c)] == "class")]
                     if in_class:
                         cands = in_class + [c for c in cands if c not in in_class]
-        elif f in ("if", "for", "while", "try", "with") and k > 1 and heads[k - 2] and not heads[k - 1] and not is_comment[k - 1] and indents[k - 1] == cur:
+        elif (f in ("if", "for", "while", "try", "with") and k > 1 and heads[k - 2] and not heads[k - 1]
+              and not is_comment[k - 1] and indents[k - 1] == cur):
             # a compound statement right after a one-statement body is more
             # often the next sibling of that block than nested in it
             cands = shallower_first(cur)
@@ -418,7 +427,8 @@ def reconstruct(text, top_names=()):
         elif k > 0 and firsts[k - 1] in BLOCK_END and cur > 0:
             cands = shallower_first(cur)
             heuristic[k] = True
-        elif f in BLOCK_END and k > 1 and heads[k - 2] and not heads[k - 1] and not is_comment[k - 1] and indents[k - 1] == cur and cur > 0:
+        elif (f in BLOCK_END and k > 1 and heads[k - 2] and not heads[k - 1] and not is_comment[k - 1]
+              and indents[k - 1] == cur and cur > 0):
             # a return after a one-statement body usually closes the enclosing block, not the one-liner
             cands = [cur - 1, cur] + list(range(cur - 2, -1, -1))
             heuristic[k] = True
@@ -473,7 +483,7 @@ def reconstruct(text, top_names=()):
 
 INDENT_RUN = re.compile(r"(?<! ) ((?: {4})+)(?! )")
 SPACE_RUN = re.compile(r" {2,}")
-AMBIGUOUS = []
+AMBIGUOUS: List[int] = []
 
 
 def restore_indented_lines(text):
@@ -565,7 +575,8 @@ def fill_missing_bodies(src, limit=200):
             h = int(m.group(1)) - 1
             head_indent = len(lines[h]) - len(lines[h].lstrip(" "))
             j = h + 1
-            while j < len(lines) and lines[j].lstrip().startswith("#") and (len(lines[j]) - len(lines[j].lstrip(" "))) > head_indent:
+            while (j < len(lines) and lines[j].lstrip().startswith("#")
+                   and (len(lines[j]) - len(lines[j].lstrip(" "))) > head_indent):
                 j += 1
             lines.insert(j, " " * (head_indent + 4) + MISSING_BODY)
             filled += 1

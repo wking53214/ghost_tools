@@ -442,7 +442,8 @@ def render_single_repo_notice(root, files: List[Path]) -> Optional[str]:
     """
     root = Path(root).resolve()
     model = build_model(root, files)
-    reaches, dormant = [], 0
+    reaches: List[GuardedImport] = []
+    dormant = 0
     for m in model.modules:
         path = root / m.path
         tree = corpus.parse(path)

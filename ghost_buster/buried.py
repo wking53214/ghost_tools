@@ -61,9 +61,9 @@ _SIGNATURE = re.compile(r"\b(?:def\s+[A-Za-z_]\w*\s*\(|class\s+[A-Z]\w*\s*[(:])"
 
 def _is_empty_module(tree: ast.Module) -> bool:
     body = list(tree.body)
-    if body and isinstance(body[0], ast.Expr) and isinstance(getattr(body[0], "value", None),
-                                                               ast.Constant) \
-            and isinstance(body[0].value.value, str):
+    first = body[0] if body else None
+    if (isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant)
+            and isinstance(first.value.value, str)):
         body = body[1:]
     return not body
 

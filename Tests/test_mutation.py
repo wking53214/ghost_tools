@@ -197,7 +197,8 @@ def test_colours_are_exactly_these():
     # A subset check restates the members by hand and cannot notice a new
     # one: adding an enum member does not fail it, so it guards nothing.
     run = _run(root)
-    assert any(m.operator == "extend_set" and m.outcome == "survived" for m in run.mutants), render_run(run, verbose=True)
+    survived = any(m.operator == "extend_set" and m.outcome == "survived" for m in run.mutants)
+    assert survived, render_run(run, verbose=True)
 
 
 def test_restated_list_that_is_really_checked_is_killed(tmp_path):

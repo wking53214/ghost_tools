@@ -435,8 +435,8 @@ def _default_settings(func, owner: str = "") -> List[str]:
     """Number defaults on one function's parameters."""
     a = func.args
     positional = a.posonlyargs + a.args
-    pairs = list(zip(positional[len(positional) - len(a.defaults):], a.defaults))
-    pairs += [(arg, d) for arg, d in zip(a.kwonlyargs, a.kw_defaults) if d is not None]
+    pairs = list(zip(positional[len(positional) - len(a.defaults):], a.defaults, strict=True))
+    pairs += [(arg, d) for arg, d in zip(a.kwonlyargs, a.kw_defaults, strict=True) if d is not None]
     name = f"{owner}.{func.name}" if owner else func.name
     out = []
     for arg, default in pairs:
@@ -479,6 +479,7 @@ def analyse_module(path: Path, root: Path, package_roots: Set[str]) -> Optional[
     text = corpus.text(path)
     facts.lines = 0 if text is None else len(text.splitlines())
 
+    node: ast.AST  # one name for the statement loop below and the walks after it
     for node in tree.body:
         # __all__ is the only DECLARED public surface. Everything else is
         # inference from a leading underscore, which is a convention.
@@ -671,14 +672,14 @@ def build_model(root, files) -> StructuralModel:
         return model
     model.ran = True
 
-    facts = _read_pyproject(root)
-    name, deps, scripts = facts.name, facts.dependencies, facts.scripts
+    pyproject = _read_pyproject(root)
+    name, deps, scripts = pyproject.name, pyproject.dependencies, pyproject.scripts
     model.distribution = name
     model.console_scripts = scripts
-    model.unresolved.extend(facts.notes)
-    model.build_requires = sorted({requirement_name(r) for r in facts.build_requires} - {""})
-    if facts.declarations:
-        model.packaging_declarations["pyproject.toml"] = facts.declarations
+    model.unresolved.extend(pyproject.notes)
+    model.build_requires = sorted({requirement_name(r) for r in pyproject.build_requires} - {""})
+    if pyproject.declarations:
+        model.packaging_declarations["pyproject.toml"] = pyproject.declarations
     setup_declarations = _read_setup_py(root)
     if setup_declarations is not None:
         model.packaging_declarations["setup.py"] = setup_declarations

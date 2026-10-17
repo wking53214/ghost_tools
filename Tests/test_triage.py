@@ -13,7 +13,8 @@ from ghost_writer.report import render_triage_report
 from ghost_writer.triage import apply_dispositions, main as triage_main, pending
 
 
-def _finding(summary, severity=Severity.MAJOR, detector="dead_code", category=Category.DEAD_CODE, detail="", file="a.py", line=3):
+def _finding(summary, severity=Severity.MAJOR, detector="dead_code", category=Category.DEAD_CODE,
+             detail="", file="a.py", line=3):
     return Finding(detector=detector, category=category, layer=Layer.MECHANICAL, severity=severity,
                    status=Status.CONFIRMED, summary=summary, detail=detail,
                    evidence=Evidence(file=file, line_start=line))
@@ -70,7 +71,8 @@ def test_cli_rejects_a_bad_id_without_writing(tmp_path, capsys):
 
 def test_triage_report_lists_everything_most_severe_first_with_proof():
     critical = _finding("'test_x' never runs its guarded assertions", Severity.CRITICAL, "vacuous_check",
-                        Category.VACUOUS_CHECK, detail="shape: guarded_assertion. mutation: guard instrumented.", file="test_x.py", line=10)
+                        Category.VACUOUS_CHECK, detail="shape: guarded_assertion. mutation: guard instrumented.",
+                        file="test_x.py", line=10)
     minor = _finding("long function", Severity.MINOR, "long_function", Category.COMPLEXITY, file="b.py", line=1)
     decided = _finding("dup", Severity.MAJOR, "near_duplicate_function", Category.DUPLICATION, file="c.py")
     decided.disposition, decided.disposition_note = "suppress", "known"

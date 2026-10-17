@@ -466,7 +466,8 @@ def recovered_name(path: Path, root: Path | None = None) -> str:
     return path.stem + ".recovered.py"
 
 
-def write_recovery(recovery: Recovery, into: Path, root: Path | None = None) -> Path:  # ghost_buster: name-disagreement -- `recovery` is `result` at every call site
+# ghost_buster: name-disagreement -- `recovery` is `result` at every call site
+def write_recovery(recovery: Recovery, into: Path, root: Path | None = None) -> Path:
     """Write one recovered original under `into`, verbatim.
 
     Checked before it is written, not asserted in a docstring: a recovery

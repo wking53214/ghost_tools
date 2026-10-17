@@ -881,7 +881,8 @@ def detect_dangling_in_debris(path: Path, source: str | None = None
         )
 
 
-def detect_orphaned_tests(test_paths: Iterable[Path],  # ghost_buster: name-disagreement -- `test_paths` is `tests` at every call site
+# ghost_buster: name-disagreement -- `test_paths` is `tests` at every call site
+def detect_orphaned_tests(test_paths: Iterable[Path],
                           search_roots: Sequence[Path],
                           providers: dict[str, str] | None = None
                           ) -> Iterator[NegativeEvidence]:
@@ -1007,7 +1008,8 @@ def scan_with_report(
         evidence.extend(detect_dangling_names(path, text))
         evidence.extend(detect_dangling_in_debris(path, text))
         evidence.extend(detect_missing_imports(path, [root], text, providers))
-    evidence.extend(detect_orphaned_tests(tests, [root], providers))  # ghost_buster: name-disagreement -- `tests` is `test_paths` in the signature
+    # ghost_buster: name-disagreement -- `tests` is `test_paths` in the signature
+    evidence.extend(detect_orphaned_tests(tests, [root], providers))
     from .rename import detect_rename_candidates
     evidence.extend(detect_rename_candidates(sources, evidence))
     return evidence, ScanReport(

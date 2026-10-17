@@ -44,7 +44,7 @@ import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 from . import corpus
 from .schema import Category, Evidence, Finding, Layer, Severity, Status
@@ -187,7 +187,7 @@ def _asserts_under(stmts: List[ast.stmt]) -> List[ast.AST]:
                 and a.func.attr.startswith("assert"))]
 
 
-def _guarded_asserts(func: ast.FunctionDef) -> List[ast.If]:
+def _guarded_asserts(func: Union[ast.FunctionDef, ast.AsyncFunctionDef]) -> List[ast.If]:
     """`if` statements whose body asserts and whose else branch does not.
 
     An if/else that asserts on both sides is a branch, not a guard: one side
@@ -235,11 +235,15 @@ def _restated_literals(func: ast.FunctionDef) -> List[str]:
         sides: List[ast.AST] = []
         if isinstance(a, ast.Assert):
             t = a.test
-            if isinstance(t, ast.Compare) and len(t.ops) == 1 and isinstance(t.ops[0], (ast.Eq, ast.LtE, ast.GtE, ast.In, ast.NotIn)):
+            if (isinstance(t, ast.Compare) and len(t.ops) == 1
+                    and isinstance(t.ops[0], (ast.Eq, ast.LtE, ast.GtE, ast.In, ast.NotIn))):
                 sides = [t.left, t.comparators[0]]
-            elif isinstance(t, ast.Call) and isinstance(t.func, ast.Attribute) and t.func.attr in ("issubset", "issuperset"):
-                sides = [t.func.value] + list(t.args)
-        elif isinstance(a, ast.Call) and a.func.attr in ("assertEqual", "assertSetEqual", "assertListEqual", "assertCountEqual", "assertIn", "assertTrue"):
+            elif (isinstance(t, ast.Call) and isinstance(t.func, ast.Attribute)
+                  and t.func.attr in ("issubset", "issuperset")):
+                sides = [t.func.value, *t.args]
+        elif (isinstance(a, ast.Call) and isinstance(a.func, ast.Attribute)
+              and a.func.attr in ("assertEqual", "assertSetEqual", "assertListEqual", "assertCountEqual",
+                                  "assertIn", "assertTrue")):
             sides = list(a.args[:2])
         for side in sides:
             values = _literal_strings(side)
@@ -261,7 +265,8 @@ def _import_map(module: ast.Module) -> Dict[str, Tuple[str, Optional[str]]]:
     return out
 
 
-def _module_file(root: Path, dotted: str) -> Optional[Path]:  # ghost_buster: name-disagreement -- `dotted` is `mod` at every call site
+# ghost_buster: name-disagreement -- `dotted` is `mod` at every call site
+def _module_file(root: Path, dotted: str) -> Optional[Path]:
     rel = Path(*dotted.split("."))
     for candidate in (root / rel.with_suffix(".py"), root / rel / "__init__.py"):
         if candidate.exists():
@@ -281,10 +286,10 @@ def _function_in(file: Path, qualname: str) -> bool:
     return _find_function(tree, qualname) is not None
 
 
-def _find_function(tree: ast.Module, qualname: str) -> Optional[ast.AST]:
+def _find_function(tree: ast.Module, qualname: str) -> Optional[Union[ast.FunctionDef, ast.AsyncFunctionDef]]:
     parts = qualname.split(".")
     scope: ast.AST = tree
-    for i, part in enumerate(parts):
+    for part in parts:
         nxt = None
         for n in ast.iter_child_nodes(scope):
             if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and n.name == part:
@@ -337,11 +342,13 @@ def _resolve_targets(root: Path, test_file: Path, module: ast.Module, func: ast.
             if base in imports:
                 mod, attr = imports[base]
                 if attr is None:                       # import mod; mod.func()
-                    file = _module_file(root, mod)  # ghost_buster: name-disagreement -- `mod` is `dotted` in the signature
+                    # ghost_buster: name-disagreement -- `mod` is `dotted` in the signature
+                    file = _module_file(root, mod)
                     if file:
                         add(file, f.attr)
                 else:                                  # from mod import Cls; Cls.method()
-                    file = _module_file(root, mod)  # ghost_buster: name-disagreement -- `mod` is `dotted` in the signature
+                    # ghost_buster: name-disagreement -- `mod` is `dotted` in the signature
+                    file = _module_file(root, mod)
                     if file:
                         add(file, f"{attr}.{f.attr}")
             elif base in instance_of and instance_of[base] in imports:
@@ -354,10 +361,11 @@ def _resolve_targets(root: Path, test_file: Path, module: ast.Module, func: ast.
                 # one class imported by this test file defines the method, that
                 # is the target; ambiguity means no target, never a guess.
                 owners = []
-                for local, (mod, attr) in imports.items():
+                for (mod, attr) in imports.values():
                     if attr is None:
                         continue
-                    file = _module_file(root, mod)  # ghost_buster: name-disagreement -- `mod` is `dotted` in the signature
+                    # ghost_buster: name-disagreement -- `mod` is `dotted` in the signature
+                    file = _module_file(root, mod)
                     if file is None:
                         continue
                     tree = _safe_parse(file)
@@ -375,6 +383,15 @@ def _safe_parse(path: Path) -> Optional[ast.Module]:
     return corpus.fresh(path)
 
 
+def _candidate_maker(path: Path, node_name: str, lineno: int, targets: Sequence[Tuple[Path, str]]):
+    """A `make(shape, detail, values)` for one test function. Defined outside
+    the scan loop so it binds this test's path, name and targets, not the
+    loop's variables as they stand when it is called."""
+    def make(shape: str, detail: str, values=None) -> Candidate:
+        return Candidate(path, node_name, lineno, shape, detail, list(targets), list(values or []))
+    return make
+
+
 def find_candidates(root: Path, files: Iterable[Path]) -> List[Candidate]:
     root = Path(root)
     out: List[Candidate] = []
@@ -388,13 +405,13 @@ def find_candidates(root: Path, files: Iterable[Path]) -> List[Candidate]:
         for node in ast.walk(module):
             if not isinstance(node, ast.FunctionDef) or not node.name.startswith("test"):
                 continue
-            parent_class = next((c.name for c in ast.walk(module) if isinstance(c, ast.ClassDef) and node in c.body), None)
+            parent_class = next(
+                (c.name for c in ast.walk(module) if isinstance(c, ast.ClassDef) and node in c.body), None)
             node_name = f"{parent_class}::{node.name}" if parent_class else node.name
             asserts = _assert_nodes(node)
             targets = _resolve_targets(root, path, module, node)
 
-            def make(shape: str, detail: str, values=None) -> Candidate:
-                return Candidate(path, node_name, node.lineno, shape, detail, list(targets), list(values or []))
+            make = _candidate_maker(path, node_name, node.lineno, targets)
 
             guards = _guarded_asserts(node)
             if guards:
@@ -405,13 +422,15 @@ def find_candidates(root: Path, files: Iterable[Path]) -> List[Candidate]:
                 out.append(c)
             values = _restated_literals(node)
             if values:
-                out.append(make("restated_set", f"asserts equality with a hand-written list of {len(values)} strings", values))
+                out.append(make("restated_set",
+                                f"asserts equality with a hand-written list of {len(values)} strings", values))
             unread = _assigned_then_unread(node)
             if unread and targets:
                 names = ", ".join(n for n, _ in unread)
                 out.append(make("unused_result", f"assigns {names} from a call and never reads it"))
             if asserts and all(_is_weak(a) for a in asserts) and not _raises_context(node) and targets:
-                out.append(make("weak_assertion", f"every assertion is existence, type or positivity ({len(asserts)} assertion(s))"))
+                out.append(make("weak_assertion",
+                                f"every assertion is existence, type or positivity ({len(asserts)} assertion(s))"))
     return out
 
 
@@ -464,9 +483,9 @@ def _mutate_function(tree: ast.Module, qualname: str, operator: str) -> Tuple[bo
         t.visit(func)
         return (t.changed > 0), f"{t.changed} comparison(s) in {qualname} inverted"
     if operator == "bump_constants":
-        t = _BumpConstants()
-        t.visit(func)
-        return (t.changed > 0), f"{t.changed} numeric constant(s) in {qualname} moved by +100"
+        bump = _BumpConstants()
+        bump.visit(func)
+        return (bump.changed > 0), f"{bump.changed} numeric constant(s) in {qualname} moved by +100"
     if operator == "drop_body":
         func.body = [ast.Pass()]
         return True, f"body of {qualname} replaced with `pass`"
@@ -639,7 +658,8 @@ def run_mutations(
                 run.unjudged.append((cand, f"test does not pass unmutated ({outcome}): {tail[-120:]}"))
                 continue
 
-            mutants = _plan_mutants(cand, root, file_list, operators, max_mutants_per_candidate)  # ghost_buster: name-disagreement -- `max_mutants_per_candidate` is `cap` in the signature
+            # ghost_buster: name-disagreement -- `max_mutants_per_candidate` is `cap` in the signature
+            mutants = _plan_mutants(cand, root, file_list, operators, max_mutants_per_candidate)
             if not mutants:
                 reason = (
                     "no enum or literal collection in the project defines these values; nothing to extend"
@@ -673,7 +693,8 @@ def run_mutations(
                     # For a parametrized test the marker fires per case; the
                     # guard counts as never taken only if NO case took it,
                     # which pytest's summary shows as no "passed" at all.
-                    some_case_passed = " passed" in (mutant.output_tail or "").splitlines()[-1:][0] if mutant.output_tail else False
+                    some_case_passed = (
+                        " passed" in (mutant.output_tail or "").splitlines()[-1:][0] if mutant.output_tail else False)
                     if outcome == "failed" and GUARD_MARKER in (mutant.output_tail or "") and not some_case_passed:
                         mutant.outcome = "survived"
                     elif outcome in ("passed", "failed"):
@@ -681,7 +702,8 @@ def run_mutations(
                     else:
                         mutant.outcome = "error"
                 else:
-                    mutant.outcome = "survived" if outcome == "passed" else ("killed" if outcome == "failed" else "error")
+                    mutant.outcome = ("survived" if outcome == "passed"
+                                      else ("killed" if outcome == "failed" else "error"))
                 run.mutants.append(mutant)
                 if mutant.outcome == "survived":
                     run.findings.append(_finding_for(root, mutant))
@@ -691,7 +713,8 @@ def run_mutations(
     return run
 
 
-def _plan_mutants(cand: Candidate, root: Path, files: List[Path], operators: Sequence[str], cap: int) -> List[Mutant]:  # ghost_buster: name-disagreement -- `cap` is `max_mutants_per_candidate` at every call site
+# ghost_buster: name-disagreement -- `cap` is `max_mutants_per_candidate` at every call site
+def _plan_mutants(cand: Candidate, root: Path, files: List[Path], operators: Sequence[str], cap: int) -> List[Mutant]:
     plans: List[Mutant] = []
     if cand.shape == "guarded_assertion":
         for index in range(cand.guard_count):
@@ -732,7 +755,8 @@ def _finding_for(root: Path, mutant: Mutant) -> Finding:
                             else "What it reads as checking in that branch, it does not check."))
     else:
         severity = Severity.MAJOR
-        summary = f"'{cand.test_name}' still passes with {mutant.operator} applied to {mutant.target_name or 'the source'}"
+        summary = (f"'{cand.test_name}' still passes with {mutant.operator} "
+                   f"applied to {mutant.target_name or 'the source'}")
         what_it_means = ("The implementation the test names was broken and the test did not notice. "
                          "Whatever the test's name claims, this is the behaviour it does not check.")
     related = [str(mutant.target_file)] if mutant.target_file else []

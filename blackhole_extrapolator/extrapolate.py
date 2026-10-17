@@ -225,7 +225,7 @@ def infer_usage_invariants(source: str, target: str) -> list[str]:
                 if (isinstance(tgt, ast.Attribute) and isinstance(tgt.value, ast.Name)
                         and tgt.value.id == target):
                     bound = node.value.args[0] if node.value.args else None
-                    if isinstance(bound, ast.Constant):
+                    if isinstance(bound, ast.Constant) and isinstance(bound.value, (int, float)):
                         word = "floor" if node.value.func.id == "max" else "ceiling"
                         note(f"`{tgt.attr}` is writable and numeric; callers "
                              f"hold it to a {word} of {bound.value}")

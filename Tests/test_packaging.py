@@ -40,3 +40,40 @@ def test_every_console_script_points_into_a_listed_package():
     orphans = {name: target for name, target in scripts.items()
                if target.split(":")[0].rsplit(".", 1)[0] not in listed}
     assert not orphans, f"console scripts point outside the listed packages: {orphans}"
+
+
+#: Folders that are not shipped code, whatever they contain.
+_NOT_SHIPPED = {"Tests", "docs", "tools", "build", "dist"}
+
+
+def _package_folders():
+    """Every folder holding an `__init__.py`, as a dotted name: the code that
+    exists, found by looking at the tree and not at the list that describes it."""
+    found = []
+    for init in sorted(ROOT.rglob("__init__.py")):
+        parts = init.parent.relative_to(ROOT).parts
+        if not parts or parts[0] in _NOT_SHIPPED or any(
+                p.startswith(".") or p == "__pycache__" or p.endswith(".egg-info") for p in parts):
+            continue
+        found.append(".".join(parts))
+    return found
+
+
+def test_every_package_folder_in_the_tree_is_listed_so_it_ships():
+    """The converse of the first test. `ghost_buster/production/` sat in the
+    tree for months, 214 lines with a hardcoded development signing key, and
+    was missing from `packages`: a wheel would not have contained it, the
+    suite (which runs from source) could import it, and nothing imported it.
+    Code that exists but does not ship is either dead or a release that
+    works only from a checkout; both are findings, not states to leave."""
+    listed = set(SETUPTOOLS["packages"])
+    unlisted = [p for p in _package_folders() if p not in listed]
+    assert not unlisted, (
+        f"package folders in the tree but not in pyproject's `packages`: {unlisted}. "
+        "List them, or delete them if nothing uses them.")
+
+
+def test_the_package_finder_sees_the_four_shipped_packages():
+    """Guards the guard: if the walk above silently found nothing, the test
+    above would pass for the wrong reason."""
+    assert set(SETUPTOOLS["packages"]) <= set(_package_folders())

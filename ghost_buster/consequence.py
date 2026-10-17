@@ -41,10 +41,13 @@ import ast
 import json
 import os
 import re
-import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Mapping, Optional, Set, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Set, Tuple
+
+from .diagnostics import add_verbose_argument, configure, get_logger
+
+log = get_logger(__name__)
 
 RULE = "ghost_buster.consequence/1"
 MAX_FILE_BYTES = 5 * 1024 * 1024
@@ -193,7 +196,7 @@ class Ranked:
         }
 
 
-def rank(stack: Stack, reports: Mapping[str, Mapping[str, object]]) -> List[Ranked]:
+def rank(stack: Stack, reports: Mapping[str, Mapping[str, Any]]) -> List[Ranked]:
     """Rank the findings of `ghost-buster --json` reports, keyed by repository name.
 
     Ordered by tier (FIX FIRST first, SET ASIDE last), then by how many repositories import the package,
@@ -201,7 +204,7 @@ def rank(stack: Stack, reports: Mapping[str, Mapping[str, object]]) -> List[Rank
     """
     out: List[Ranked] = []
     for repo, report in reports.items():
-        for f in report.get("findings", []):  # type: ignore[union-attr]
+        for f in report.get("findings", []):
             status, severity = str(f["status"]).lower(), str(f["severity"]).lower()
             relpath = str(f["evidence"]["file"])
             c = consequence(stack, repo, relpath)
@@ -234,19 +237,21 @@ def main(argv: Optional[List[str]] = None) -> int:
                         help="the output of `ghost-buster --json`, one per repository")
     parser.add_argument("--json", action="store_true", help="print the ranking as JSON")
     parser.add_argument("--limit", type=int, default=40, help="rows to print in text mode (0 for all)")
+    add_verbose_argument(parser)
     args = parser.parse_args(argv)
+    configure(verbose=args.verbose)
 
-    reports: Dict[str, Mapping[str, object]] = {}
+    reports: Dict[str, Mapping[str, Any]] = {}
     for name, path in args.reports:
         try:
             reports[name] = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
-            print(f"ghost-rank: cannot read {path}: {exc}", file=sys.stderr)
+            log.error("ghost-rank: cannot read %s: %s", path, exc)
             return 2
     stack = read_stack(args.stack)
     unknown = [n for n in reports if n not in stack.repos]
     if unknown:
-        print(f"ghost-rank: not a folder under {args.stack}: {', '.join(unknown)}", file=sys.stderr)
+        log.error("ghost-rank: not a folder under %s: %s", args.stack, ", ".join(unknown))
         return 2
     ranked = rank(stack, reports)
     if args.json:

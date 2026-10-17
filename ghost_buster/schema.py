@@ -64,7 +64,7 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import PurePath
-from typing import Iterable, Iterator, Any, Dict, List, Optional
+from typing import Iterable, Iterator, Any, Dict, List, Optional, Union
 
 
 class Severity(str, Enum):
@@ -216,7 +216,7 @@ def _legacy_portable_path(path: str) -> str:
         _SCAN_ROOT = saved
 
 
-def _portable_path(path: str) -> str:
+def _portable_path(path: Union[str, "os.PathLike[str]"]) -> str:
     """The part of a path that identifies a file inside its project.
 
     The ID hashed the ABSOLUTE path, which made every committed baseline
@@ -235,6 +235,7 @@ def _portable_path(path: str) -> str:
     marker), else fall back to the last two segments, which is stable enough
     to distinguish files and short enough not to carry a home directory.
     """
+    path = os.fspath(path)   # callers hold both str and Path; the rest of this reads a str
     rel = _relative_to_scan_root(path)
     if rel is not None:
         return rel
@@ -308,7 +309,7 @@ class Finding:
     detail: str = ""
     # Machine-readable join keys, for correlate.py -- see WHY ATTRIBUTES
     # EXIST in the module docstring. Never part of the id.
-    attributes: Dict[str, str] = field(default_factory=dict)
+    attributes: Dict[str, Any] = field(default_factory=dict)  # values are JSON scalars: str, int or float
     confidence: Optional[float] = None  # 0.0-1.0, semantic layer only; None for mechanical
     first_seen: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     # Set by the human triage step: ghost_writer/triage.py, which records
@@ -689,12 +690,13 @@ def disambiguate_ids(findings: List[Finding]) -> int:
         for f in group:
             where = "|".join(str(part) for part in place(f))
             f.id = f"{base}-{hashlib.sha256(where.encode('utf-8')).hexdigest()[:6]}"
-            if f.legacy_id is not None:
+            if f.legacy_id is not None and f._legacy_file is not None:
                 old_where = "|".join(str(part) for part in (_nfc(f._legacy_file),) + place(f)[1:])
                 f.legacy_id = (f"{f.legacy_id}-"
                                f"{hashlib.sha256(old_where.encode('utf-8')).hexdigest()[:6]}")
             f._pre_nfc = [
-                (f"{pid}-{hashlib.sha256('|'.join(str(x) for x in (pfile,) + place(f)[1:]).encode('utf-8')).hexdigest()[:6]}",
+                (f"{pid}-" + hashlib.sha256(
+                    '|'.join(str(x) for x in (pfile,) + place(f)[1:]).encode('utf-8')).hexdigest()[:6],
                  pfile)
                 for pid, pfile in f._pre_nfc]
             renamed += 1
@@ -725,4 +727,4 @@ def _disambiguate_previous_keys(findings: List[Finding]) -> None:
                 where = "|".join(str(part) for part in (
                     _nfc(f.evidence.file), f.evidence.line_start or 0, f.evidence.line_end or 0, f.detail))
                 suffixed = f"{base}-{hashlib.sha256(where.encode('utf-8')).hexdigest()[:6]}"
-            f._pre_key_ids = [suffixed if b == base else i for b, i in zip(f._pre_key, f._pre_key_ids)]
+            f._pre_key_ids = [suffixed if b == base else i for b, i in zip(f._pre_key, f._pre_key_ids, strict=True)]

@@ -1,6 +1,6 @@
 # ghost_tools
 
-Codebase **integrity toolkit**: things that are present and wrong, documentation drift, duplication, dead/vacuous tests, secrets, structural ghosts. Version 1.9.1 (`pyproject.toml`; see CHANGELOG.md). Assurance loop: **this scanner ← [`SWIZZLE`](https://github.com/wking53214/SWIZZLE) + [`ASSAY`](https://github.com/wking53214/ASSAY) specimens**.
+Codebase **integrity toolkit**: things that are present and wrong, documentation drift, duplication, dead/vacuous tests, secrets, structural ghosts. Version 1.10.0 (`pyproject.toml`; see CHANGELOG.md). Assurance loop: **this scanner ← [`SWIZZLE`](https://github.com/wking53214/SWIZZLE) + [`ASSAY`](https://github.com/wking53214/ASSAY) specimens**.
 
 ## 1. Pipeline Position & Role
 
@@ -23,7 +23,7 @@ Seven rules (each from a real defect): silence is the defect; fail-closed; say w
 
 Defaults, all 27 detectors and the mutant census: [docs/REFERENCE.md](docs/REFERENCE.md), checked by the test suite. Which failure of AI-assisted work each horseman catches, and which none does: [docs/FAILURE_MODES.md](docs/FAILURE_MODES.md).
 
-199 Python files, about 2,218 function definitions and 5 TODO comments (counted 2026-10-12, excluding `Tests/fixtures`). Stdlib-oriented CLI. Kernel scan measures duplication/drift against private `CNS` schema when present.
+212 Python files (everything under the repository root except `Tests/fixtures`; `Tests/test_docs_claims.py` recounts them and fails if this number drifts). Stdlib-oriented CLI, no runtime dependencies, Python 3.11 to 3.13. Kernel scan measures duplication/drift against the `CNS` schema ([public](https://github.com/wking53214/CNS)) when present.
 
 ## 2b. Optional CNS connection
 
@@ -72,7 +72,7 @@ the CLI and a real scan working without it.
 
 ## 4. Brutally Honest Current Status & Gaps
 
-Crowded category (ruff, mutmut, Sonar). Differentiation is fail-closed silence reporting + SWIZZLE adversarial loop. Calibration records with no corpus must say so. 5 TODO comments. CNS-aware scan needs private CNS. Commercial audit used this tool on the portfolio and found real vacuous tests. That is the existence proof, not a market.
+Crowded category (ruff, mutmut, Sonar). Differentiation is fail-closed silence reporting + SWIZZLE adversarial loop. Calibration records with no corpus must say so. CNS-aware scan needs the optional, public `CNS` package (`pip install 'ghost-tools[cns]'`). Commercial audit used this tool on the portfolio and found real vacuous tests. That is the existence proof, not a market.
 
 ## 5. Core Invariants & Guarantees
 
@@ -149,6 +149,16 @@ Readers that expect the bare list should read the `findings` key. `FindingSet.fr
 ### Ledger and finding ids
 
 The ledger is opt-in: a default scan writes nothing into the folder it scans. Use `--ledger` to keep history in `<path>/.ghost_ledger.json`, or `--ledger-path FILE` (which also turns it on) to keep it anywhere else. `--no-ledger` still works.
+
+`--ledger-path` fails closed: the file's folder must already exist, or the scan stops before it starts (exit 2, a plain reason on stderr, the usual `status: "error"` envelope under `--json`) and nothing is created. A mistyped path used to create every missing folder on the way, silently. Pass `--create-ledger-dir` to say you want the folders made. A path that is itself a folder, or whose parent is a file, is refused either way.
+
+### Diagnostics and logging
+
+Everything the tools write to stderr (receipts for declined checks, warnings, the reason a scan did not start) goes through the stdlib `logging` module, logger `ghost_tools` (children `ghost_tools.<module>`). stdout is the report or the one `--json` document and is never touched by logging; exit codes do not depend on it. By default the records appear on stderr as the bare message, exactly as before. `--verbose` (`-v`, accepted by every command) adds debug records, prefixed `<logger>: debug:`. `GHOST_TOOLS_LOG=DEBUG|INFO|WARNING|ERROR` sets the level without the flag (an unrecognised value is reported and INFO is used; `--verbose` wins; WARNING or ERROR hides the INFO receipts, which is your explicit choice). A program that embeds the library can attach its own handlers to the `ghost_tools` logger.
+
+### Releases
+
+The version is declared once, in `pyproject.toml`; `ghost_buster.__version__` and `--version` read it back. `CHANGELOG.md` has a dated section per release and an `Unreleased` section on top. A release is a tag `vX.Y.Z` on the commit that bumped the version; the publish workflow also accepts `VX.Y.Z` (the 1.9.1 tag was written that way) and refuses a tag whose version differs from `pyproject.toml`. Tags are created by the owner, not by CI or by the changes themselves.
 
 A finding's id hashes the detector, the file's path relative to the scanned folder (posix slashes) and the summary, so the way the folder was typed (`./x`, `x/`, absolute, a symlink, another working directory) does not change it. The path is hashed in Unicode NFC form, so a file name written composed (Linux, git) or decomposed (macOS) has one id; the report still shows the name the filesystem gave. Ids from earlier versions, including the spelling an unnormalised non-ASCII path had before, are still recognised by the baseline, the ledger history and retired case-file decisions for the same finding.
 

@@ -16,7 +16,8 @@ from blackhole_extrapolator import scan, scan_with_report
 from blackhole_extrapolator.recover import harvest
 from blackhole_extrapolator.skips import BAD_JSONL_LINE, UNREADABLE_FILE, SkipLog
 
-CODE = "def keep_me(a, b):\n    total = a + b\n    return total * 2\n\n\nclass Holder:\n    def go(self):\n        return keep_me(1, 2)\n"
+CODE = ("def keep_me(a, b):\n    total = a + b\n    return total * 2\n\n\n"
+        "class Holder:\n    def go(self):\n        return keep_me(1, 2)\n")
 
 
 def test_scan_with_report_returns_exactly_the_scan_evidence(tmp_path):
@@ -89,7 +90,8 @@ def test_duplicate_candidates_are_collapsed_the_same_way_in_every_process(tmp_pa
     )
     root = Path(__file__).resolve().parent.parent
     counts = {
-        subprocess.run([sys.executable, "-c", script, str(tmp_path)], cwd=root, env={"PYTHONHASHSEED": seed, "PATH": ""},
+        subprocess.run([sys.executable, "-c", script, str(tmp_path)], cwd=root,
+                       env={"PYTHONHASHSEED": seed, "PATH": ""},
                        capture_output=True, text=True, check=False).stdout.strip()
         for seed in ("1", "2", "3")
     }

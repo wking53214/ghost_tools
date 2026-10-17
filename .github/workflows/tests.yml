@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12"]
+        python-version: ["3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
@@ -24,12 +24,16 @@ jobs:
           # so pytest exits with `unrecognized arguments: -n` without it. It also
           # cuts this job from ~16 minutes to a few, because the suite is 646
           # mutants each running a whole test file in a fresh interpreter.
-          python -m pip install pytest pytest-xdist ruff==0.15.22
+          python -m pip install pytest pytest-xdist ruff==0.15.22 mypy==2.4.0
           # The cns extra of pyproject.toml, same pin. Installed by name rather than
           # as ".[cns]" because this job runs from source and never builds the
           # package. Without it Tests/test_cns_*.py skip themselves. A test
-          # holds this line equal to the extra.
-          python -m pip install "cns @ git+https://github.com/wking53214/CNS.git@v1.8.0"
+          # holds this line equal to the extra. The pin is the full commit of
+          # the tag in the trailing comment. To bump: resolve the new tag to its
+          # commit (git ls-remote https://github.com/wking53214/CNS.git
+          # 'refs/tags/vX.Y.Z^{}') and change it here, in pyproject.toml and in
+          # Tests/test_cns_independence.py together.
+          python -m pip install "cns @ git+https://github.com/wking53214/CNS.git@5252ceebe98185f7be81212d988055ccf9884568"  # v1.8.0
       - name: Install gitleaks
         # Pinned exact version, same as ruff above. Tests/test_secrets*.py
         # skip themselves if this binary is absent; installed here so CI
@@ -44,12 +48,17 @@ jobs:
         run: python -m pytest -q
       - name: Lint (hard gate)
         run: python -m ruff check .  # the pinned install, never a ruff that happens to be on PATH
+      - name: Types (hard gate)
+        # Configuration and the list of module-level exclusions, each with its
+        # reason, are in [tool.mypy] of pyproject.toml.
+        run: python -m mypy
 
   self-scan:
     # The tool that argues silence is the defect scans itself on every push.
-    # The baseline holds three MAJOR findings, each with its reason in the
-    # case file beside it; everything MINOR is reported on every run and
-    # gates nothing. A new MAJOR or CRITICAL fails this job (exit 1).
+    # The baseline holds one MAJOR finding (a test holds this sentence to the
+    # file), with its reason in the case file beside it; everything MINOR is
+    # reported on every run and gates nothing. A new MAJOR or CRITICAL fails
+    # this job (exit 1).
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
@@ -98,8 +107,36 @@ jobs:
     # MANIFEST.md) and fails if any specimen's outcome got worse. It also
     # fails (exit 2) if the answer key cannot be proven by ASSAY's own
     # verify_manifest.py, so a drifted corpus cannot pass as "unchanged".
+    #
+    # REPRODUCIBILITY. The two siblings are pinned to full commit SHAs, so a
+    # push to either one's default branch cannot turn this job red or green on
+    # its own. The pinned leg is the blocking gate. The `latest` leg checks
+    # out each sibling's default branch instead, is named "non-blocking", and
+    # runs with continue-on-error: it tells us early that a sibling moved in a
+    # way that needs a pin bump, and gates nothing.
+    #
+    # TO BUMP A PIN: read the new HEAD of the sibling
+    #   git ls-remote https://github.com/wking53214/SWIZZLE.git HEAD
+    #   git ls-remote https://github.com/wking53214/ASSAY.git HEAD
+    # run this job against it, and change the SHA and the date in the matrix
+    # below in the same commit. Tests/test_workflow_pins.py holds both to
+    # 40 hex characters.
+    name: swizzle-gate (${{ matrix.label }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    continue-on-error: ${{ !matrix.blocking }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: pinned siblings
+            blocking: true
+            swizzle_ref: 9eb2a10ed1a05f3d15041c68f08b9c1c8c8c036f  # SWIZZLE main at 2026-10-17
+            assay_ref: 4da3919f19a04cb59b45c6d07d55229c923e5126  # ASSAY main at 2026-10-17
+          - label: latest siblings, non-blocking
+            blocking: false
+            swizzle_ref: ""   # empty ref: the default branch
+            assay_ref: ""
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
@@ -108,10 +145,12 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
           repository: wking53214/SWIZZLE
+          ref: ${{ matrix.swizzle_ref }}
           path: swizzle
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
           repository: wking53214/ASSAY
+          ref: ${{ matrix.assay_ref }}
           path: assay
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:

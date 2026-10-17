@@ -20,7 +20,8 @@ def _tree(tmp_path: Path, files: dict) -> list:
 
 
 def _shapes(tmp_path, body, name="tests/test_x.py"):
-    return [(f.attributes["name"], f.attributes["shape"], f.severity) for f in find_shapes(_tree(tmp_path, {name: body}))]
+    found = find_shapes(_tree(tmp_path, {name: body}))
+    return [(f.attributes["name"], f.attributes["shape"], f.severity) for f in found]
 
 
 def test_both_detectors_are_registered():
@@ -103,9 +104,12 @@ def test_every_way_of_asserting_counts(tmp_path):
 
 def test_a_helper_imported_from_a_module_beside_the_test_counts(tmp_path):
     files = _tree(tmp_path, {
-        "tests/tree_guard.py": "import contextlib\n\n\n@contextlib.contextmanager\ndef unchanged(t):\n    yield\n    assert t\n",
+        "tests/tree_guard.py": ("import contextlib\n\n\n@contextlib.contextmanager\n"
+                                "def unchanged(t):\n    yield\n    assert t\n"),
         "tests/conftest.py": "def settled(x):\n    assert x\n",
-        "tests/test_g.py": "from tree_guard import unchanged as same\n\n\ndef test_a(tree):\n    with same(tree):\n        run(tree)\n\n\ndef test_b():\n    settled(1)\n\n\ndef test_c():\n    other(1)\n",
+        "tests/test_g.py": ("from tree_guard import unchanged as same\n\n\n"
+                            "def test_a(tree):\n    with same(tree):\n        run(tree)\n\n\n"
+                            "def test_b():\n    settled(1)\n\n\ndef test_c():\n    other(1)\n"),
     })
     assert [f.attributes["name"] for f in find_shapes(files)] == ["test_c"]
 
@@ -173,7 +177,9 @@ def test_only_test_files_are_read(tmp_path):
 
 
 def test_the_findings_say_what_they_are(tmp_path):
-    files = _tree(tmp_path, {"tests/test_y.py": "def test_a():\n    pass\n\n\ndef test_b():\n    from unittest.mock import Mock\n    m = Mock()\n    m.go()\n    m.go.assert_called()\n"})
+    files = _tree(tmp_path, {"tests/test_y.py": (
+        "def test_a():\n    pass\n\n\ndef test_b():\n    from unittest.mock import Mock\n"
+        "    m = Mock()\n    m.go()\n    m.go.assert_called()\n")})
     (stub,) = detect_assertless_tests(files)
     (mock,) = detect_mock_only_tests(files)
     assert stub.detector == ASSERTLESS and stub.category is Category.VACUOUS_CHECK and stub.status is Status.CONFIRMED
@@ -220,7 +226,8 @@ def test_two_classes_with_the_same_method_name_are_two_findings(tmp_path):
 
 def test_the_identity_survives_an_edit_above_the_test(tmp_path):
     (before,) = find_shapes(_tree(tmp_path, {"tests/test_i.py": "def test_a():\n    pass\n"}))
-    (after,) = find_shapes(_tree(tmp_path, {"tests/test_i.py": "import os\n\n\ndef helper():\n    return 1\n\n\ndef test_a():\n    pass\n"}))
+    (after,) = find_shapes(_tree(tmp_path, {"tests/test_i.py": (
+        "import os\n\n\ndef helper():\n    return 1\n\n\ndef test_a():\n    pass\n")}))
     assert before.id == after.id and after.evidence.line_start == 8
 
 

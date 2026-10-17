@@ -90,6 +90,8 @@ def _iterated(loop: ast.AST) -> List[ast.AST]:
     the filters, and the FIRST iterable is evaluated once, not per pass."""
     if isinstance(loop, (ast.For, ast.While)):
         return list(loop.body)
+    if not isinstance(loop, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)):
+        return []
     parts: List[ast.AST] = [loop.key, loop.value] if isinstance(loop, ast.DictComp) else [loop.elt]
     for gen in loop.generators:
         parts.extend(gen.ifs)
@@ -232,6 +234,7 @@ def _filled_each_pass(loop_parts: List[ast.AST]) -> Set[int]:
 
 
 def _filled(loop_parts: List[ast.AST], names: Set[str]) -> bool:
+    target: ast.AST
     for part in loop_parts:
         for node in ast.walk(part):
             if isinstance(node, ast.AugAssign):
@@ -391,7 +394,7 @@ class Profile:
             finally:
                 prof.seconds["ast.parse"] += time.perf_counter() - t
                 prof.calls["ast.parse"][hash(key)] += 1
-        ast.parse = parse
+        ast.parse = parse  # type: ignore[assignment]  # the profiler swaps the stdlib function in place; __exit__ restores it
 
         real_read_bytes = Path.read_bytes
         def read_bytes(self_):
@@ -401,7 +404,7 @@ class Profile:
             finally:
                 prof.seconds["read"] += time.perf_counter() - t
                 prof.calls["read"][str(self_)] += 1
-        Path.read_bytes = read_bytes
+        Path.read_bytes = read_bytes  # type: ignore[method-assign]  # same swap, restored in __exit__
 
         real_read_text = Path.read_text
         def read_text(self_, *a, **k):
@@ -411,7 +414,7 @@ class Profile:
             finally:
                 prof.seconds["read"] += time.perf_counter() - t
                 prof.calls["read"][str(self_)] += 1
-        Path.read_text = read_text
+        Path.read_text = read_text  # type: ignore[method-assign,assignment]  # same swap, restored in __exit__
 
         real_run = subprocess.run
         def run(args, *a, **k):

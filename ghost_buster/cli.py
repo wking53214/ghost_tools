@@ -18,9 +18,10 @@ import os
 import sys
 import traceback
 from pathlib import Path
-from typing import List, Optional, Dict
+from typing import Dict, List, Optional, TextIO
 
 from . import version_string
+from .diagnostics import configure as configure_diagnostics, get_logger
 from . import attest
 from .baseline import Baseline
 from .trust import check as trust_check, grant as trust_grant
@@ -38,7 +39,9 @@ from .pipeline import Stop, gather, parse_size, SKIP_LIST_CAP
 #: Where --json output goes. main() sets it to the real stdout before the
 #: run, then points sys.stdout at stderr for the run itself, so nothing
 #: printed by library code can land in the middle of the JSON document.
-_OUT = {"stream": None}
+_OUT: Dict[str, Optional[TextIO]] = {"stream": None}
+
+log = get_logger(__name__)
 
 
 def _emit(text: str) -> None:
@@ -54,7 +57,7 @@ def _emit(text: str) -> None:
 #: something" from "the scan did not happen", so they never share a number.
 EXIT_CLEAN = 0      # scan ran; nothing new at MAJOR or above
 EXIT_FINDINGS = 1   # scan ran; new CRITICAL or MAJOR findings (this is not a failure of the tool)
-EXIT_USAGE = 2      # scan did not start: bad arguments, target missing or unreadable, unreadable baseline/ledger/casefile
+EXIT_USAGE = 2      # scan did not start: bad arguments, target missing/unreadable, unreadable baseline/ledger/casefile
 EXIT_CRASH = 3      # scan started and died: an unhandled error inside ghost_buster itself
 EXIT_INTERRUPTED = 130  # Ctrl-C (128 + SIGINT, the shell convention)
 
@@ -104,7 +107,7 @@ class _Parser(argparse.ArgumentParser):
 
     def error(self, message):
         self.print_usage(sys.stderr)
-        print(f"{self.prog}: error: {message}", file=sys.stderr)
+        log.error("%s: error: %s", self.prog, message)
         if self.json_mode:
             _emit(_dump(_envelope("error", EXIT_USAGE, [], error=("usage", message))))
         raise SystemExit(EXIT_USAGE)
@@ -206,7 +209,7 @@ def _skip_listing(evidence) -> dict:
     }
 
 
-def _build_parser() -> argparse.ArgumentParser:
+def _build_parser() -> "_Parser":
     """Every flag in one place. Extracted from main() because ghost_buster's
     own `long_function` detector flagged main() at 194 lines against its
     threshold of 80 -- the argument table is the bulk of it and has no
@@ -285,8 +288,8 @@ def _build_parser() -> argparse.ArgumentParser:
                         help="also list killed mutants and candidates that could not be judged")
     parser.add_argument(
         "--branches", action=argparse.BooleanOptionalAction, default=True,
-        help="ON BY DEFAULT (--no-branches to skip). Flag local/remote-tracking branches with commits not reflected in the "
-             "base branch (fast-forward, ordinary merge, or squash all recognized). "
+        help="ON BY DEFAULT (--no-branches to skip). Flag local/remote-tracking branches with commits "
+             "not reflected in the base branch (fast-forward, ordinary merge, or squash all recognized). "
              "Read-only git plumbing against the checkout as it sits: never fetches, "
              "never pushes, never queries GitHub, so it cannot see a branch's "
              "pull-request state, and a remote-tracking ref already deleted upstream "
@@ -305,8 +308,8 @@ def _build_parser() -> argparse.ArgumentParser:
              "test and mutation scans are DECLINED with a receipt; nothing else changes.")
     parser.add_argument(
         "--tests", action=argparse.BooleanOptionalAction, default=True,
-        help="ON BY DEFAULT (--no-tests to skip). Runs the project's pytest suite and report every test that did not pass: "
-             "failing (MAJOR), flaky (fails in the suite, passes rerun alone; MAJOR), "
+        help="ON BY DEFAULT (--no-tests to skip). Runs the project's pytest suite and report every test "
+             "that did not pass: failing (MAJOR), flaky (fails in the suite, passes rerun alone; MAJOR), "
              "blocked by a missing service/module/variable (MINOR, says what), skipped "
              "without a reason naming a dependency (MAJOR), skipped for a dependency "
              "that is actually present (MAJOR), skipped for an absent one "
@@ -323,8 +326,8 @@ def _build_parser() -> argparse.ArgumentParser:
                         help="timeout for each pytest invocation, the full run included (default 900)")
     parser.add_argument(
         "--secrets", action=argparse.BooleanOptionalAction, default=True,
-        help="ON BY DEFAULT (--no-secrets to skip). Scans the checked-out branch's git history for committed secrets with "
-             "gitleaks (must be installed separately; never installed by this tool). "
+        help="ON BY DEFAULT (--no-secrets to skip). Scans the checked-out branch's git history for committed "
+             "secrets with gitleaks (must be installed separately; never installed by this tool). "
              "Read-only: never rewrites history, rotates a credential, or writes into "
              "the target repository. The secret value itself never appears in a finding.",
     )
@@ -412,7 +415,21 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--ledger-path", type=Path, default=None, metavar="FILE",
-        help="where the ledger lives (default: <path>/.ghost_ledger.json)",
+        help="where the ledger lives (default: <path>/.ghost_ledger.json). The file's parent folder "
+             "must already exist, or the scan stops with exit 2 before it starts; "
+             "--create-ledger-dir opts in to creating it.",
+    )
+    parser.add_argument(
+        "--create-ledger-dir", action="store_true",
+        help="let --ledger-path create its parent folder(s) when they do not exist. Without it a "
+             "--ledger-path whose parent folder is missing is a usage error (exit 2) and nothing is "
+             "created: a typo in the path must not make directories anywhere on the disk.",
+    )
+    parser.add_argument(
+        "--verbose", "-v", action="store_true",
+        help="also write debug diagnostics to stderr (which ledger path is used, and the like). "
+             "stdout, the JSON document and the exit code are unchanged. The same can be set "
+             "without the flag by GHOST_TOOLS_LOG=DEBUG|INFO|WARNING|ERROR; the flag wins.",
     )
     parser.add_argument(
         "--no-correlate", action="store_true",
@@ -441,13 +458,13 @@ def _verify_chain(args) -> int:
     path = args.ledger_path or (args.path / ".ghost_ledger.json")
     if not path.is_file():
         msg = f"ghost_buster: chain: no ledger at {path}"
-        print(msg, file=sys.stderr)
+        log.error("%s", msg)
         return _chain_result(args, 2, "error", msg)
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as e:
         msg = f"error: ledger {path}: {e}"
-        print(msg, file=sys.stderr)
+        log.error("%s", msg)
         return _chain_result(args, 2, "error", msg)
     runs = raw.get("runs") or []
     breaks = attest.verify(runs)
@@ -493,9 +510,9 @@ def _note_stale_baseline(baseline, findings) -> List[Finding]:
     """
     stale = baseline.stale(findings)
     if stale:
-        print(f"ghost_buster: {len(stale)} of {baseline.size} baseline entries matched nothing scanned "
-              f"(fixed, renamed detector, or a baseline written from another checkout); "
-              f"first: {stale[0].id} {stale[0].evidence.file}", file=sys.stderr)
+        log.warning("ghost_buster: %d of %d baseline entries matched nothing scanned "
+                    "(fixed, renamed detector, or a baseline written from another checkout); "
+                    "first: %s %s", len(stale), baseline.size, stale[0].id, stale[0].evidence.file)
     return baseline.derive_findings(findings)
 
 
@@ -503,12 +520,12 @@ def _setup_trust(args) -> None:
     """Handle trust resolution and logging."""
     args.trusted = trust_grant(args.path) if args.trust else trust_check(args.path)
     if args.trust:
-        print(f"ghost_buster: trust: {args.trusted.identity}: {args.trusted.reason}", file=sys.stderr)
+        log.info("ghost_buster: trust: %s: %s", args.trusted.identity, args.trusted.reason)
     elif args.trusted.store is None:
-        print(f"ghost_buster: trust: {args.trusted.reason}", file=sys.stderr)
+        log.info("ghost_buster: trust: %s", args.trusted.reason)
 
 
-def _handle_priors_mode(args) -> int:
+def _handle_priors_mode(args) -> Optional[int]:
     """Handle --priors mode and exit early if active."""
     if not args.priors:
         return None
@@ -530,19 +547,47 @@ def _handle_priors_mode(args) -> int:
 def _fail(args, code: int, kind: str, message: str) -> int:
     """Say why the scan did not happen: a plain reason on stderr and, under
     --json, valid JSON on stdout with status "error". Returns the code."""
-    print(message, file=sys.stderr)
+    log.error("%s", message)
     if getattr(args, "json", False):
         _emit(_dump(_envelope("error", code, [], error=(kind, message))))
     return code
 
 
-def _validate_path(args) -> int:
+def _validate_path(args) -> Optional[int]:
     """Validate and gather arrival state from path."""
     if not args.path.is_dir():
         return _fail(args, EXIT_USAGE, "usage", f"error: {args.path} is not a directory")
     if not os.access(args.path, os.R_OK | os.X_OK):
         return _fail(args, EXIT_USAGE, "usage", f"error: {args.path} cannot be read (permission denied)")
     return None
+
+
+def _validate_ledger_path(args) -> Optional[int]:
+    """Refuse a --ledger-path that would have to invent folders, before the scan.
+
+    The ledger is written at the very end of a scan that can take minutes, so
+    a path that cannot be written is worth refusing up front: exit 2, a plain
+    reason on stderr and under --json the usual error envelope, with nothing
+    created. `--create-ledger-dir` is the explicit opt-in to make the folders.
+    A scan that will not write a ledger (--no-ledger) is not asked about it.
+    """
+    path = args.ledger_path
+    if path is None or args.ledger is False:
+        return None
+    if path.is_dir():
+        return _fail(args, EXIT_USAGE, "usage", f"error: --ledger-path {path} is a folder, not a file")
+    parent = path.parent
+    if parent.is_dir():
+        log.debug("ledger: %s (its folder exists)", path)
+        return None
+    if parent.exists():
+        return _fail(args, EXIT_USAGE, "usage", f"error: --ledger-path {path}: {parent} is not a folder")
+    if args.create_ledger_dir:
+        log.debug("ledger: %s (its folder %s does not exist and will be created: --create-ledger-dir)", path, parent)
+        return None
+    return _fail(args, EXIT_USAGE, "usage",
+                 f"error: --ledger-path {path}: the folder {parent} does not exist. Nothing was created. "
+                 "Create it first, or pass --create-ledger-dir to have it created")
 
 
 def _load_baseline(baseline_path) -> Baseline:
@@ -561,13 +606,13 @@ def _gather_evidence_safe(args):
         raise
 
 
-def _handle_accept_mode(args, baseline, findings, baseline_path, evidence=None) -> int:
+def _handle_accept_mode(args, baseline, findings, baseline_path, evidence=None) -> Optional[int]:
     """Handle --accept mode and exit early if active."""
     if not args.accept:
         return None
 
     baseline.accept(findings)
-    print(f"accepted {len(findings)} finding(s) into {baseline_path}", file=sys.stderr)
+    log.info("accepted %d finding(s) into %s", len(findings), baseline_path)
     if args.json:
         _emit(_dump(_envelope("ok", EXIT_CLEAN, findings, evidence,
                               baseline={"path": str(baseline_path), "suppressed": 0, "explicit": True})))
@@ -586,19 +631,19 @@ def _prepare_output_data(args, evidence, baseline, findings) -> tuple:
 
     archive = archive_marked(args.path)
     if archive is not None:
-        print(archive.receipt(), file=sys.stderr)
+        log.info("%s", archive.receipt())
 
     return new, known, priors, archive, casefile_path
 
 
-def _handle_dispatch_modes(args) -> int:
+def _handle_dispatch_modes(args) -> Optional[int]:
     """Handle verify-chain mode."""
     if args.verify_chain:
         return _verify_chain(args)
     return None
 
 
-def main(argv: List[str] = None) -> int:
+def main(argv: Optional[List[str]] = None) -> int:
     """Run one scan and return its exit code (see EXIT_* above).
 
     Anything the code below does not handle itself is a crash: it is
@@ -632,9 +677,9 @@ def _baseline_info(args, baseline, baseline_path, known) -> dict:
     info = {"path": str(baseline_path) if present else None,
             "suppressed": len(known), "explicit": args.baseline is not None}
     if info["suppressed"] and not info["explicit"] and not args.json:
-        print(f"ghost_buster: WARNING: {info['suppressed']} finding(s) hidden by {baseline_path}, "
-              "a baseline found in the scanned folder and not named with --baseline. "
-              "Pass --baseline FILE to use it on purpose.", file=sys.stderr)
+        log.warning("ghost_buster: WARNING: %d finding(s) hidden by %s, "
+                    "a baseline found in the scanned folder and not named with --baseline. "
+                    "Pass --baseline FILE to use it on purpose.", info["suppressed"], baseline_path)
     return info
 
 
@@ -643,9 +688,12 @@ def _main_json_quiet(argv: List[str]) -> int:
     nothing else: anything printed while the scan runs goes to stderr
     instead (_emit writes the document to the real stdout). Parsing happens
     first so `--help` and `--version` still print where they always did."""
+    configure_diagnostics()   # the environment's level; --verbose is applied once the line is parsed
     parser = _build_parser()
     parser.json_mode = "--json" in argv
     args = parser.parse_args(argv)
+    if args.verbose:
+        configure_diagnostics(verbose=True)
     if args.json:
         with contextlib.redirect_stdout(sys.stderr):
             return _main(args)
@@ -668,6 +716,10 @@ def _main(args) -> int:
     # --verify-chain reads the ledger, not the tree: it answers before
     # anything is scanned.
     result = _handle_dispatch_modes(args)
+    if result is not None:
+        return result
+
+    result = _validate_ledger_path(args)
     if result is not None:
         return result
 

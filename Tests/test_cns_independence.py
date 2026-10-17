@@ -17,7 +17,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 CONFIG = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
 #: Written exactly as Warden writes its pin, so pip never sees two differing direct URLs.
-CNS_PIN = "cns @ git+https://github.com/wking53214/CNS.git@v1.8.0"
+CNS_PIN = "cns @ git+https://github.com/wking53214/CNS.git@5252ceebe98185f7be81212d988055ccf9884568"  # v1.8.0
 
 BLOCK = ("import sys; sys.modules['cns'] = None; sys.modules['cns.gate'] = None; "
          "sys.modules['cns.finding'] = None\n")

@@ -54,7 +54,8 @@ def test_declared_dependency_not_installed_is_wiring_not_a_void(tmp_path):
 def test_optional_dependency_in_pyproject_counts_as_declared(tmp_path):
     repo = _repo(tmp_path, "tool", {
         "core.py": "import some_optional_extra_abc\n",
-        "pyproject.toml": '[project]\nname = "tool"\ndependencies = []\n\n[project.optional-dependencies]\nsemantic = ["some-optional-extra-abc"]\n',
+        "pyproject.toml": ('[project]\nname = "tool"\ndependencies = []\n\n'
+                           '[project.optional-dependencies]\nsemantic = ["some-optional-extra-abc"]\n'),
     })
     assert [e.kind for e in scan(repo)] == [EvidenceKind.WIRING]
 

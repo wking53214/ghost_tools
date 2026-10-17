@@ -29,7 +29,10 @@ from pathlib import Path
 from typing import Iterable, List, Optional, Tuple
 
 from ghost_buster.casefile import Casefile
+from ghost_buster.diagnostics import add_verbose_argument, configure, get_logger
 from ghost_buster.schema import Finding, FindingSet
+
+log = get_logger(__name__)
 
 DISPOSITIONS = ("fix", "suppress", "document")
 
@@ -91,10 +94,12 @@ def main(argv: Optional[List[str]] = None) -> int:
              "repository at one file and the surgeon learns across the library. "
              "Never hides a finding; only attaches history to it.",
     )
+    add_verbose_argument(parser)
     args = parser.parse_args(argv)
+    configure(verbose=args.verbose)
 
     if not args.findings.is_file():
-        print(f"error: {args.findings} is not a file", file=sys.stderr)
+        log.error("error: %s is not a file", args.findings)
         return 2
     fs = FindingSet.from_json(args.findings.read_text(encoding="utf-8"))
     items = list(fs)
@@ -103,7 +108,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         try:
             apply_dispositions(items, args.set)
         except ValueError as e:
-            print(f"error: {e}", file=sys.stderr)
+            log.error("error: %s", e)
             return 2
         target = args.out or args.findings
         target.write_text(FindingSet(items).to_json(), encoding="utf-8")

@@ -308,10 +308,10 @@ class Void:
             lines += ["", f"  PARTIAL: {self.partial_reason}"]
 
         lines += ["", f"  negative evidence ({len(self.evidence)}):"]
-        for item in self.evidence:
-            where = f"{item.file}:{item.line}" if item.line else item.file
-            lines.append(f"    [{item.kind.value}] {where}")
-            lines.append(f"        {item.detail}")
+        for evidence in self.evidence:
+            where = f"{evidence.file}:{evidence.line}" if evidence.line else evidence.file
+            lines.append(f"    [{evidence.kind.value}] {where}")
+            lines.append(f"        {evidence.detail}")
 
         lines += [
             "",

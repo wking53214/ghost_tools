@@ -96,10 +96,10 @@ def command(*args: str, root: Optional[Path] = None) -> List[str]:
     argv = ["git", *HARDENING]
     if root is not None:
         argv += ["-C", str(root)]
-    args = list(args)
-    if args and args[0] in _DIFF_LIKE:
-        args[1:1] = ["--no-ext-diff", "--no-textconv"]
-    return argv + args
+    rest = list(args)
+    if rest and rest[0] in _DIFF_LIKE:
+        rest[1:1] = ["--no-ext-diff", "--no-textconv"]
+    return argv + rest
 
 
 def run(args, *, root: Optional[Path] = None, cwd=None, **kwargs) -> "subprocess.CompletedProcess":

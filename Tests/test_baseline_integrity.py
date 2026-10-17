@@ -75,8 +75,9 @@ def test_stored_absolute_paths_from_an_old_baseline_are_read_back_portably(tmp_p
     # project-relative form; one whose path does not exist keeps its
     # two-segment fallback and is reported stale rather than silently inert.
     root = _checkout(tmp_path / "proj")
-    live = Finding.from_dict({**_finding("x").as_dict(), "evidence": {"file": str(root / "src" / "pkg" / "mod.py"), "line_start": 3}})
-    assert live.evidence.file == "src/pkg/mod.py" and live.evidence.absolute_file == str(root / "src" / "pkg" / "mod.py")
+    absolute = str(root / "src" / "pkg" / "mod.py")
+    live = Finding.from_dict({**_finding("x").as_dict(), "evidence": {"file": absolute, "line_start": 3}})
+    assert live.evidence.file == "src/pkg/mod.py" and live.evidence.absolute_file == absolute
     assert live.id == _finding("x").id
 
 

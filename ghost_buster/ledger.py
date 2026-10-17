@@ -353,12 +353,19 @@ class Ledger:
             "findings": {k: v.to_dict() for k, v in sorted(self.findings.items())},
         }
 
-    def save(self) -> None:
+    def save(self, create_dirs: bool = False) -> None:
         """Atomic. An interrupted run must not leave a half-written
         governance record; the old one is strictly better than a corrupt
         one, because a corrupt one is refused on the next read and the
-        history is gone either way."""
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        history is gone either way.
+
+        The ledger's folder must already exist unless `create_dirs` says
+        otherwise. Creating whatever folders a path names, silently, meant a
+        mistyped `--ledger-path` made directories wherever it pointed; a
+        missing parent is now an OSError (FileNotFoundError), which the
+        command line reports as a usage error."""
+        if create_dirs:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
         payload = json.dumps(self.to_dict(), indent=2, sort_keys=False) + "\n"
         fd, tmp = tempfile.mkstemp(dir=str(self.path.parent), prefix=".ghost_ledger.", suffix=".tmp")
         try:
@@ -407,10 +414,10 @@ class Ledger:
         """
         previous = self.runs[-1].commit if self.runs else ""
         if root is None or not previous or not commit:
-            return set()
+            return
         moved = renames_between(Path(root), previous, commit)
         if not moved:
-            return set()
+            return
 
         # Where each finding seen this run lives, by detector.
         here: Dict[tuple, List[Finding]] = {}
@@ -521,26 +528,26 @@ class Ledger:
 
         for fid in sorted(seen_now):
             f = by_id[fid]
-            hist = self.findings.get(fid)
-            if hist is None:
-                hist = FindingHistory(finding_id=fid, first_seen=at, first_commit=commit)
-                self.findings[fid] = hist
-            elif hist.absent_last_run:
+            seen = self.findings.get(fid)
+            if seen is None:
+                seen = FindingHistory(finding_id=fid, first_seen=at, first_commit=commit)
+                self.findings[fid] = seen
+            elif seen.absent_last_run:
                 # It was gone and it is back. This is the fact the baseline
                 # structurally cannot hold: to a set of ids, a return and a
                 # first sighting are the same event.
-                hist.returns += 1
-            hist.detector = f.detector
-            hist.file = f.evidence.file
-            hist.summary = f.summary
-            hist.severity = f.severity.value if hasattr(f.severity, "value") else str(f.severity)
-            hist.last_seen = at
-            hist.last_commit = commit
-            hist.runs_seen += 1
-            hist.consecutive += 1
-            hist.absent_last_run = False
+                seen.returns += 1
+            seen.detector = f.detector
+            seen.file = f.evidence.file
+            seen.summary = f.summary
+            seen.severity = f.severity.value if hasattr(f.severity, "value") else str(f.severity)
+            seen.last_seen = at
+            seen.last_commit = commit
+            seen.runs_seen += 1
+            seen.consecutive += 1
+            seen.absent_last_run = False
             if f.disposition:
-                hist.dispositions.append({
+                seen.dispositions.append({
                     "at": at, "state": str(f.disposition),
                     "note": f.disposition_note or "",
                 })
@@ -556,8 +563,8 @@ class Ledger:
             # Aged-out runs survive as counters, never as nothing: the
             # blind-spot streak below counts over kept runs, so the cap is
             # also the ceiling on how far back a streak can be proven.
-            for old in self.runs[:-MAX_RUNS_KEPT]:
-                for name, state in old.checks.items():
+            for aged in self.runs[:-MAX_RUNS_KEPT]:
+                for name, state in aged.checks.items():
                     key = f"check.{name}.{state}"
                     self.totals[key] = self.totals.get(key, 0) + 1
             self.runs = self.runs[-MAX_RUNS_KEPT:]
@@ -676,7 +683,7 @@ def render_report(ledger: "Ledger", derived: Sequence[Finding]) -> str:
     if not ledger.existed:
         return (f"ghost_buster: ledger started at {ledger.path} "
                 f"(first run here, so no history to compare against yet)")
-    kinds = {}
+    kinds: Dict[str, int] = {}
     for f in derived:
         k = f.attributes.get("kind") or ("blind_spot" if f.attributes.get("check") else "history")
         kinds[k] = kinds.get(k, 0) + 1

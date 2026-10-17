@@ -188,7 +188,7 @@ def _cns_module(name: str) -> ModuleType:
         ) from exc
 
 
-def _plain(value: object, depth: int = 0) -> object:
+def _plain(value: object, depth: int = 0) -> Any:
     """A finding as plain content a digest can bind: scalars, mappings and lists.
 
     Ghost writes a finding as JSON, so anything else inside one (an object, a set,

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ghost-tools"
-version = "1.9.1"
+version = "1.10.0"
 description = "Codebase integrity toolkit: finds structural ghosts, proves vacuous tests by mutation, outlines missing code, and turns human-triaged findings into accurate docs"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -19,6 +19,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Quality Assurance",
     "Topic :: Software Development :: Testing",
 ]
@@ -47,7 +48,7 @@ packages = ["ghost_buster", "ghost_writer", "blackhole_extrapolator", "stack_cen
 semantic = ["anthropic"]
 dev = ["pytest>=8", "pytest-xdist>=3"]
 # The CNS gate and row connector in ghost_buster/cns_adapter.py. Optional; ghost_tools runs without it.
-cns = ["cns @ git+https://github.com/wking53214/CNS.git@v1.8.0"]
+cns = ["cns @ git+https://github.com/wking53214/CNS.git@5252ceebe98185f7be81212d988055ccf9884568"]  # v1.8.0
 
 [tool.pytest.ini_options]
 testpaths = ["Tests"]
@@ -77,8 +78,38 @@ norecursedirs = ["fixtures"]
 addopts = "-n auto"
 
 [tool.ruff]
-line-length = 100
+# The code is written to about 120 columns; 100 was configured but never held.
+line-length = 120
 # Tests/fixtures holds files verbatim, including one recovered original that a
 # test compares against byte for byte. Linting them would be linting data, and
 # fixing them would break the comparison they exist for.
 exclude = ["Tests/fixtures"]
+
+[tool.ruff.lint]
+# E/W: pycodestyle, F: pyflakes, B: bugbear. Ruff's default (E4, E7, E9, F)
+# is a subset of these.
+select = ["E", "F", "W", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# The mutant suites hold the exact source text each mutant replaces, as string
+# data. Wrapping those strings would change what they match.
+"Tests/*_mutants.py" = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["ghost_buster", "ghost_writer", "blackhole_extrapolator", "stack_census", "tools"]
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_unreachable = false
+# Tests/ is not type-checked: it is run, 2,000-odd tests that fail loudly, and
+# Tests/fixtures holds verbatim repositories used as data. Everything that
+# ships (the four packages in `packages =`) plus tools/ is checked.
+exclude = ["^Tests/"]
+
+[[tool.mypy.overrides]]
+# Optional dependencies that are not installed where the type step runs
+# (`anthropic` is the `semantic` extra) or ship no types (`cns`). Every use is
+# behind a lazy import that fails with a named message when the package is
+# absent, which Tests/test_cns_independence.py and Tests/test_semantic.py hold.
+module = ["anthropic", "anthropic.*", "cns", "cns.*"]
+ignore_missing_imports = true

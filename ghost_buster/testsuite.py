@@ -597,7 +597,8 @@ def _evidence(root: Path, outcome: TestOutcome) -> Evidence:
                     snippet=outcome.nodeid)
 
 
-def _finding(root: Path, outcome: TestOutcome, kind: str, severity: Severity,  # ghost_buster: name-disagreement -- `summary` is `phase` at every call site
+# ghost_buster: name-disagreement -- `summary` is `phase` at every call site
+def _finding(root: Path, outcome: TestOutcome, kind: str, severity: Severity,
              summary: str, detail: str) -> Finding:
     return Finding(
         detector=DETECTOR,

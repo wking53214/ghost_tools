@@ -77,7 +77,7 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
-from typing import List, Optional, Sequence, Set
+from typing import List, Optional, Sequence, Set, Tuple, Union
 
 from . import corpus
 from .naming import is_test_path
@@ -85,6 +85,8 @@ from .schema import Category, Evidence, Finding, Layer, Severity, Status
 
 ASSERTLESS = "assertless_test"
 MOCK_ONLY = "mock_only_test"
+
+_Func = Union[ast.FunctionDef, ast.AsyncFunctionDef]
 
 _ASSERTING_PREFIXES = ("assert", "check", "verify", "expect", "ensure", "require", "confirm")
 _ASSERTING_NAMES = frozenset({"raises", "warns", "fail", "deprecated_call", "approx", "does_not_raise"})
@@ -130,7 +132,7 @@ def _local_asserting_helpers(tree: ast.Module, path: Path) -> Set[str]:
     in the same folder (a `tree_guard.py` or `support.py` beside the tests), plus `conftest.py`."""
     out = _asserting_definitions(tree)
     folder = path.parent
-    sources = {}
+    sources: dict[Path, List[Tuple[str, str]]] = {}
     for node in tree.body:
         if isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
             candidate = folder / (node.module.replace(".", "/") + ".py")
@@ -159,7 +161,7 @@ def _excused(func: ast.AST) -> bool:
     return False
 
 
-def _body_without_docstring(func: ast.AST) -> List[ast.stmt]:
+def _body_without_docstring(func: _Func) -> List[ast.stmt]:
     body = list(func.body)
     if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) \
             and isinstance(body[0].value.value, str):
@@ -185,12 +187,13 @@ def _tautology(node: ast.Assert) -> bool:
     test = node.test
     if isinstance(test, ast.Constant):
         return bool(test.value)
-    if isinstance(test, ast.Compare) and len(test.ops) == 1 and isinstance(test.ops[0], (ast.Eq, ast.Is, ast.LtE, ast.GtE)):
+    if (isinstance(test, ast.Compare) and len(test.ops) == 1
+            and isinstance(test.ops[0], (ast.Eq, ast.Is, ast.LtE, ast.GtE))):
         return ast.dump(test.left) == ast.dump(test.comparators[0])
     return False
 
 
-def _shape(func: ast.AST, helpers: Set[str]) -> Optional[str]:
+def _shape(func: _Func, helpers: Set[str]) -> Optional[str]:
     """None, "stub", "assertless" or "mock_only" for one test function."""
     body = _body_without_docstring(func)
     if _is_stub(body):
@@ -247,7 +250,7 @@ _SHAPES = {
 }
 
 
-def _finding(path: Path, func: ast.AST, shape: str, qualified: str) -> Finding:
+def _finding(path: Path, func: _Func, shape: str, qualified: str) -> Finding:
     detector, severity, says, detail = _SHAPES[shape]
     return Finding(
         detector=detector,

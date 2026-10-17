@@ -91,3 +91,33 @@ def test_the_defaults_table_agrees_with_the_parser():
     declines = set(re.findall(r"\| on \| `(--no-[a-z-]+)` \|", table))
     assert declines, "the defaults table lost its shape"
     assert declines <= _cli_flags(), sorted(declines - _cli_flags())
+
+
+_WORDS = {"twenty-five": 25, "twenty-six": 26, "twenty-seven": 27, "twenty-eight": 28, "twenty-nine": 29,
+          "thirty": 30, "thirty-one": 31, "thirty-two": 32}
+
+
+def test_the_defaults_table_states_the_registered_detector_count():
+    """'the twenty-seven registered detectors' was prose, and prose does not
+    notice an added detector."""
+    said = re.search(r"\| the ([a-z-]+) registered detectors \|", REFERENCE)
+    assert said, "the defaults table no longer states how many detectors run"
+    assert _WORDS[said.group(1)] == len(registered_detectors())
+
+
+def test_the_defaults_table_agrees_with_the_parser_about_what_is_opt_in():
+    """The ledger row said 'on, --no-ledger' while the parser (and the README)
+    made it opt-in. A row marked off must not be turned on by default."""
+    table = _section("What runs by default", "What it checks")
+    from ghost_buster import cli
+    parser = cli._build_parser()
+    ledger_default = next(a.default for a in parser._actions if "--ledger" in a.option_strings)
+    assert ledger_default is None            # None means: only when asked for
+    row = next(line for line in table.splitlines() if line.startswith("| ledger"))
+    assert "**off**" in row and "--ledger" in row
+
+
+def test_the_new_flags_are_documented_where_a_reader_looks():
+    for flag in ("--create-ledger-dir", "--verbose", "--ledger-path"):
+        assert flag in README, f"README does not mention {flag}"
+    assert "GHOST_TOOLS_LOG" in README

@@ -21,7 +21,7 @@ state on every run** -- performed, impossible, or declined.
 | project checks (CI, deploy artifacts, test configuration) | on | `--no-project` |
 | structural model | on | `--no-structure` |
 | correlation | on | `--no-correlate` |
-| ledger (memory) | on | `--no-ledger` |
+| ledger (memory) | **off**, opt-in | `--ledger`, or `--ledger-path FILE` (its folder must exist; `--create-ledger-dir` creates it) |
 | cross-repository seam | asks, on a terminal; single-repo otherwise | `--join PATH` or `--single-repo` says so outright |
 | shared kernel | **off** | opt-in because it needs a path: `--kernel PATH` |
 | mutation (`--mutate`) | **off**, and needs a trusted repository | opt-in on cost: one pytest process per mutant |

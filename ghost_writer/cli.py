@@ -11,14 +11,17 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
+from ghost_buster.diagnostics import add_verbose_argument, configure, get_logger
 from ghost_buster.schema import FindingSet
 
 from .report import render_ghost_report, render_triage_report
 
+log = get_logger(__name__)
 
-def main(argv: List[str] = None) -> int:
+
+def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(prog="ghost_writer")
     parser.add_argument("findings", type=Path, help="a FindingSet JSON file (from ghost_buster --json)")
     parser.add_argument(
@@ -29,10 +32,12 @@ def main(argv: List[str] = None) -> int:
     )
     parser.add_argument("--title", default=None)
     parser.add_argument("--out", type=Path, default=None, help="write to a file instead of stdout")
+    add_verbose_argument(parser)
     args = parser.parse_args(argv)
+    configure(verbose=args.verbose)
 
     if not args.findings.is_file():
-        print(f"error: {args.findings} is not a file", file=sys.stderr)
+        log.error("error: %s is not a file", args.findings)
         return 2
 
     fs = FindingSet.from_json(args.findings.read_text(encoding="utf-8"))

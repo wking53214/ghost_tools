@@ -30,7 +30,7 @@ import ast
 import hashlib
 import re
 from pathlib import Path
-from typing import Callable, Dict, Iterable, List, Optional, Set, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Set, Tuple, Union
 
 from . import corpus, forensics
 from .references import ReferenceIndex
@@ -821,9 +821,9 @@ def _reachable_from_data(parsed, declared) -> Dict[str, Set[str]]:
         return None
 
     values: Dict[str, Dict[object, str]] = {}
-    for enum, members in declared.items():
-        values[enum] = {v: m for m, (_p, _l, v) in members.items()
-                        if v is not None}
+    for enum_name, members in declared.items():
+        values[enum_name] = {v: m for m, (_p, _l, v) in members.items()
+                             if v is not None}
     out: Dict[str, Set[str]] = {enum: set() for enum in declared}
     for _path, tree in parsed.items():
         for node in ast.walk(tree):
@@ -854,7 +854,7 @@ def _reachable_from_data(parsed, declared) -> Dict[str, Set[str]]:
                 continue
             if isinstance(arg, ast.Constant):
                 named = values[enum].get(arg.value)
-                if named is None and arg.value in declared[enum]:
+                if named is None and isinstance(arg.value, str) and arg.value in declared[enum]:
                     named = arg.value
                 if named is not None:
                     out[enum].add(named)
@@ -881,7 +881,8 @@ def _analyse_sources(sources: Dict[str, str]) -> Tuple[Set[str], Set[str]]:
     detector does at HEAD, every historical comparison would be between two
     different measurements and the escalations built on it would be noise.
     """
-    library, tests = {}, {}
+    library: Dict[Path, ast.AST] = {}
+    tests: Dict[Path, ast.AST] = {}
     for name, text in sources.items():
         try:
             tree = ast.parse(text)
@@ -1488,7 +1489,7 @@ def detect_dead_code(files: List[Path]) -> List[Finding]:
                 definitions.setdefault(node.name, []).append(path)
                 nodes[(node.name, path)] = node
 
-    for path, tree in parsed.items():
+    for tree in parsed.values():
         for node in ast.walk(tree):
             if isinstance(node, ast.Name):
                 referenced_names.add(node.id)
@@ -1674,7 +1675,7 @@ def _shape(n: ast.AST):
     if isinstance(n, ast.Attribute):
         return ("Attribute", _shape(n.value))
     fields = []
-    for field_name, value in ast.iter_fields(n):
+    for _field_name, value in ast.iter_fields(n):
         if isinstance(value, ast.AST):
             fields.append(_shape(value))
         elif isinstance(value, list):
@@ -1827,7 +1828,7 @@ def detect_near_duplicate_functions(files: List[Path], min_lines: int = 10) -> L
                 by_fingerprint.setdefault(fp, []).append((path, node))
 
     findings: List[Finding] = []
-    for fp, occurrences in by_fingerprint.items():
+    for occurrences in by_fingerprint.values():
         if len(occurrences) < 2:
             continue
         # One label per OCCURRENCE, not per unique (file, name) pair --
@@ -1896,7 +1897,7 @@ def detect_near_duplicate_functions(files: List[Path], min_lines: int = 10) -> L
 _BLOCK_FIELD_NAMES = ("body", "orelse", "finalbody")
 
 
-def _stmt_blocks(func_node: ast.AST) -> Iterable[List[ast.stmt]]:
+def _stmt_blocks(func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef]) -> Iterable[List[ast.stmt]]:
     """Every list-of-statements belonging to a function's OWN scope: its
     own body, plus the body/orelse/finalbody of every nested if/for/while/
     try/with inside it, plus each except-handler's body. Each is a
@@ -1948,7 +1949,7 @@ def _node_count(node: ast.AST) -> int:
 
 
 def _stmt_candidates(
-    func_node: ast.AST, min_statements: int, min_complexity: int
+    func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef], min_statements: int, min_complexity: int
 ) -> Iterable[Tuple[int, List[ast.stmt]]]:
     """Every comparison unit worth fingerprinting inside one function,
     tagged with the index of the statement list it came from: whole
@@ -2169,7 +2170,7 @@ _COUNT_LEAD_INS = frozenset({
     "about", "across", "than", "plus",
     # quantifiers and adverbs
     "all", "only", "just", "now", "still", "over", "under", "some",
-    "another", "roughly", "around", "nearly", "some",
+    "another", "roughly", "around", "nearly",
     # verbs that take a count as their object
     "collects", "collected", "contains", "holds", "runs", "ran", "adds",
     "added", "totals", "totalling", "totaling", "reaching", "reached",
@@ -2180,7 +2181,7 @@ _COUNT_LEAD_INS = frozenset({
     # changes nothing, because this one quietly covers for it. Mutation
     # testing found exactly that, twice, the moment this rule was added.
     "gained", "gains", "gain", "grew", "grown", "grows", "growing",
-    "plus", "minus", "removed", "removes", "dropped", "drops", "another",
+    "minus", "removed", "removes", "dropped", "drops",
     "extra", "net", "more", "fewer", "claimed", "reported", "said",
 })
 

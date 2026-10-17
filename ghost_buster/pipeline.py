@@ -61,7 +61,10 @@ from .testsuite import render_report as render_test_report, scan as scan_tests
 from .trajectory import (
     derive as trajectory_derive, render_report as render_trajectory_report,
 )
+from .diagnostics import get_logger
 from .trust import declined_receipt
+
+log = get_logger(__name__)
 
 
 class Stop(Exception):
@@ -73,7 +76,9 @@ class Stop(Exception):
 
 
 def to_stderr(message: str) -> None:
-    print(message, file=sys.stderr)
+    """Where a check's receipt line goes: the diagnostics logger, which
+    writes it to stderr. The name stays because callers pass it as `say`."""
+    log.info("%s", message)
 
 
 @dataclass
@@ -369,7 +374,7 @@ def _resolve_join_mode(args, files, say=to_stderr) -> List[Path]:
     notice = render_single_repo_notice(args.path, files)
     if notice is None:
         return []      # nothing reaches across a boundary; no question to ask
-    print(notice, file=sys.stderr)
+    log.info("%s", notice)
     # A prompt is not a receipt: it needs no newline and has to reach a
     # terminal whatever the caller does with the receipt channel.
     print("ghost_buster: scan this repository alone, or join another? "
@@ -676,7 +681,7 @@ def _record_in_ledger(args, files, findings, checks, baseline_path, say) -> None
     say(render_trajectory_report(ledger.runs))
     findings.extend(trend)
     try:
-        ledger.save()
+        ledger.save(create_dirs=bool(getattr(args, "create_ledger_dir", False)))
     except OSError as e:
         raise Stop(f"error: ledger {ledger_path} could not be written: "
                    f"{type(e).__name__}: {e}") from e
@@ -715,6 +720,8 @@ def _gather(args, say) -> Evidence:
                    f"(excluded directory names: "
                    f"{', '.join(sorted(_EXCLUDED_DIRS | set(args.exclude)))})")
     say(f"ghost_buster: scanning {len(all_files)} file(s) under {args.path}")
+    log.debug("baseline %s; size limit %s bytes; %d file(s) withheld as oversize",
+              baseline_path, limit, len(oversize))
     # Every check's state, recorded whatever it is. This dict is the reason
     # the ledger can notice a blind spot: "declined" and "could not run" are
     # facts worth remembering, not the absence of one.

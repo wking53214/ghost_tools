@@ -72,7 +72,9 @@ def _norm(text: str) -> str:
 
 def _split_top(text: str) -> list[str]:
     """Split on commas outside brackets."""
-    out, depth, cur = [], 0, []
+    out: list[str] = []
+    cur: list[str] = []
+    depth = 0
     for ch in text:
         if ch in "([{":
             depth += 1
@@ -182,7 +184,7 @@ def _params_from_args(args: ast.arguments) -> tuple[list[tuple[str, str, bool]],
             continue
         params.append((a.arg, _norm(ast.unparse(a.annotation)) if a.annotation else "",
                        i >= defaults_start))
-    for a, d in zip(args.kwonlyargs, args.kw_defaults):
+    for a, d in zip(args.kwonlyargs, args.kw_defaults, strict=True):
         params.append((a.arg, _norm(ast.unparse(a.annotation)) if a.annotation else "", d is not None))
     return params, args.vararg is not None
 
@@ -217,9 +219,10 @@ def usage_of(tree: ast.Module, name: str, file: str, known: dict[str, Signature]
         if not (isinstance(node, ast.Assign) and node.value in calls and len(node.targets) == 1):
             continue
         target = node.targets[0]
-        if isinstance(target, ast.Tuple) and all(isinstance(e, ast.Name) for e in target.elts):
-            usage.unpacked = [e.id for e in target.elts]
-            results.update({e.id: i for i, e in enumerate(target.elts)})
+        names = [e.id for e in target.elts if isinstance(e, ast.Name)] if isinstance(target, ast.Tuple) else []
+        if isinstance(target, ast.Tuple) and len(names) == len(target.elts):
+            usage.unpacked = names
+            results.update({name: i for i, name in enumerate(names)})
         elif isinstance(target, ast.Name):
             results[target.id] = -1
     for node in ast.walk(tree):

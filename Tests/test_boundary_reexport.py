@@ -20,7 +20,8 @@ def _write(root, rel, body):
 
 
 def _provider_src_layout(root):
-    """A package under src/ that presents its surface exactly the way GEMS; does: a star-import, explicit re-export lines, and an __all__."""
+    """A package under src/ that presents its surface exactly the way GEMS does:
+    a star-import, explicit re-export lines, and an __all__."""
     _write(root, "src/prov/contracts/models.py", '''
         class Authority:
             pass
@@ -84,7 +85,8 @@ def test_an_explicitly_reexported_name_is_not_missing(tmp_path):
 
 
 def test_a_name_arriving_through_a_star_import_is_not_missing(tmp_path):
-    """`from prov.contracts import *` is how Authority and Origin reach the; package root. Collecting only definitions made them invisible."""
+    """`from prov.contracts import *` is how Authority and Origin reach the package root.
+    Collecting only definitions made them invisible."""
     joined, findings = _join(tmp_path, _guarded("from prov import Authority, Origin\n"))
     assert joined.reaches, "fixture produced no boundary; the test would be vacuous"
     assert _criticals(findings) == [], [f.summary for f in _criticals(findings)]

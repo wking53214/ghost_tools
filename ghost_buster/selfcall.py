@@ -50,6 +50,7 @@ _DYNAMIC_HOOKS = {"__getattr__", "__getattribute__"}
 
 def _own_members(cls: ast.ClassDef) -> Set[str]:
     names: Set[str] = set()
+    node: ast.AST
     for node in cls.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             names.add(node.name)

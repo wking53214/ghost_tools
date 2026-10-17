@@ -206,7 +206,7 @@ def domain_vocabularies(cassettes: Sequence[Path], contract: Path | None) -> Dic
     contract_words = set(_vocabulary([contract])) if contract else set()
     generic = _generic_vocabulary()
 
-    seen_in = Counter()
+    seen_in: Counter[str] = Counter()
     for words in per_cassette.values():
         seen_in.update(set(words))
 

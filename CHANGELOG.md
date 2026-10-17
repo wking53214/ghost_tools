@@ -1,6 +1,69 @@
 # Changelog
 
+All notable changes, newest first. Versions follow Semantic Versioning; the version is declared once, in
+`pyproject.toml`. Release tags are `vX.Y.Z` (lowercase); the one earlier uppercase tag `V1.9.1` is also
+accepted by the publish workflow.
+
 ## Unreleased
+
+## 1.10.0 (2026-10-17)
+
+**Release housekeeping and a production-readiness pass.** 1.9.1 was declared by `pyproject.toml`, the README and
+the `V1.9.1` tag while about 290 lines of changes (ghost-rank, stable ids under code motion, the CNS finding gate,
+three detectors) sat under "Unreleased", so two different programs were both called 1.9.1. Everything that was
+under "Unreleased" is now released as 1.10.0, below the entries of this pass. No tag is created by this change.
+
+Changed:
+
+- **Version.** `pyproject.toml` is still the single source; `ghost_buster.__version__` and `--version` read it. The
+  README's version line is held to it by `Tests/test_docs_claims.py`, which also fails if the newest dated CHANGELOG
+  heading is not the declared version.
+- **Publishing.** `.github/workflows/publish.yml` fires on `v*` and on `V*` (tag filters are case sensitive, and the
+  repository carries one uppercase release tag), and compares the part after the prefix with `pyproject.toml`.
+- **Static gates.** ruff now selects `E`, `F`, `W` and `B` (it ran only its defaults), at the line length the code is
+  written to (120, not the 100 that was configured and never held; `Tests/*_mutants.py` are exempt from E501 because
+  they hold exact source text as data). mypy is configured (`[tool.mypy]`, Python 3.11, `warn_unused_ignores`) and is a
+  hard CI gate beside ruff. The CI matrix gains Python 3.13, and the classifier with it.
+- **CI reproducibility.** `swizzle-gate` checks SWIZZLE and ASSAY out at pinned full commit SHAs (9eb2a10e, 4da3919f)
+  with instructions to bump them in the job. A second, clearly named "latest siblings, non-blocking" leg follows their
+  default branches with `continue-on-error`. The CNS install and the `cns` extra name the full commit of `v1.8.0`
+  instead of the tag. `Tests/test_workflow_pins.py` holds all of it.
+- **Diagnostics use `logging`.** Everything written to stderr goes through the `ghost_tools` logger (new
+  `ghost_buster/diagnostics.py`). The default output is byte for byte what it was; `--verbose`/`-v` (every command) or
+  `GHOST_TOOLS_LOG=DEBUG|INFO|WARNING|ERROR` adds or hides records. stdout, `--json` and exit codes are unchanged.
+- **`--ledger-path` fails closed.** It used to create every missing parent folder silently (a probe made
+  `/nonexistent/dir`). Now a missing parent is a usage error before the scan (exit 2, the JSON error envelope under
+  `--json`, nothing created); `--create-ledger-dir` opts in. A ledger path that is a folder, or whose parent is a file,
+  is refused. `Ledger.save()` no longer creates folders unless `create_dirs=True`.
+- **Docs.** The README's file count is checked by a test instead of hard-coded prose (it said 199; the tree had more).
+  CNS is public and the README and STACK.md no longer call it private. The CI comment that said the baseline holds
+  "three MAJOR findings" now says one, and a test holds it to `.ghost_baseline.json`. `docs/REFERENCE.md` listed the
+  ledger as on by default; it is opt-in, and the table is now checked against the parser. Work-log notes
+  (`PHASE_1_SUMMARY.md`, `SERUM_ENHANCEMENTS.md`, `OPTIMIZATION_NOTES.md`) moved from the repository root to
+  `docs/archive/` with an index. A test checks that every relative Markdown link resolves.
+
+Removed:
+
+- **`ghost_buster/production/`** (214 lines). It was missing from `packages=`, so no wheel contained it; nothing
+  imported it (not the package, not the tests, not the other repositories of the circuit, not any document);
+  `signing.py` carried a hardcoded development signing key as a default. Deleted rather than shipped: with no user and
+  no tests, the safest key handling is none. `Tests/test_packaging.py` now also fails when a package folder exists in
+  the tree but is not listed in `packages`.
+
+Fixed:
+
+- **Tests no longer depend on whether the tree has been built.** `test_the_running_source_wins_over_installed_metadata`
+  and `test_the_ledger_records_the_version_of_the_code_that_ran` failed after `pip install .` from the source tree,
+  because the `ghost_tools.egg-info` it leaves answered `importlib.metadata` before the test's fake distribution. They
+  import a clean copy of the package, and two new tests plant an `*.egg-info` and `build/` and prove it.
+- **Real defects mypy found** (103 errors in 24 files at the start, 0 now): `blackhole_extrapolator` `--ecosystem
+  --json` passed an argument count `_payload` does not take; `_portable_path` was handed `Path` objects and could
+  return one; an invariant-failure path in `mutation._restated_literals` dereferenced `.attr` on a call whose function
+  was not an attribute; `references` dereferenced a `None` root; ledger, structure and speed re-used one variable for
+  two types. The rest were annotations. Where a fix is impractical there are four narrow, commented `type: ignore`
+  lines (the profiler in `speed.py` swaps stdlib functions in place; the `tomllib` fallback in `references.py`); the
+  optional `anthropic` and `cns` imports are the only module-level exceptions, listed in `[tool.mypy]` with reasons.
+
 
 **`ghost-rank`: does it matter here.** Ghost's severity is the detector's opinion of the code alone. The new
 `ghost_buster/consequence.py` adds an independent reading taken from the other repositories of a stack:
