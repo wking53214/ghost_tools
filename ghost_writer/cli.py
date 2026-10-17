@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
+from ghost_buster import add_version_argument
 from ghost_buster.diagnostics import add_verbose_argument, configure, get_logger
 from ghost_buster.schema import FindingSet
 
@@ -32,6 +33,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
     parser.add_argument("--title", default=None)
     parser.add_argument("--out", type=Path, default=None, help="write to a file instead of stdout")
+    add_version_argument(parser)
     add_verbose_argument(parser)
     args = parser.parse_args(argv)
     configure(verbose=args.verbose)

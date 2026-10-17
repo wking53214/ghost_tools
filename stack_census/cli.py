@@ -12,6 +12,7 @@ from datetime import date
 from pathlib import Path
 from typing import List, Optional
 
+from ghost_buster import add_version_argument
 from ghost_buster.diagnostics import add_verbose_argument, configure, get_logger
 
 from . import render
@@ -37,6 +38,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--json", action="store_true", help="machine-readable output")
     parser.add_argument("--entry", action="store_true",
                         help="print a draft CENSUS.md entry instead of the table")
+    add_version_argument(parser)
     add_verbose_argument(parser)
     return parser
 

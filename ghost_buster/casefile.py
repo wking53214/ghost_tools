@@ -122,13 +122,22 @@ def shape_of(finding: Finding) -> str:
     return f"{finding.detector}|{attrs}" if attrs else finding.detector
 
 
+class CasefileError(ValueError):
+    """A case file exists and cannot be read as one (not JSON, not the expected shape, unreadable).
+
+    A usage error, not a crash: the caller reports it and exits 2, the way it does for a bad baseline."""
+
+
 class Casefile:
     def __init__(self, path: Path) -> None:
         self.path = Path(path)
         self.cases: List[Case] = []
         if self.path.is_file():
-            data = json.loads(self.path.read_text(encoding="utf-8"))
-            self.cases = [Case(**c) for c in data.get("cases", [])]
+            try:
+                data = json.loads(self.path.read_text(encoding="utf-8"))
+                self.cases = [Case(**c) for c in data.get("cases", [])]
+            except (OSError, ValueError, TypeError, AttributeError) as e:
+                raise CasefileError(f"case file {self.path} could not be read: {type(e).__name__}: {e}") from e
 
     # ----------------------------------------------------------- learning
 

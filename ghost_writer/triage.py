@@ -28,7 +28,8 @@ import sys
 from pathlib import Path
 from typing import Iterable, List, Optional, Tuple
 
-from ghost_buster.casefile import Casefile
+from ghost_buster import add_version_argument
+from ghost_buster.casefile import Casefile, CasefileError
 from ghost_buster.diagnostics import add_verbose_argument, configure, get_logger
 from ghost_buster.schema import Finding, FindingSet
 
@@ -94,6 +95,7 @@ def main(argv: Optional[List[str]] = None) -> int:
              "repository at one file and the surgeon learns across the library. "
              "Never hides a finding; only attaches history to it.",
     )
+    add_version_argument(parser)
     add_verbose_argument(parser)
     args = parser.parse_args(argv)
     configure(verbose=args.verbose)
@@ -110,14 +112,22 @@ def main(argv: Optional[List[str]] = None) -> int:
         except ValueError as e:
             log.error("error: %s", e)
             return 2
+        casefile = None
+        if args.casefile:
+            # Read before anything is written: a case file that cannot be read
+            # must not leave the findings file half-updated behind a traceback.
+            try:
+                casefile = Casefile(args.casefile)
+            except CasefileError as e:
+                log.error("error: %s", e)
+                return 2
         target = args.out or args.findings
         target.write_text(FindingSet(items).to_json(), encoding="utf-8")
         print(f"recorded {len(args.set)} decision(s) in {target}")
-        if args.casefile:
+        if casefile is not None:
             decided_ids = {ident for ident, _, _ in args.set}
             just_decided = [f for f in items if f.disposition
                             and any(f.id.startswith(i) for i in decided_ids)]
-            casefile = Casefile(args.casefile)
             learned = casefile.record_dispositions(just_decided)
             casefile.save()
             print(f"case file {args.casefile}: {learned} lesson(s) added, {len(casefile)} total")

@@ -31,7 +31,7 @@ from .ledger import (
     Ledger, NOT_APPLICABLE, RAN,
 )
 from . import readiness
-from .casefile import Casefile, Prior
+from .casefile import Casefile, CasefileError, Prior
 from .mutation import render_run
 from .schema import Finding, Severity
 from .pipeline import Stop, gather, parse_size, SKIP_LIST_CAP
@@ -533,7 +533,11 @@ def _handle_priors_mode(args) -> Optional[int]:
     casefile_path = args.casefile or (args.path / ".ghost_casefile.json")
     ledger_path = args.ledger_path or (args.path / ".ghost_ledger.json")
     ledger = Ledger(ledger_path) if ledger_path.is_file() else None
-    rows = build_priors(Casefile(casefile_path), ledger)
+    try:
+        casefile = Casefile(casefile_path)
+    except CasefileError as e:
+        return _fail(args, EXIT_USAGE, "usage", f"error: {e}")
+    rows = build_priors(casefile, ledger)
     # Under --json this is a bare list of per-detector rows, NOT the scan
     # envelope: it is data about the case file, not a scan. See the README.
     text = priors_json(rows) if args.json else render_priors(rows, casefile_path, ledger_path if ledger else None)
@@ -588,6 +592,19 @@ def _validate_ledger_path(args) -> Optional[int]:
     return _fail(args, EXIT_USAGE, "usage",
                  f"error: --ledger-path {path}: the folder {parent} does not exist. Nothing was created. "
                  "Create it first, or pass --create-ledger-dir to have it created")
+
+
+def _validate_casefile(args) -> Optional[int]:
+    """Refuse a --casefile (or a case file found in the scanned folder) that
+    cannot be read, before the scan, the same way a bad baseline is refused:
+    exit 2, a plain reason on stderr and under --json the usual error envelope.
+    It used to surface after the scan as a traceback and exit 3 (a crash)."""
+    path = args.casefile or (args.path / ".ghost_casefile.json")
+    try:
+        Casefile(path)
+    except CasefileError as e:
+        return _fail(args, EXIT_USAGE, "usage", f"error: {e}")
+    return None
 
 
 def _load_baseline(baseline_path) -> Baseline:
@@ -720,6 +737,10 @@ def _main(args) -> int:
         return result
 
     result = _validate_ledger_path(args)
+    if result is not None:
+        return result
+
+    result = _validate_casefile(args)
     if result is not None:
         return result
 

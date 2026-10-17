@@ -64,3 +64,10 @@ __version__ = _read_version()
 def version_string() -> str:
     """What `ghost_buster --version` prints."""
     return f"ghost_buster {__version__} ({BACKRONYM})"
+
+
+def add_version_argument(parser) -> None:
+    """The `--version` flag, with the one text `ghost_buster --version` prints, for every console script.
+
+    argparse acts on it while parsing, so it works without the command's required positional."""
+    parser.add_argument("--version", action="version", version=version_string(), help="print the version and exit")

@@ -18,6 +18,7 @@ from collections import Counter
 from pathlib import Path
 from typing import List, Optional
 
+from ghost_buster import add_version_argument
 from ghost_buster.diagnostics import add_verbose_argument, configure, get_logger
 
 from .detect import _declared_dependencies, false_absence_hints, scan
@@ -97,6 +98,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                              "constrains no shape")
     parser.add_argument("--show-wiring", action="store_true",
                         help="also list imports that are provided elsewhere")
+    add_version_argument(parser)
     add_verbose_argument(parser)
     args = parser.parse_args(argv)
     configure(verbose=args.verbose)

@@ -6,6 +6,45 @@ accepted by the publish workflow.
 
 ## Unreleased
 
+## 1.10.1 (2026-10-17)
+
+**Audit fixes: a clean error for a bad case file, `--version` everywhere, and a CI that cannot pass by accident.**
+No tag is created by this change. Older tags exist and do not describe this version: `v0.10.0` is left over from
+earlier numbering and matches no current version, `v1.6.0` and `V1.9.1` are those releases. Releases of 1.10.x are
+not tagged yet; tagging is the owner's decision.
+
+Fixed:
+
+- **`--casefile` pointing at malformed JSON** printed a raw traceback after the scan and exited 3 ("internal error").
+  It is now a usage error before the scan starts: exit 2, one line on stderr naming the file, and the JSON error
+  envelope under `--json`, the same as a bad `--baseline`. `--priors` and `ghost_triage --casefile` refuse it too
+  (`ghost_triage` reads the case file before it writes the findings file, so a refusal leaves both untouched).
+  `Casefile` raises the new `CasefileError` (a `ValueError`) for JSON that is truncated, not an object, or not the
+  case shape.
+- **`--version` on every console script.** Only `ghost-buster` had it; `ghost-writer`, `ghost-triage`,
+  `blackhole-extrapolator`, `stack-census` and `ghost-rank` exited 2 on it. All six now print the same text
+  (`ghost_buster.version_string()`, unchanged) and exit 0. A test runs each entry point from `pyproject.toml`.
+- **CI: gitleaks is verified before it runs.** The workflow downloaded the release tarball and ran it unchecked. Both
+  jobs now call `.github/scripts/install-gitleaks.sh VERSION SHA256`, which fails the job on a mismatch before
+  anything is extracted. The digest in the workflow was checked against the release's published
+  `gitleaks_8.28.0_checksums.txt`.
+- **CI: the SWIZZLE/ASSAY gate no longer passes when it has no base revision.** It used to print a warning and exit 0
+  after a force-push, a first push or a shallow checkout. The base is now resolved by
+  `.github/scripts/resolve-swizzle-base.sh`: a pull request or a push to a repository with history that has no
+  reachable base FAILS the gate; only the repository's very first commit is skipped, loudly, as a documented outcome.
+  The script's three outcomes are tested.
+- **CI pins.** `actions/checkout` was pinned to a SHA that is `v4.4.0` under a comment saying `v4`; it is now
+  `v4.2.2` (11bd7190), `actions/setup-python` is `v5.6.0` and `pypa/gh-action-pypi-publish` is `v1.14.2`, each comment
+  naming the real release. The `swizzle-gate` siblings are pinned to the circuit's tested set (SWIZZLE 04b72b19,
+  ASSAY 5aafbf3b), described in the workflow and the README ("Bumping the CI pins") as expected to be behind the
+  siblings' branch heads. A test requires every action comment to be a full `vX.Y.Z`.
+
+Removed:
+
+- **The Python 3.10 fallback in `ghost_buster/references.py`.** `requires-python` is `>=3.11`, so `tomllib` is always
+  there; the `try/except ImportError`, its `# type: ignore` and the README sentence about Python 3.10 are gone. A
+  `pyproject.toml` that cannot be parsed is still reported in `reference_scan_notes`.
+
 ## 1.10.0 (2026-10-17)
 
 **Release housekeeping and a production-readiness pass.** 1.9.1 was declared by `pyproject.toml`, the README and

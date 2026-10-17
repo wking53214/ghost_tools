@@ -18,6 +18,7 @@ import ast
 import configparser
 import os
 import re
+import tomllib
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
@@ -114,30 +115,24 @@ def entry_points(root: Path) -> Tuple[Dict[Tuple[str, str], str], List[str]]:
     pp = root / "pyproject.toml"
     if pp.is_file():
         try:
-            import tomllib
-        except ImportError:
-            tomllib = None  # type: ignore[assignment]  # the 3.10 fallback: tomllib does not exist there to type
-            notes.append("pyproject.toml entry points not read: tomllib is missing on this Python (3.10)")
-        if tomllib is not None:
-            try:
-                with pp.open("rb") as fh:
-                    data = tomllib.load(fh)
-            except (OSError, tomllib.TOMLDecodeError):
-                data = {}
-                notes.append("pyproject.toml could not be parsed, so its entry points were not read")
-            project = data.get("project", {}) or {}
-            poetry = (data.get("tool", {}) or {}).get("poetry", {}) or {}
-            for key, kind in (("scripts", "console script"), ("gui-scripts", "gui script")):
-                for k, v in (project.get(key) or {}).items():
-                    add(v, f"pyproject.toml {kind} '{k}'")
-            for group, table in (project.get("entry-points") or {}).items():
-                for k, v in (table or {}).items():
-                    add(v, f"pyproject.toml plugin entry point '{k}' in group '{group}'")
-            for k, v in (poetry.get("scripts") or {}).items():
-                add(v, f"pyproject.toml poetry script '{k}'")
-            for group, table in (poetry.get("plugins") or {}).items():
-                for k, v in (table or {}).items():
-                    add(v, f"pyproject.toml poetry plugin '{k}' in group '{group}'")
+            with pp.open("rb") as fh:
+                data = tomllib.load(fh)
+        except (OSError, tomllib.TOMLDecodeError):
+            data = {}
+            notes.append("pyproject.toml could not be parsed, so its entry points were not read")
+        project = data.get("project", {}) or {}
+        poetry = (data.get("tool", {}) or {}).get("poetry", {}) or {}
+        for key, kind in (("scripts", "console script"), ("gui-scripts", "gui script")):
+            for k, v in (project.get(key) or {}).items():
+                add(v, f"pyproject.toml {kind} '{k}'")
+        for group, table in (project.get("entry-points") or {}).items():
+            for k, v in (table or {}).items():
+                add(v, f"pyproject.toml plugin entry point '{k}' in group '{group}'")
+        for k, v in (poetry.get("scripts") or {}).items():
+            add(v, f"pyproject.toml poetry script '{k}'")
+        for group, table in (poetry.get("plugins") or {}).items():
+            for k, v in (table or {}).items():
+                add(v, f"pyproject.toml poetry plugin '{k}' in group '{group}'")
 
     cfg = root / "setup.cfg"
     if cfg.is_file() and (text := _read(cfg)) is not None:

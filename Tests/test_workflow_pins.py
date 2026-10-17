@@ -51,6 +51,7 @@ def test_every_action_is_pinned_to_a_full_commit_sha_with_its_tag_in_a_comment(n
         ref = target.split("@", 1)[1]
         assert SHA.match(ref), f"{name}: {target} is not pinned to a full SHA"
         assert re.search(r"#\s*\S", rest), f"{name}: {target} has no comment saying which release the SHA is"
+        assert re.search(r"#\s*v\d+\.\d+\.\d+\b", rest), f"{name}: {target} comment is not a full release (vX.Y.Z)"
 
 
 def test_the_siblings_in_the_blocking_gate_are_pinned_to_full_shas():
@@ -115,3 +116,11 @@ def test_ci_installs_the_same_ruff_and_mypy_as_the_dev_extra():
     text = _text("tests.yml")
     for name, version in pinned.items():
         assert f"{name}=={version}" in text, f"tests.yml does not install {name}=={version}"
+
+
+def test_the_sibling_pins_are_labelled_as_the_tested_set():
+    text = _text("tests.yml")
+    lines = re.findall(r"^\s*(?:swizzle|assay)_ref: [0-9a-f]{40}.*$", text, re.M)
+    assert len(lines) == 2 and all("tested set" in line for line in lines), lines
+    prose = re.sub(r"\s*\n\s*#?\s*", " ", _gate())   # comment lines joined into sentences
+    assert "tested set" in prose and "behind a sibling's branch head is expected" in prose

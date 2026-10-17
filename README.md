@@ -1,6 +1,6 @@
 # ghost_tools
 
-Codebase **integrity toolkit**: things that are present and wrong, documentation drift, duplication, dead/vacuous tests, secrets, structural ghosts. Version 1.10.0 (`pyproject.toml`; see CHANGELOG.md). Assurance loop: **this scanner ← [`SWIZZLE`](https://github.com/wking53214/SWIZZLE) + [`ASSAY`](https://github.com/wking53214/ASSAY) specimens**.
+Codebase **integrity toolkit**: things that are present and wrong, documentation drift, duplication, dead/vacuous tests, secrets, structural ghosts. Version 1.10.1 (`pyproject.toml`; see CHANGELOG.md). Assurance loop: **this scanner ← [`SWIZZLE`](https://github.com/wking53214/SWIZZLE) + [`ASSAY`](https://github.com/wking53214/ASSAY) specimens**.
 
 ## 1. Pipeline Position & Role
 
@@ -23,7 +23,7 @@ Seven rules (each from a real defect): silence is the defect; fail-closed; say w
 
 Defaults, all 27 detectors and the mutant census: [docs/REFERENCE.md](docs/REFERENCE.md), checked by the test suite. Which failure of AI-assisted work each horseman catches, and which none does: [docs/FAILURE_MODES.md](docs/FAILURE_MODES.md).
 
-213 Python files (everything under the repository root except `Tests/fixtures`; `Tests/test_docs_claims.py` recounts them and fails if this number drifts). Stdlib-oriented CLI, no runtime dependencies, Python 3.11 to 3.13. Kernel scan measures duplication/drift against the `CNS` schema ([public](https://github.com/wking53214/CNS)) when present.
+216 Python files (everything under the repository root except `Tests/fixtures`; `Tests/test_docs_claims.py` recounts them and fails if this number drifts). Stdlib-oriented CLI, no runtime dependencies, Python 3.11 to 3.13. Kernel scan measures duplication/drift against the `CNS` schema ([public](https://github.com/wking53214/CNS)) when present.
 
 ## 2b. Optional CNS connection
 
@@ -110,7 +110,7 @@ What counts as a reference (the name is still reported, but flagged `framework_h
 - A string equal to the name as the second argument of `getattr`, `hasattr` or `setattr`, or inside a list, tuple, set or dict of strings in any scanned Python file.
 - The name as a whole word in a config or data file (yaml, yml, json, toml, ini, cfg, txt, conf, env) at the repo root or inside a folder such as `config`, `settings` or `.github`. Lock files, `requirements*.txt` and files over 1 MB are skipped. README and other markdown prose never count.
 
-Limits: `setup.py` is read with a text pattern, not run, so entry points built in code are missed. `pyproject.toml` and `setup.cfg` are read only for entry points, not for other settings. A computed lookup can be flagged but never resolved. The repo-level attributes appear when a project root (`pyproject.toml`, `setup.cfg`, `setup.py` or `.git`) is found or a computed lookup is seen. If `tomllib` is missing (Python 3.10), `pyproject.toml` is skipped and `reference_scan_notes` says so.
+Limits: `setup.py` is read with a text pattern, not run, so entry points built in code are missed. `pyproject.toml` and `setup.cfg` are read only for entry points, not for other settings. A computed lookup can be flagged but never resolved. The repo-level attributes appear when a project root (`pyproject.toml`, `setup.cfg`, `setup.py` or `.git`) is found or a computed lookup is seen.
 
 ### Exit codes
 
@@ -158,7 +158,11 @@ Everything the tools write to stderr (receipts for declined checks, warnings, th
 
 ### Releases
 
-The version is declared once, in `pyproject.toml`; `ghost_buster.__version__` and `--version` read it back. `CHANGELOG.md` has a dated section per release and an `Unreleased` section on top. A release is a tag `vX.Y.Z` on the commit that bumped the version; the publish workflow also accepts `VX.Y.Z` (the 1.9.1 tag was written that way) and refuses a tag whose version differs from `pyproject.toml`. Tags are created by the owner, not by CI or by the changes themselves.
+The version is declared once, in `pyproject.toml`; `ghost_buster.__version__` and `--version` read it back. `CHANGELOG.md` has a dated section per release and an `Unreleased` section on top. A release is a tag `vX.Y.Z` on the commit that bumped the version; the publish workflow also accepts `VX.Y.Z` (the 1.9.1 tag was written that way) and refuses a tag whose version differs from `pyproject.toml`. Tags are created by the owner, not by CI or by the changes themselves. Tags that exist today are older and do not describe this version: `v0.10.0` is left over from earlier numbering and matches no current version, `v1.6.0` is the 1.6.0 release and `V1.9.1` the 1.9.1 one. Releases of 1.10.x are not tagged yet; tagging is the owner's decision.
+
+#### Bumping the CI pins
+
+CI pins everything it fetches by content. Each GitHub Action is a full commit SHA with its release in a comment (resolve one with `git ls-remote https://github.com/<owner>/<action> refs/tags/<tag> 'refs/tags/<tag>^{}'` and use the peeled `^{}` line when there is one). The `swizzle-gate` siblings (SWIZZLE, ASSAY) are pinned to the circuit's "tested set": the commits the stack was last tested together at, so one or more commits behind a sibling's branch head is expected; to move a pin, read the sibling's new head with `git ls-remote`, run the job against it and change the SHA and its version comment in the same commit. CNS is pinned in the workflow, in the `cns` extra and in `Tests/test_cns_independence.py` together. gitleaks is installed by `.github/scripts/install-gitleaks.sh` and the job fails if the download's sha256 is not the digest written in `tests.yml` (the one in the release's own checksums file). The gate's base revision comes from `.github/scripts/resolve-swizzle-base.sh`: a pull request or a push to a repository with history that has no reachable base fails the gate; only the repository's very first commit is skipped, with a warning. `Tests/test_workflow_pins.py`, `Tests/test_install_gitleaks.py` and `Tests/test_swizzle_base.py` hold all of this.
 
 A finding's id hashes the detector, the file's path relative to the scanned folder (posix slashes) and the summary, so the way the folder was typed (`./x`, `x/`, absolute, a symlink, another working directory) does not change it. The path is hashed in Unicode NFC form, so a file name written composed (Linux, git) or decomposed (macOS) has one id; the report still shows the name the filesystem gave. Ids from earlier versions, including the spelling an unnormalised non-ASCII path had before, are still recognised by the baseline, the ledger history and retired case-file decisions for the same finding.
 

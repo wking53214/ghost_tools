@@ -13,8 +13,8 @@ jobs:
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install
@@ -38,12 +38,11 @@ jobs:
         # Pinned exact version, same as ruff above. Tests/test_secrets*.py
         # skip themselves if this binary is absent; installed here so CI
         # actually exercises the real thing instead of skipping forever.
-        run: |
-          curl -sSL -o /tmp/gitleaks.tar.gz \
-            https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_x64.tar.gz
-          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
-          sudo mv /tmp/gitleaks /usr/local/bin/gitleaks
-          gitleaks version
+        # The download is checked against the sha256 written below (the
+        # digest published in the release's gitleaks_8.28.0_checksums.txt);
+        # a mismatch fails the job before anything is extracted. To bump,
+        # see .github/scripts/install-gitleaks.sh and change both jobs.
+        run: .github/scripts/install-gitleaks.sh 8.28.0 a65b5253807a68ac0cafa4414031fd740aeb55f54fb7e55f386acb52e6a840eb
       - name: Test
         run: python -m pytest -q
       - name: Lint (hard gate)
@@ -61,18 +60,15 @@ jobs:
     # this job (exit 1).
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           fetch-depth: 0   # the secrets scan reads history
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
         with:
           python-version: "3.12"
       - name: Install gitleaks
-        run: |
-          curl -sSL -o /tmp/gitleaks.tar.gz \
-            https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_x64.tar.gz
-          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
-          sudo mv /tmp/gitleaks /usr/local/bin/gitleaks
+        # Same pin and the same sha256 check as the test job.
+        run: .github/scripts/install-gitleaks.sh 8.28.0 a65b5253807a68ac0cafa4414031fd740aeb55f54fb7e55f386acb52e6a840eb
       - name: ghost-buster on ghost_tools
         # --no-tests: the test job above runs the suite; --no-branches: a
         # PR checkout has no base to compare; --no-ledger: nothing is
@@ -118,9 +114,13 @@ jobs:
     # TO BUMP A PIN: read the new HEAD of the sibling
     #   git ls-remote https://github.com/wking53214/SWIZZLE.git HEAD
     #   git ls-remote https://github.com/wking53214/ASSAY.git HEAD
-    # run this job against it, and change the SHA and the date in the matrix
-    # below in the same commit. Tests/test_workflow_pins.py holds both to
-    # 40 hex characters.
+    # run this job against it, and change the SHA and the version comment in
+    # the matrix below in the same commit (README, "Bumping the CI pins").
+    # Tests/test_workflow_pins.py holds both to 40 hex characters.
+    #
+    # The pins are the circuit's "tested set": the commits the whole stack was
+    # last tested together at. One or more commits behind a sibling's branch
+    # head is expected, not drift; the non-blocking leg reports real drift.
     name: swizzle-gate (${{ matrix.label }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -131,28 +131,28 @@ jobs:
         include:
           - label: pinned siblings
             blocking: true
-            swizzle_ref: 9eb2a10ed1a05f3d15041c68f08b9c1c8c8c036f  # SWIZZLE main at 2026-10-17
-            assay_ref: 4da3919f19a04cb59b45c6d07d55229c923e5126  # ASSAY main at 2026-10-17
+            swizzle_ref: 04b72b197b703e7e64be62039509c1c9e6c3bf20  # SWIZZLE 0.8.0 (pyproject), tested set
+            assay_ref: 5aafbf3b45c68d0948574ff4364cde614890839e  # ASSAY 0.11.0 (_version.py), tested set
           - label: latest siblings, non-blocking
             blocking: false
             swizzle_ref: ""   # empty ref: the default branch
             assay_ref: ""
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           path: ghost_tools
           fetch-depth: 0   # the baseline revision is checked out from history
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           repository: wking53214/SWIZZLE
           ref: ${{ matrix.swizzle_ref }}
           path: swizzle
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           repository: wking53214/ASSAY
           ref: ${{ matrix.assay_ref }}
           path: assay
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
         with:
           python-version: "3.11"
       - name: Give git an identity
@@ -177,18 +177,18 @@ jobs:
           EVENT: ${{ github.event_name }}
           BEFORE: ${{ github.event.before }}
         run: |
-          if [ "$EVENT" = "pull_request" ]; then
-            # The checkout is the merge commit under test; its first parent is
-            # exactly the base it was built on.
-            BASE=$(git -C "$GHOST_TOOLS" rev-parse HEAD^1)
-          else
-            BASE="$BEFORE"
-          fi
-          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ] \
-             || ! git -C "$GHOST_TOOLS" cat-file -e "$BASE^{commit}" 2>/dev/null; then
-            # A first push, or a force-push that left the old head unreachable.
-            echo "::warning::no reachable base revision (${BASE:-none}); nothing to compare against"
+          # The base revision is resolved by a script with three outcomes (see
+          # it, and Tests/test_swizzle_base.py): a base (run the gate), the
+          # repository's very first commit (the one explicit, announced skip),
+          # or a failure. A missing base on a pull request or on a push to a
+          # repository with history FAILS the job; it used to warn and pass.
+          rc=0
+          BASE=$("$GHOST_TOOLS/.github/scripts/resolve-swizzle-base.sh" "$GHOST_TOOLS") || rc=$?
+          if [ "$rc" -eq 3 ]; then
+            echo "swizzle-gate: first commit of the repository, nothing to compare against (skipped on purpose, see the warning above)"
             exit 0
+          elif [ "$rc" -ne 0 ]; then
+            exit "$rc"
           fi
           python -m swizzle diff --ghost "$BASE" --ghost "$GHOST_TOOLS" --fail-on-unmeasured
           python -m swizzle diff --ghost "$BASE" --ghost "$GHOST_TOOLS" --seeds --fail-on-unmeasured

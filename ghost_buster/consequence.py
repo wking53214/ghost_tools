@@ -45,6 +45,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Set, Tuple
 
+from . import add_version_argument
 from .diagnostics import add_verbose_argument, configure, get_logger
 
 log = get_logger(__name__)
@@ -237,6 +238,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                         help="the output of `ghost-buster --json`, one per repository")
     parser.add_argument("--json", action="store_true", help="print the ranking as JSON")
     parser.add_argument("--limit", type=int, default=40, help="rows to print in text mode (0 for all)")
+    add_version_argument(parser)
     add_verbose_argument(parser)
     args = parser.parse_args(argv)
     configure(verbose=args.verbose)

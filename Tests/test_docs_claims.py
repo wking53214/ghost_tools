@@ -172,3 +172,11 @@ def test_the_static_gates_are_configured_and_run_in_ci():
     assert config["mypy"]["files"], "mypy has no target"
     assert "python -m ruff check ." in TESTS_YML
     assert "python -m mypy" in TESTS_YML
+
+
+def test_the_readme_and_changelog_say_truthfully_what_is_tagged():
+    """No document claims "no release is tagged": older tags exist. What they say instead is checked."""
+    for name, text in (("README", README), ("CHANGELOG", CHANGELOG)):
+        assert "`v0.10.0`" in text and "matches no current version" in text, name
+        assert "not tagged yet" in text and "owner's decision" in text, name
+    assert not re.search(r"no release has been tagged", README + CHANGELOG, re.I)
