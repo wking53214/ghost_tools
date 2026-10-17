@@ -34,6 +34,7 @@ ghost-writer = "ghost_writer.cli:main"
 ghost-triage = "ghost_writer.triage:main"
 blackhole-extrapolator = "blackhole_extrapolator.cli:main"
 stack-census = "stack_census.cli:main"
+ghost-rank = "ghost_buster.consequence:main"
 
 [tool.setuptools]
 packages = ["ghost_buster", "ghost_writer", "blackhole_extrapolator", "stack_census"]

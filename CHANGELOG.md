@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+**`ghost-rank`: does it matter here.** Ghost's severity is the detector's opinion of the code alone. The new
+`ghost_buster/consequence.py` adds an independent reading taken from the other repositories of a stack:
+whether the file is production code and whether another repository's production code imports its package.
+It ranks findings into FIX FIRST, FIX, DEFER, WATCH and BACKLOG (a rejected or suppressed finding is SET
+ASIDE; a `reasoned` one is marked VERIFY) and reads findings without changing them. The rule and its limits
+are in the module docstring and are printed with every ranking.
+
+Run on the 328 real findings of twelve repositories (every one `confirmed`): 4 FIX FIRST, 13 FIX, 25 DEFER,
+55 WATCH, 231 BACKLOG. Of the 42 findings Ghost rates major, 25 sit off the production path and 4 sit in a
+package other repositories import; 55 of the 286 it rates minor or informational sit in such a package.
+Imports show dependence, not execution: reachability from a deployed entry point is the stronger signal
+(`sentinel_os/tools/wiring_verify`) but needs entry points declared per repository.
+
 **A finding that only moved is the same finding.** Five detectors put a line number or a line count in their
 summary, and the id is a hash of the summary, so adding a line above a finding (or one line inside a long
 function) gave it a new id. Measured with this version's predecessor on two real releases of the same

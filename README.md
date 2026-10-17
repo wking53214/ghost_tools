@@ -16,6 +16,7 @@ ghost-triage              human decision, recorded
 ghost-writer              worth documenting
 blackhole-extrapolator    ones that went up in smoke
 stack-census              what each repo promises and what pins it (docs/STACK_CENSUS.md)
+ghost-rank                findings ranked by severity and by who depends on the code
 ```
 
 Seven rules (each from a real defect): silence is the defect; fail-closed; say what was established (`CONFIRMED` vs `REASONED`); measured before built (`ghost_buster/calibration.json`); memory only adds (ledger never suppresses); tree unmodified except declared comment surgery; a human decides.
