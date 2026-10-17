@@ -27,6 +27,13 @@ The new `Finding.previous_key` (opt-in) keeps the id the summary used to produce
 baseline, ledger or case file written before this change still matches. Re-measured on the same four
 releases: the candidates for "fixed but actually moved" fell from 13 to 9 and from 6 to 3.
 
+Checked against the committed baselines of 14 repositories (copies of each repository at HEAD, the previous
+version of this tool against this one): the committed baselines suppress exactly as many findings as before
+(594 and 594), and a baseline written fresh and then applied to code shifted down one line keeps 83% of its
+entries instead of 61% (1294 of 1552, against 940). The first version of this change lost 22 to 20 percent of
+the committed entries in six repositories, because findings the new identity merges are separated by a place
+suffix and that suffix was also put on their previous ids; those are now rebuilt from their own old grouping.
+
 What is left is the documented limit, not a new one: findings that share an identity in one file (twelve
 `Path(...)` calls in a loop, several repeats inside one function) are separated by where each one is, so a
 twin that moves still changes id. Some of the rest are real changes (a cluster of three functions that became
