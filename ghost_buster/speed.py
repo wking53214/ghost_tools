@@ -317,6 +317,9 @@ def detect_pitstops(files: Sequence[Path]) -> List[Finding]:
             severity=Severity.MINOR,
             status=Status.CONFIRMED,
             summary=f"{p.path.name}:{p.line} {p.what} inside a loop",
+            # The line moves with every edit above it: see `Finding.identity_key`.
+            identity_key=f"{p.what} inside a loop",
+            previous_key=f"{p.path.name}:{p.line} {p.what} inside a loop",
             detail=(
                 f"{p.path}:{p.line}\n"
                 + ("Each iteration scans the whole list. A set makes the lookup "

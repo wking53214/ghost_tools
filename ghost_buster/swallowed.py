@@ -167,14 +167,18 @@ def detect_swallowed_exceptions(files: Sequence[Path]) -> List[Finding]:
     findings: List[Finding] = []
     for swallowed in find_swallowed(files):
         broad = swallowed.catches_everything
+        summary = (f"`except {swallowed.caught}` at {swallowed.path.name}:"
+                   f"{swallowed.line} does nothing with what it catches")
         findings.append(Finding(
             detector=DETECTOR,
             category=Category.VACUOUS_CHECK,
             layer=Layer.MECHANICAL,
             severity=Severity.MAJOR if broad else Severity.MINOR,
             status=Status.CONFIRMED,
-            summary=(f"`except {swallowed.caught}` at {swallowed.path.name}:"
-                     f"{swallowed.line} does nothing with what it catches"),
+            summary=summary,
+            # The line moves with every edit above it: see `Finding.identity_key`.
+            identity_key=f"`except {swallowed.caught}` does nothing with what it catches",
+            previous_key=summary,
             detail=(
                 f"{swallowed.path}:{swallowed.line}\n"
                 + ("This catches everything -- the missing dependency it was "

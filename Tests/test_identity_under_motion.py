@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import textwrap
 
-from ghost_buster import mechanical
+from ghost_buster import mechanical, speed, swallowed
+from ghost_buster.schema import disambiguate_ids
 
 LONG = "\n".join(f"    x{i} = {i}" for i in range(12))
 
@@ -120,3 +121,42 @@ def test_a_repeated_block_keeps_its_id_when_the_function_moves(tmp_path):
     assert here and len(here) == len(moved)
     assert here[0].summary != moved[0].summary
     assert _ids(here) == _ids(moved)
+
+
+SWALLOW = """\
+def f():
+    try:
+        g()
+    except OSError:
+        pass
+"""
+
+
+def test_a_swallowed_exception_keeps_its_id_when_it_moves(tmp_path):
+    here = swallowed.detect_swallowed_exceptions([_write(tmp_path, SWALLOW)])
+    moved = swallowed.detect_swallowed_exceptions([_write(tmp_path, "import os\n\n" + SWALLOW)])
+    assert len(here) == len(moved) == 1
+    assert here[0].summary != moved[0].summary
+    assert here[0].id == moved[0].id
+
+
+LOOP = """\
+def f(items):
+    for x in items:
+        use(Path("a"), x)
+"""
+
+
+def test_a_loop_invariant_call_keeps_its_id_when_it_moves(tmp_path):
+    here = [f for f in speed.detect_pitstops([_write(tmp_path, LOOP)]) if f.detector == "loop_invariant_call"]
+    moved = [f for f in speed.detect_pitstops([_write(tmp_path, "import os\n\n" + LOOP)])
+             if f.detector == "loop_invariant_call"]
+    assert len(here) == len(moved) == 1
+    assert here[0].id == moved[0].id
+
+
+def test_two_swallowed_handlers_of_one_kind_in_one_file_stay_two_findings(tmp_path):
+    two = SWALLOW + "\n\n" + SWALLOW.replace("def f", "def g")
+    found = swallowed.detect_swallowed_exceptions([_write(tmp_path, two)])
+    disambiguate_ids(found)          # the pipeline separates twins by where each one is
+    assert len(found) == 2 and len(set(_ids(found))) == 2
