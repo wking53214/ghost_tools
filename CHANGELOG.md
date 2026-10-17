@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+**A finding that only moved is the same finding.** Five detectors put a line number or a line count in their
+summary, and the id is a hash of the summary, so adding a line above a finding (or one line inside a long
+function) gave it a new id. Measured with this version's predecessor on two real releases of the same
+repository (WARDEN v0.10.0 to v0.11.5, CNS v1.4.0 to v1.8.0): 13 of 22 and 6 of 12 findings that read as
+"fixed" had reappeared in the same file under the same detector with a new id.
+
+`long_function`, `near_duplicate_function`, `intra_function_duplicate_block`, `swallowed_exception` and the
+two loop pitstops (`loop_invariant_call`, `list_in_loop`) now state an `identity_key` without the measurement.
+The new `Finding.previous_key` (opt-in) keeps the id the summary used to produce as a previous id, so a
+baseline, ledger or case file written before this change still matches. Re-measured on the same four
+releases: the candidates for "fixed but actually moved" fell from 13 to 9 and from 6 to 3.
+
+What is left is the documented limit, not a new one: findings that share an identity in one file (twelve
+`Path(...)` calls in a loop, several repeats inside one function) are separated by where each one is, so a
+twin that moves still changes id. Some of the rest are real changes (a cluster of three functions that became
+two is a different finding).
+
 **Three detectors for the "looks done, isn't" failures.** From this project's own history (tests whose
 assertions sat behind guards that were never true; a README claiming "RL Ready" for things that had not
 shipped) and the research on how AI-assisted workflows fail: the common thread is trusting that something is
