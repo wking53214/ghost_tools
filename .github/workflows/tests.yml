@@ -25,6 +25,11 @@ jobs:
           # cuts this job from ~16 minutes to a few, because the suite is 646
           # mutants each running a whole test file in a fresh interpreter.
           python -m pip install pytest pytest-xdist ruff==0.15.22
+          # The cns extra of pyproject.toml, same pin. Installed by name rather than
+          # as ".[cns]" because this job runs from source and never builds the
+          # package. Without it Tests/test_cns_*.py skip themselves. A test
+          # holds this line equal to the extra.
+          python -m pip install "cns @ git+https://github.com/wking53214/CNS.git@v1.8.0"
       - name: Install gitleaks
         # Pinned exact version, same as ruff above. Tests/test_secrets*.py
         # skip themselves if this binary is absent; installed here so CI

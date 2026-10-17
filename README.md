@@ -16,6 +16,7 @@ ghost-triage              human decision, recorded
 ghost-writer              worth documenting
 blackhole-extrapolator    ones that went up in smoke
 stack-census              what each repo promises and what pins it (docs/STACK_CENSUS.md)
+ghost-rank                findings ranked by severity and by who depends on the code
 ```
 
 Seven rules (each from a real defect): silence is the defect; fail-closed; say what was established (`CONFIRMED` vs `REASONED`); measured before built (`ghost_buster/calibration.json`); memory only adds (ledger never suppresses); tree unmodified except declared comment surgery; a human decides.
@@ -24,14 +25,44 @@ Defaults, all 27 detectors and the mutant census: [docs/REFERENCE.md](docs/REFER
 
 199 Python files, about 2,218 function definitions and 5 TODO comments (counted 2026-10-12, excluding `Tests/fixtures`). Stdlib-oriented CLI. Kernel scan measures duplication/drift against private `CNS` schema when present.
 
-## 2b. Optional CNS adapter
+## 2b. Optional CNS connection
 
-`ghost_buster.cns_adapter` maps `Status` → `cns.gate` outcomes when the private
-`CNS` package is installed. It is **optional**: ghost_tools imports and runs
-without CNS. When CNS is absent the adapter returns an advisory translation
-(`authority=advisory_only`) with no `subject_digest`. When CNS is present,
-`subject_digest` comes only from `cns.gate.subject_digest`. CNS is never
+`ghost_buster.cns_adapter` connects ghost_tools to CNS in both directions. It is
+**optional**: ghost_tools imports and runs without CNS, and nothing loads `cns`
+until a CNS-backed function is called. Install the pinned package with
+`pip install 'ghost-tools[cns]'`. Without it, `FindingGate`, `cns_chain` and
+`check_report` raise `CnsNotInstalled` (an `ImportError` naming that command),
+and `translate_status` returns its advisory record as before. CNS is never
 modified by this package.
+
+- `translate_status` maps one finding `Status` to a `cns.gate` outcome through a
+  table. With CNS absent it returns `authority=advisory_only` and no digest.
+- `FindingGate` is a `cns.gate.Gate` at the **alpha** end. It answers Ghost's own
+  question, "is this finding established well enough to act on, before anything
+  is drafted for it", and nothing about what a run's result means (that is the
+  Judge's). It takes the mapping Ghost writes (`Finding.as_dict()`, the JSON
+  object) or a `ghost_buster.schema.Finding`, reads it with
+  `cns.finding.Finding.from_dict`, and maps the status through the same table
+  `translate_status` uses: `confirmed`, `confirmed_by_review` and `suppressed`
+  are PASS, `reasoned` is RETRY, `rejected` is TERMINAL_BREACH. A row that does
+  not meet `cns.finding/1`, content that cannot be digested, and a status
+  outside the table are TERMINAL_BREACH (the last differs from `translate_status`,
+  which reads an unmapped status as RETRY). Every verdict that judged content is
+  bound to `cns.gate.subject_digest` of the whole finding, evidence and
+  attributes included; a row that could not be read is unbound.
+- `cns_chain()` holds the gate in the `alpha` slot of a `cns.gate.GateChain`.
+  `complete()` is `False` by design: Ghost reports findings and has no outcome
+  end, so a consumer supplies `omega` from a repository that has one.
+- `check_report(report)` reads Ghost's own JSON report (the object with a
+  `findings` member, or the old bare list; parsed, as text, or as a file path)
+  against `cns.finding.Finding` and returns the rows that meet it and one problem
+  per finding that does not, so a drifting field fails ghost_tools' own CI
+  instead of a reader's. It changes nothing Ghost emits.
+
+The CNS tests (`Tests/test_cns_*.py`) skip where CNS is absent. The tests
+workflow installs the same pin as the `cns` extra, so there they run.
+`Tests/test_cns_independence.py` runs with `cns` blocked and holds the package,
+the CLI and a real scan working without it.
 
 ## 3. What It Does NOT Do / Non-Goals
 
@@ -121,10 +152,10 @@ The ledger is opt-in: a default scan writes nothing into the folder it scans. Us
 
 A finding's id hashes the detector, the file's path relative to the scanned folder (posix slashes) and the summary, so the way the folder was typed (`./x`, `x/`, absolute, a symlink, another working directory) does not change it. The path is hashed in Unicode NFC form, so a file name written composed (Linux, git) or decomposed (macOS) has one id; the report still shows the name the filesystem gave. Ids from earlier versions, including the spelling an unnormalised non-ASCII path had before, are still recognised by the baseline, the ledger history and retired case-file decisions for the same finding.
 
-Test suite, run 2026-10-12 on CPython 3.13 with all seven circuit checkouts on `PYTHONPATH`: 1935 passed, 39 skipped, 0 failed, 0 expected-to-fail. The skips are not bugs. 38 need the `gitleaks` binary and 1 needs the private `cns` package:
+Test suite, run 2026-10-16 on CPython 3.13 with no circuit checkouts on `PYTHONPATH` and no `gitleaks` binary: with the `cns` extra installed, 2121 passed, 38 skipped, 0 failed, 0 expected-to-fail; without it, 2013 passed, 41 skipped, 0 failed. The skips are not bugs. 38 need the `gitleaks` binary and, without CNS, 3 more need the `cns` package:
 
 - `Tests/test_secrets.py`, `Tests/test_secrets_disclosure.py`, `Tests/test_secrets_mutants.py` (38 skipped): skip with "gitleaks is not installed". To run them, put a `gitleaks` binary (v8, from the gitleaks project releases) on `PATH` and run `pytest` again. The machine this was checked on could not download it, so these stayed skipped.
-- `Tests/test_cns_adapter.py` (1 skipped): "cns not installed". It needs the private `CNS` package, which is not public. These cannot run outside that package.
+- `Tests/test_cns_adapter.py` (1 skipped), `Tests/test_cns_finding_gate.py` and `Tests/test_cns_report_check.py` (one skip each, whole module): skip when `cns` cannot be imported. Install the pinned package with `pip install 'ghost-tools[cns]'` and they run; the tests workflow installs it. `Tests/test_cns_independence.py` needs nothing and always runs.
 
 No test in the suite is marked expected-to-fail.
 

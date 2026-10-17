@@ -2,6 +2,43 @@
 
 ## Unreleased
 
+**`ghost-rank`: does it matter here.** Ghost's severity is the detector's opinion of the code alone. The new
+`ghost_buster/consequence.py` adds an independent reading taken from the other repositories of a stack:
+whether the file is production code and whether another repository's production code imports its package.
+It ranks findings into FIX FIRST, FIX, DEFER, WATCH and BACKLOG (a rejected or suppressed finding is SET
+ASIDE; a `reasoned` one is marked VERIFY) and reads findings without changing them. The rule and its limits
+are in the module docstring and are printed with every ranking.
+
+Run on the 328 real findings of twelve repositories (every one `confirmed`): 4 FIX FIRST, 13 FIX, 25 DEFER,
+55 WATCH, 231 BACKLOG. Of the 42 findings Ghost rates major, 25 sit off the production path and 4 sit in a
+package other repositories import; 55 of the 286 it rates minor or informational sit in such a package.
+Imports show dependence, not execution: reachability from a deployed entry point is the stronger signal
+(`sentinel_os/tools/wiring_verify`) but needs entry points declared per repository.
+
+**A finding that only moved is the same finding.** Five detectors put a line number or a line count in their
+summary, and the id is a hash of the summary, so adding a line above a finding (or one line inside a long
+function) gave it a new id. Measured with this version's predecessor on two real releases of the same
+repository (WARDEN v0.10.0 to v0.11.5, CNS v1.4.0 to v1.8.0): 13 of 22 and 6 of 12 findings that read as
+"fixed" had reappeared in the same file under the same detector with a new id.
+
+`long_function`, `near_duplicate_function`, `intra_function_duplicate_block`, `swallowed_exception` and the
+two loop pitstops (`loop_invariant_call`, `list_in_loop`) now state an `identity_key` without the measurement.
+The new `Finding.previous_key` (opt-in) keeps the id the summary used to produce as a previous id, so a
+baseline, ledger or case file written before this change still matches. Re-measured on the same four
+releases: the candidates for "fixed but actually moved" fell from 13 to 9 and from 6 to 3.
+
+Checked against the committed baselines of 14 repositories (copies of each repository at HEAD, the previous
+version of this tool against this one): the committed baselines suppress exactly as many findings as before
+(594 and 594), and a baseline written fresh and then applied to code shifted down one line keeps 83% of its
+entries instead of 61% (1294 of 1552, against 940). The first version of this change lost 22 to 20 percent of
+the committed entries in six repositories, because findings the new identity merges are separated by a place
+suffix and that suffix was also put on their previous ids; those are now rebuilt from their own old grouping.
+
+What is left is the documented limit, not a new one: findings that share an identity in one file (twelve
+`Path(...)` calls in a loop, several repeats inside one function) are separated by where each one is, so a
+twin that moves still changes id. Some of the rest are real changes (a cluster of three functions that became
+two is a different finding).
+
 **Three detectors for the "looks done, isn't" failures.** From this project's own history (tests whose
 assertions sat behind guards that were never true; a README claiming "RL Ready" for things that had not
 shipped) and the research on how AI-assisted workflows fail: the common thread is trusting that something is

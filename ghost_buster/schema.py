@@ -346,6 +346,11 @@ class Finding:
     #: which part is this morning's arithmetic. Left None, the summary is
     #: used exactly as before.
     identity_key: Optional[str] = None
+    #: The text the id was hashed from before this detector stated an
+    #: `identity_key` (its summary). When set, the id that text produced stays
+    #: a previous id, so a baseline, ledger or case file written before the
+    #: change still matches. Opt-in: detectors that do not set it are unchanged.
+    previous_key: Optional[str] = None
     id: str = field(init=False)
     #: The id this finding had before ids were relative to the scan root, so
     #: a baseline, ledger or case file written under the old spelling can
@@ -355,6 +360,11 @@ class Finding:
     #: (id, path) pairs this finding had under the spelling in use before
     #: paths were hashed in NFC. Only present when NFC changed the path.
     _pre_nfc: List[tuple] = field(init=False, default_factory=list, repr=False, compare=False)
+    #: The base id `previous_key` produced, and the id to report for it. They differ
+    #: once `disambiguate_ids` has run: whether the old id carried a place suffix depends
+    #: on how the OLD summaries grouped, not on how the new identities do.
+    _pre_key: List[str] = field(init=False, default_factory=list, repr=False, compare=False)
+    _pre_key_ids: List[str] = field(init=False, default_factory=list, repr=False, compare=False)
 
     def __post_init__(self):
         # Store the portable path, not the absolute one, so the baseline
@@ -381,6 +391,10 @@ class Finding:
         # as a previous id, so an existing baseline still matches.
         hashed = _nfc(portable)
         self.id = _stable_id(self.detector, hashed, key)
+        if self.previous_key is not None and self.previous_key != key:
+            old = _stable_id(self.detector, hashed, self.previous_key)
+            self._pre_key.append(old)
+            self._pre_key_ids.append(old)
         if hashed != portable:
             self._pre_nfc.append((_stable_id(self.detector, portable, key), portable))
         if _SCAN_ROOT is not None and self.evidence.absolute_file:
@@ -406,6 +420,7 @@ class Finding:
         baseline, ledger or case file written by an older version."""
         out = [self.legacy_id] if self.legacy_id else []
         out.extend(i for i, _ in self._pre_nfc)
+        out.extend(self._pre_key_ids)
         return [i for i in dict.fromkeys(out) if i != self.id]
 
     def as_dict(self) -> Dict[str, Any]:
@@ -683,4 +698,31 @@ def disambiguate_ids(findings: List[Finding]) -> int:
                  pfile)
                 for pid, pfile in f._pre_nfc]
             renamed += 1
+    _disambiguate_previous_keys(findings)
     return renamed
+
+
+def _disambiguate_previous_keys(findings: List[Finding]) -> None:
+    """Give each `previous_key` id the suffix it had, or did not have, under the old summaries.
+
+    A detector that moved from "the summary is the identity" to an `identity_key` merges findings
+    that used to be told apart by their summaries. The ids those summaries produced were plain, so a
+    baseline written before the change holds plain ids; suffixing them by the NEW grouping would make
+    every twin miss its own entry. They are grouped here by the OLD base id, exactly as the old
+    scheme grouped them, and suffixed only where the old scheme would have.
+    """
+    by_old: Dict[str, List[Finding]] = {}
+    for f in findings:
+        for base in f._pre_key:
+            by_old.setdefault(base, []).append(f)
+    for base, group in by_old.items():
+        places = {(_nfc(f.evidence.file), f.evidence.line_start or 0, f.evidence.line_end or 0, f.detail)
+                  for f in group}
+        for f in group:
+            if len(places) < 2:
+                suffixed = base
+            else:
+                where = "|".join(str(part) for part in (
+                    _nfc(f.evidence.file), f.evidence.line_start or 0, f.evidence.line_end or 0, f.detail))
+                suffixed = f"{base}-{hashlib.sha256(where.encode('utf-8')).hexdigest()[:6]}"
+            f._pre_key_ids = [suffixed if b == base else i for b, i in zip(f._pre_key, f._pre_key_ids)]
