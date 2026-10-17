@@ -115,7 +115,7 @@ MUTANTS = [
      '        _skipped("structure scan", "--no-structure", say)\n', '        pass\n'),
     # --- build-time imports, and the packaging declared twice ---
     ("[build-system].requires is ignored again, so setup.py's import is 'undeclared'", _S,
-     "    model.build_requires = sorted({requirement_name(r) for r in facts.build_requires} - {\"\"})\n",
+     "    model.build_requires = sorted({requirement_name(r) for r in pyproject.build_requires} - {\"\"})\n",
      "    model.build_requires = []\n"),
     ("every module counts as build-time, so a real missing runtime dep is cleared", _S,
      "        at_build_time = facts.dotted in model.build_modules\n",
@@ -169,7 +169,7 @@ MUTANTS = [
      '        sign = "-" if isinstance(node.op, ast.USub) else ""\n',
      '        sign = ""\n'),
     ("keyword-only defaults are missed", _S,
-     "    pairs += [(arg, d) for arg, d in zip(a.kwonlyargs, a.kw_defaults) if d is not None]\n",
+     "    pairs += [(arg, d) for arg, d in zip(a.kwonlyargs, a.kw_defaults, strict=True) if d is not None]\n",
      "    pass\n"),
     ("method defaults are missed", _S,
      "                    facts.settings.extend(_default_settings(member, node.name))\n",

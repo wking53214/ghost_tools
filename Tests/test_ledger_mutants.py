@@ -29,7 +29,7 @@ MUTANTS = [
      "            hist.consecutive = 0\n            hist.absent_last_run = True\n",
      "            hist.consecutive = 0\n"),
     ("a return is not counted (a regression reads as business as usual)", _L,
-     "                hist.returns += 1\n", "                pass\n"),
+     "                seen.returns += 1\n", "                pass\n"),
     ("the run counter stops advancing", _L,
      '        self.totals["runs"] = self.run_count + 1\n', "        pass\n"),
     ("a corrupt ledger silently starts over, erasing the record", _L,

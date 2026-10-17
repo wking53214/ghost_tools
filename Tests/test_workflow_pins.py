@@ -104,3 +104,14 @@ def test_publish_triggers_on_both_v_and_capital_v_tags_and_strips_either():
     text = _text("publish.yml")
     assert re.search(r'tags: \["v\*", "V\*"\]', text)
     assert "#[vV]}" in text, "the version check must accept either prefix"
+
+
+def test_ci_installs_the_same_ruff_and_mypy_as_the_dev_extra():
+    import tomllib
+    dev = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))[
+        "project"]["optional-dependencies"]["dev"]
+    pinned = {d.split("==")[0]: d.split("==")[1] for d in dev if "==" in d}
+    assert set(pinned) == {"ruff", "mypy"}, dev
+    text = _text("tests.yml")
+    for name, version in pinned.items():
+        assert f"{name}=={version}" in text, f"tests.yml does not install {name}=={version}"

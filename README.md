@@ -23,7 +23,7 @@ Seven rules (each from a real defect): silence is the defect; fail-closed; say w
 
 Defaults, all 27 detectors and the mutant census: [docs/REFERENCE.md](docs/REFERENCE.md), checked by the test suite. Which failure of AI-assisted work each horseman catches, and which none does: [docs/FAILURE_MODES.md](docs/FAILURE_MODES.md).
 
-212 Python files (everything under the repository root except `Tests/fixtures`; `Tests/test_docs_claims.py` recounts them and fails if this number drifts). Stdlib-oriented CLI, no runtime dependencies, Python 3.11 to 3.13. Kernel scan measures duplication/drift against the `CNS` schema ([public](https://github.com/wking53214/CNS)) when present.
+213 Python files (everything under the repository root except `Tests/fixtures`; `Tests/test_docs_claims.py` recounts them and fails if this number drifts). Stdlib-oriented CLI, no runtime dependencies, Python 3.11 to 3.13. Kernel scan measures duplication/drift against the `CNS` schema ([public](https://github.com/wking53214/CNS)) when present.
 
 ## 2b. Optional CNS connection
 
@@ -162,10 +162,12 @@ The version is declared once, in `pyproject.toml`; `ghost_buster.__version__` an
 
 A finding's id hashes the detector, the file's path relative to the scanned folder (posix slashes) and the summary, so the way the folder was typed (`./x`, `x/`, absolute, a symlink, another working directory) does not change it. The path is hashed in Unicode NFC form, so a file name written composed (Linux, git) or decomposed (macOS) has one id; the report still shows the name the filesystem gave. Ids from earlier versions, including the spelling an unnormalised non-ASCII path had before, are still recognised by the baseline, the ledger history and retired case-file decisions for the same finding.
 
-Test suite, run 2026-10-16 on CPython 3.13 with no circuit checkouts on `PYTHONPATH` and no `gitleaks` binary: with the `cns` extra installed, 2121 passed, 38 skipped, 0 failed, 0 expected-to-fail; without it, 2013 passed, 41 skipped, 0 failed. The skips are not bugs. 38 need the `gitleaks` binary and, without CNS, 3 more need the `cns` package:
+Test suite: `pip install -e ".[dev]"` (pytest and pytest-xdist; `addopts = "-n auto"` needs the latter) and run `pytest`. It takes minutes with several cores and about fifteen on one, because most of it is the mutant suites. The counts of passed and skipped tests are not written here: a number in prose goes stale, and the CI log is the record. The skips are not bugs. Some tests need the `gitleaks` binary and some need the `cns` package, and skip themselves, with the reason, where it is absent; the tests workflow installs both, so there they run:
 
-- `Tests/test_secrets.py`, `Tests/test_secrets_disclosure.py`, `Tests/test_secrets_mutants.py` (38 skipped): skip with "gitleaks is not installed". To run them, put a `gitleaks` binary (v8, from the gitleaks project releases) on `PATH` and run `pytest` again. The machine this was checked on could not download it, so these stayed skipped.
-- `Tests/test_cns_adapter.py` (1 skipped), `Tests/test_cns_finding_gate.py` and `Tests/test_cns_report_check.py` (one skip each, whole module): skip when `cns` cannot be imported. Install the pinned package with `pip install 'ghost-tools[cns]'` and they run; the tests workflow installs it. `Tests/test_cns_independence.py` needs nothing and always runs.
+- `Tests/test_secrets.py`, `Tests/test_secrets_disclosure.py`, `Tests/test_secrets_mutants.py`: skip with "gitleaks is not installed". To run them, put a `gitleaks` binary (v8, from the gitleaks project releases) on `PATH`.
+- `Tests/test_cns_adapter.py`, `Tests/test_cns_finding_gate.py` and `Tests/test_cns_report_check.py`: skip when `cns` cannot be imported. Install the pinned package with `pip install 'ghost-tools[cns]'` and they run. `Tests/test_cns_independence.py` needs nothing and always runs.
+
+The static gates are `python -m ruff check .` (rules E, F, W, B) and `python -m mypy` (configuration and the few justified exceptions in `pyproject.toml`); both are hard gates in CI on Python 3.11, 3.12 and 3.13.
 
 No test in the suite is marked expected-to-fail.
 

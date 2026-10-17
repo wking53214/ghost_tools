@@ -128,3 +128,21 @@ def test_the_library_fails_closed_too(tmp_path):
     assert not (tmp_path / "missing").exists()
     ledger.save(create_dirs=True)
     assert (tmp_path / "missing" / "ledger.json").is_file()
+
+
+def test_the_pipeline_itself_does_not_create_folders_when_called_without_the_cli_check(tmp_path):
+    """`gather()` is a library entry point (SWIZZLE and others call it with their own arguments), so it
+    must not rely on the command line having refused first: a missing parent is a `Stop`, and nothing is made."""
+    from ghost_buster.pipeline import Stop, gather
+
+    root = _tree(tmp_path)
+    args = buster_cli._build_parser().parse_args(
+        [str(root), *BASE, "--ledger-path", str(tmp_path / "late" / "ledger.json")])
+    with pytest.raises(Stop, match="could not be written"):
+        gather(args)
+    assert not (tmp_path / "late").exists()
+
+    args = buster_cli._build_parser().parse_args(
+        [str(root), *BASE, "--ledger-path", str(tmp_path / "late" / "ledger.json"), "--create-ledger-dir"])
+    gather(args)
+    assert (tmp_path / "late" / "ledger.json").is_file()

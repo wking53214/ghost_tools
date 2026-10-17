@@ -18,7 +18,11 @@ import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
-_IGNORE = shutil.ignore_patterns(".git", "__pycache__", ".pytest_cache", ".ruff_cache", ".venv")
+# Build output is not the project: a `ghost_tools.egg-info` in the copy answers
+# importlib.metadata for the whole scratch tree, which is how a built checkout
+# used to fail test_the_suites_pass_unmutated (the unmutated copy, not a mutant).
+_IGNORE = shutil.ignore_patterns(".git", "__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache", ".venv",
+                                 "*.egg-info", "build", "dist")
 
 
 def run_tests_with_mutation(
@@ -36,7 +40,7 @@ def run_tests_with_mutation(
         return subprocess.run(
             # `-n0` because pyproject sets `addopts = "-n auto"` for the outer
             # suite, and a copied tree carries that pyproject with it. Without
-            # this every one of the 646 mutants spins up its own worker pool to
+            # this every one of the 659 mutants spins up its own worker pool to
             # run a single test file -- measured 2026-09-10, 0.45s per mutant
             # became 0.98s, and the parallelism that was supposed to make the
             # suite faster made each mutant slower. Parallelism belongs at the

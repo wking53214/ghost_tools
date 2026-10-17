@@ -39,7 +39,7 @@ import ast
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Set
+from typing import Dict, List, Optional, Sequence, Set, Union
 
 from . import corpus
 from .naming import is_test_path
@@ -84,14 +84,14 @@ def _variant_in(loop: ast.AST) -> Set[str]:
     return out
 
 
-def _iterated(loop: ast.AST) -> List[ast.AST]:
+def _iterated(
+    loop: Union[ast.For, ast.While, ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp],
+) -> List[ast.AST]:
     """The statements or expressions evaluated once per iteration. A
     comprehension has no `.body`; its per-iteration work is the element and
     the filters, and the FIRST iterable is evaluated once, not per pass."""
     if isinstance(loop, (ast.For, ast.While)):
         return list(loop.body)
-    if not isinstance(loop, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)):
-        return []
     parts: List[ast.AST] = [loop.key, loop.value] if isinstance(loop, ast.DictComp) else [loop.elt]
     for gen in loop.generators:
         parts.extend(gen.ifs)

@@ -42,6 +42,11 @@ Changed:
   (`PHASE_1_SUMMARY.md`, `SERUM_ENHANCEMENTS.md`, `OPTIMIZATION_NOTES.md`) moved from the repository root to
   `docs/archive/` with an index. A test checks that every relative Markdown link resolves.
 
+- **Mutant suite for the new behaviour.** `Tests/test_ledger_path_mutants.py` (13 mutants) breaks the ledger-path check, the
+  opt-in, `Ledger.save` and the diagnostics levels one at a time and requires the new tests to fail. The six existing
+  mutants whose source lines moved (renamed variables, `strict=True`, `log.info`) were re-aimed at the new text and
+  still die; the mutant harness no longer copies build output (`*.egg-info`, `build/`) into its scratch trees.
+
 Removed:
 
 - **`ghost_buster/production/`** (214 lines). It was missing from `packages=`, so no wheel contained it; nothing

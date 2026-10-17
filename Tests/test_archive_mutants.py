@@ -22,7 +22,7 @@ MUTANTS = [
      '    if archive is not None:\n        print(f"serum candidacy: not assessed (archive: {archive.reason or \'no reason given\'})")\n',
      '    if False:\n        pass\n'),
     ("the receipt line is silent", _C,
-     "    if archive is not None:\n        print(archive.receipt(), file=sys.stderr)\n",
+     "    if archive is not None:\n        log.info(\"%s\", archive.receipt())\n",
      "    if False:\n        pass\n"),
 ]
 
