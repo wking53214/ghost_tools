@@ -1629,13 +1629,17 @@ def detect_long_functions(files: List[Path], threshold: int = 80) -> List[Findin
                     continue
                 length = node.end_lineno - node.lineno
                 if length > threshold:
+                    summary = f"'{node.name}' spans {length} lines (threshold {threshold})"
                     findings.append(Finding(
                         detector="long_function",
                         category=Category.COMPLEXITY,
                         layer=Layer.MECHANICAL,
                         severity=Severity.MINOR if length < threshold * 2 else Severity.MAJOR,
                         status=Status.CONFIRMED,
-                        summary=f"'{node.name}' spans {length} lines (threshold {threshold})",
+                        summary=summary,
+                        # The length is a measurement, not the defect: see `Finding.identity_key`.
+                        identity_key=f"'{node.name}' is a long function",
+                        previous_key=summary,
                         detail=(
                             "Line-count proxy for the 'Long Method' smell, not true "
                             "cyclomatic complexity -- a long function that's mostly "
@@ -1846,16 +1850,20 @@ def detect_near_duplicate_functions(files: List[Path], min_lines: int = 10) -> L
             severity = Severity.MAJOR
         else:
             severity = Severity.MINOR
+        summary = (
+            f"{len(occurrences)} functions share identical AST structure "
+            f"(names/literals differ, control flow and shape don't): {', '.join(names)}"
+        )
         findings.append(Finding(
             detector="near_duplicate_function",
             category=Category.DUPLICATION,
             layer=Layer.MECHANICAL,
             severity=severity,
             status=Status.CONFIRMED,
-            summary=(
-                f"{len(occurrences)} functions share identical AST structure "
-                f"(names/literals differ, control flow and shape don't): {', '.join(names)}"
-            ),
+            summary=summary,
+            # The line numbers in the summary move with every edit above them: see `Finding.identity_key`.
+            identity_key=", ".join(f"{p.name}:{n.name}" for p, n in occurrences),
+            previous_key=summary,
             detail=(
                 "Structural fingerprint match, not textual diff -- this is the "
                 "'copy-pasted then renamed' shape specifically. Confirm these are "
@@ -2038,17 +2046,21 @@ def detect_intra_function_duplicate_blocks(
                     "single statement" if len(first) == 1
                     else f"{len(first)}-statement block"
                 )
+                summary = (
+                    f"'{func.name}' repeats the same {shape_note} "
+                    f"{len(units)} times (lines {', '.join(spans)}): "
+                    "same shape, names/literals differ"
+                )
                 findings.append(Finding(
                     detector="intra_function_duplicate_block",
                     category=Category.DUPLICATION,
                     layer=Layer.MECHANICAL,
                     severity=Severity.MAJOR if len(units) > 2 else Severity.MINOR,
                     status=Status.CONFIRMED,
-                    summary=(
-                        f"'{func.name}' repeats the same {shape_note} "
-                        f"{len(units)} times (lines {', '.join(spans)}): "
-                        "same shape, names/literals differ"
-                    ),
+                    summary=summary,
+                    # The count and the line numbers are measurements: see `Finding.identity_key`.
+                    identity_key=f"'{func.name}' repeats the same {shape_note}",
+                    previous_key=summary,
                     detail=(
                         "Structural fingerprint match within one function, not a "
                         "whole-function match (near_duplicate_function's detection "
