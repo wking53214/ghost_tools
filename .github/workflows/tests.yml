@@ -2,7 +2,10 @@ name: tests
 
 on:
   push:
-    branches: [main]
+    # claude/** is the horsemen branch pattern: without it a push to a working
+    # branch ran no CI at all (the workflow fired on main and on pull requests
+    # only), so a branch could be green here only by hand.
+    branches: [main, "claude/**"]
   pull_request:
 
 jobs:
@@ -131,8 +134,8 @@ jobs:
         include:
           - label: pinned siblings
             blocking: true
-            swizzle_ref: 04b72b197b703e7e64be62039509c1c9e6c3bf20  # SWIZZLE 0.8.0 (pyproject), tested set
-            assay_ref: 5aafbf3b45c68d0948574ff4364cde614890839e  # ASSAY 0.11.0 (_version.py), tested set
+            swizzle_ref: 8166c47f321ecfb66b8efa72c1deac5d954e8e48  # SWIZZLE 0.8.1 (pyproject), tested set
+            assay_ref: 4c415567d1c1cb2c1a9e8f343a7a11a5064258c8  # ASSAY 0.11.1 (_version.py), tested set
           - label: latest siblings, non-blocking
             blocking: false
             swizzle_ref: ""   # empty ref: the default branch
@@ -169,6 +172,22 @@ jobs:
         # nothing can regress, and the gate passes whatever changed: measured,
         # the disabled writability check above went through as "unchanged".
         run: python -m pip install ./swizzle pytest
+      - name: Install numpy and matplotlib for ASSAY's verifier
+        # `swizzle assay` runs ASSAY's verify_manifest.py with the interpreter
+        # that runs swizzle, so these go into that interpreter. Since ASSAY
+        # 0.11.1 a claim that needs numpy or matplotlib and cannot run is a
+        # skipped claim, and a skipped claim exits 1 ("not proven"): without
+        # them the gate would fail, not pass. numpy 2.5.4 needs Python 3.12 or
+        # newer; on 3.11 the newest numpy is 2.4.6. The branch is on the
+        # interpreter actually in use, so changing python-version above
+        # cannot leave a version that cannot be installed.
+        run: |
+          if python -c 'import sys; sys.exit(0 if sys.version_info >= (3, 12) else 1)'; then
+            numpy=2.5.4
+          else
+            numpy=2.4.6
+          fi
+          python -m pip install "numpy==$numpy" matplotlib==3.11.2
       - name: Regression gate
         # SWIZZLE resolves `corpus/` from its working directory.
         working-directory: swizzle

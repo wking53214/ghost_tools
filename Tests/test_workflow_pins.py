@@ -124,3 +124,21 @@ def test_the_sibling_pins_are_labelled_as_the_tested_set():
     assert len(lines) == 2 and all("tested set" in line for line in lines), lines
     prose = re.sub(r"\s*\n\s*#?\s*", " ", _gate())   # comment lines joined into sentences
     assert "tested set" in prose and "behind a sibling's branch head is expected" in prose
+
+
+def test_the_workflow_runs_on_main_pushes_pull_requests_and_the_horsemen_branches():
+    text = _text("tests.yml")
+    on = text[text.index("\non:"):text.index("\njobs:")]
+    assert re.search(r'push:\n(?:\s*#.*\n)*\s*branches: \[main, "claude/\*\*"\]', on), on
+    assert re.search(r"^  pull_request:", on, re.M), on
+
+
+def test_the_gate_installs_the_numpy_and_matplotlib_that_assays_verifier_needs():
+    # ASSAY 0.11.1 exits 1 on a skipped claim, and the claims that need numpy
+    # or matplotlib skip without them. numpy 2.5.4 needs Python 3.12 or newer.
+    gate = _gate()
+    assert "sys.version_info >= (3, 12)" in gate
+    assert "numpy=2.5.4" in gate and "numpy=2.4.6" in gate
+    assert '"numpy==$numpy"' in gate and "matplotlib==3.11.2" in gate
+    # installed into the interpreter that runs swizzle, before the gate runs
+    assert gate.index("matplotlib==3.11.2") < gate.index("python -m swizzle assay")
