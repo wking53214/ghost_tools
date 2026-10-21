@@ -29,7 +29,7 @@ jobs:
           # as ".[cns]" because this job runs from source and never builds the
           # package. Without it Tests/test_cns_*.py skip themselves. A test
           # holds this line equal to the extra.
-          python -m pip install "cns @ git+https://github.com/wking53214/CNS.git@v1.8.0"
+          python -m pip install "cns @ git+https://github.com/wking53214/CNS.git@v1.9.0"
       - name: Install gitleaks
         # Pinned exact version, same as ruff above. Tests/test_secrets*.py
         # skip themselves if this binary is absent; installed here so CI
@@ -129,7 +129,10 @@ jobs:
         # Without it both sides fail the suite-dependent cases identically,
         # nothing can regress, and the gate passes whatever changed: measured,
         # the disabled writability check above went through as "unchanged".
-        run: python -m pip install ./swizzle pytest
+        # numpy and matplotlib are for the ASSAY step below: ASSAY's verifier runs every claim it can, and since
+        # ASSAY #21 a claim it cannot run (the solvar cleanup specimen needs both) is a failure, so without them
+        # the answer key is "not proven" and `swizzle assay` exits 2.
+        run: python -m pip install ./swizzle pytest numpy matplotlib
       - name: Regression gate
         # SWIZZLE resolves `corpus/` from its working directory.
         working-directory: swizzle
