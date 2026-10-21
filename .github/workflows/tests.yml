@@ -36,7 +36,7 @@ jobs:
           # commit (git ls-remote https://github.com/wking53214/CNS.git
           # 'refs/tags/vX.Y.Z^{}') and change it here, in pyproject.toml and in
           # Tests/test_cns_independence.py together.
-          python -m pip install "cns @ git+https://github.com/wking53214/CNS.git@5252ceebe98185f7be81212d988055ccf9884568"  # v1.8.0
+          python -m pip install "cns @ git+https://github.com/wking53214/CNS.git@da18e411743d4e3b0e783105394d845fb1c16746"  # v1.9.0
       - name: Install gitleaks
         # Pinned exact version, same as ruff above. Tests/test_secrets*.py
         # skip themselves if this binary is absent; installed here so CI
@@ -135,7 +135,7 @@ jobs:
           - label: pinned siblings
             blocking: true
             swizzle_ref: ec7543cb10f9b78926e38e819c906721520dc052  # SWIZZLE 0.8.2 (pyproject), head of its claude/horsemen-production-status-5wsndb branch, tested set
-            assay_ref: b6b1ccf1feb39993e50d38b875cd52ff0bd38039  # ASSAY 0.11.2 (_version.py), the squash-merge commit on its main, tested set
+            assay_ref: 01c713a316dc0513d30e566fffe4d94536888e81  # ASSAY 0.11.2 (_version.py), head of its main, tested set
           - label: latest siblings, non-blocking
             blocking: false
             swizzle_ref: ""   # empty ref: the default branch
