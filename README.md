@@ -1,6 +1,6 @@
 # ghost_tools
 
-Codebase **integrity toolkit**: things that are present and wrong, documentation drift, duplication, dead/vacuous tests, secrets, structural ghosts. Version 1.10.2 (`pyproject.toml`; see CHANGELOG.md). Assurance loop: **this scanner ← [`SWIZZLE`](https://github.com/wking53214/SWIZZLE) + [`ASSAY`](https://github.com/wking53214/ASSAY) specimens**.
+Codebase **integrity toolkit**: things that are present and wrong, documentation drift, duplication, dead/vacuous tests, secrets, structural ghosts. Version 1.10.3 (`pyproject.toml`; see CHANGELOG.md). Assurance loop: **this scanner ← [`SWIZZLE`](https://github.com/wking53214/SWIZZLE) + [`ASSAY`](https://github.com/wking53214/ASSAY) specimens**.
 
 ## 1. Pipeline Position & Role
 
@@ -23,7 +23,7 @@ Seven rules (each from a real defect): silence is the defect; fail-closed; say w
 
 Defaults, all 27 detectors and the mutant census: [docs/REFERENCE.md](docs/REFERENCE.md), checked by the test suite. Which failure of AI-assisted work each horseman catches, and which none does: [docs/FAILURE_MODES.md](docs/FAILURE_MODES.md).
 
-216 Python files (everything under the repository root except `Tests/fixtures`; `Tests/test_docs_claims.py` recounts them and fails if this number drifts). Stdlib-oriented CLI, no runtime dependencies, Python 3.11 to 3.13. Kernel scan measures duplication/drift against the `CNS` schema ([public](https://github.com/wking53214/CNS)) when present.
+218 Python files (everything under the repository root except `Tests/fixtures`; `Tests/test_docs_claims.py` recounts them and fails if this number drifts). Stdlib-oriented CLI, no runtime dependencies, Python 3.11 to 3.13. Kernel scan measures duplication/drift against the `CNS` schema ([public](https://github.com/wking53214/CNS)) when present.
 
 ## 2b. Optional CNS connection
 
@@ -166,7 +166,7 @@ CI pins everything it fetches by content. Each GitHub Action is a full commit SH
 
 A finding's id hashes the detector, the file's path relative to the scanned folder (posix slashes) and the summary, so the way the folder was typed (`./x`, `x/`, absolute, a symlink, another working directory) does not change it. The path is hashed in Unicode NFC form, so a file name written composed (Linux, git) or decomposed (macOS) has one id; the report still shows the name the filesystem gave. Ids from earlier versions, including the spelling an unnormalised non-ASCII path had before, are still recognised by the baseline, the ledger history and retired case-file decisions for the same finding.
 
-Test suite: `pip install -e ".[dev]"` (pytest and pytest-xdist; `addopts = "-n auto"` needs the latter) and run `pytest`. It takes minutes with several cores and about fifteen on one, because most of it is the mutant suites. The counts of passed and skipped tests are not written here: a number in prose goes stale, and the CI log is the record. The skips are not bugs. Some tests need the `gitleaks` binary and some need the `cns` package, and skip themselves, with the reason, where it is absent; the tests workflow installs both, so there they run:
+Test suite: `pip install -e ".[dev]"` (pytest and pytest-xdist; `addopts = "-n auto"` needs the latter) and run `pytest`. It takes minutes with several cores and about fifteen on one, because most of it is the mutant suites. The hand-mutant suites run each mutant's test file with a timeout of 120 seconds. `GHOST_MUTANT_TIMEOUT` (seconds, a positive number; anything else is an error) sets that base, a one-minute load average above the CPU count multiplies it by load/CPUs (at most 4x), and no timeout ever exceeds 900 seconds, so a hung mutant still ends the run. The counts of passed and skipped tests are not written here: a number in prose goes stale, and the CI log is the record. The skips are not bugs. Some tests need the `gitleaks` binary and some need the `cns` package, and skip themselves, with the reason, where it is absent; the tests workflow installs both, so there they run:
 
 - `Tests/test_secrets.py`, `Tests/test_secrets_disclosure.py`, `Tests/test_secrets_mutants.py`: skip with "gitleaks is not installed". To run them, put a `gitleaks` binary (v8, from the gitleaks project releases) on `PATH`.
 - `Tests/test_cns_adapter.py`, `Tests/test_cns_finding_gate.py` and `Tests/test_cns_report_check.py`: skip when `cns` cannot be imported. Install the pinned package with `pip install 'ghost-tools[cns]'` and they run. `Tests/test_cns_independence.py` needs nothing and always runs.

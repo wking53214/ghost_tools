@@ -6,6 +6,34 @@ accepted by the publish workflow.
 
 ## Unreleased
 
+## 1.10.3 (2026-10-21)
+
+**Round-3 audit fixes: a findings file or baseline of the wrong shape is a usage error, and the gate refuses shallow
+checkouts.** No tag is created by this change. Older tags exist and do not describe this version: `v0.10.0` is left
+over from earlier numbering and matches no current version, `v1.6.0` and `V1.9.1` are those releases. Releases of
+1.10.x are not tagged yet; tagging is the owner's decision.
+
+Fixed:
+
+- **`ghost-writer` and `ghost-triage` on a garbage findings file** printed a raw traceback and exited 1 (an empty file
+  or text that is not JSON: `JSONDecodeError`; `[1]`: `TypeError`). They now exit 2 with one line on stderr naming the
+  file. `FindingSet.from_json` accepts exactly a list of findings or an object whose `findings` member is a list, and
+  raises the new `FindingSetError` (a `ValueError`) for anything else, including a finding with a missing member or an
+  unknown severity. These two commands have no `--json` option, so there is no error envelope for them; `ghost-buster
+  --json` keeps its envelope.
+- **`{}` is not a findings payload.** `ghost-writer` and `ghost-triage --list` accepted it and reported an empty result
+  with exit 0. It now exits 2; `{"findings": []}` stays valid and means an empty result.
+- **`ghost-buster --baseline` on valid JSON of the wrong shape** (`[1,2]`) crashed with exit 3 ("internal error"); it is
+  now exit 2 with the usual message and, under `--json`, the error envelope, as the README's exit table says. A baseline
+  file that is `{}` is refused the same way (an empty baseline is `[]`). Tests: `Tests/test_findings_file_errors.py`.
+- **`.github/scripts/resolve-swizzle-base.sh` read a shallow clone's root as the repository's first commit** and
+  skipped the gate with exit 3, although 1.10.1 says a shallow checkout fails. A shallow repository is now an explicit
+  failure (exit 1, a message naming `fetch-depth: 0`) before the root-commit logic. Tested with a real `--depth 1` clone.
+- **The hand-mutant suites' fixed 120 s per-mutant timeout** failed four tests under load (load average 12 to 20) that
+  pass alone. `GHOST_MUTANT_TIMEOUT` (seconds) now sets the base, a load average above the CPU count scales it by
+  load/CPUs (at most 4x), and nothing exceeds 900 s, so a hung mutant cannot hang CI. Documented in the README and the
+  harness; tested in `Tests/test_mutant_harness_timeout.py`.
+
 ## 1.10.2 (2026-10-21)
 
 **CI: real runs on this branch, the newer siblings, and the main merge.** No tag is created by this change. Older tags
