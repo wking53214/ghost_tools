@@ -6,6 +6,19 @@ accepted by the publish workflow.
 
 ## Unreleased
 
+## 1.10.5 (2026-10-21)
+
+**Pin spelling and the ASSAY ref, nothing else.**
+
+Changed:
+
+- **The CNS pin is spelled as the tag.** The `cns` extra, the CI install line and `CNS_PIN` in
+  `Tests/test_cns_independence.py` are all `cns @ git+https://github.com/wking53214/CNS.git@v1.9.0`, with the commit
+  the tag peels to (da18e411743d4e3b0e783105394d845fb1c16746) in a trailing comment. `Tests/test_workflow_pins.py`
+  now asserts the tag spelling where it asserted the SHA spelling (the only edit to that assertion).
+- **`assay_ref` in the `swizzle-gate` matrix is 54248beb5a36600f69de7c816cb2271dda20a879** (ASSAY 0.11.2, head of its
+  `main`; was 01c713a3). The README names it and `Tests/test_workflow_pins.py` holds it. `swizzle_ref` is unchanged.
+
 ## 1.10.4 (2026-10-21)
 
 **CI, pins and one test fixture: the tested set follows ASSAY's merge to `main` and ghost_tools moves to CNS 1.9.0, as a full SHA.**
