@@ -6,6 +6,27 @@ accepted by the publish workflow.
 
 ## Unreleased
 
+## 1.10.2 (2026-10-21)
+
+**CI: real runs on this branch, the newer siblings, and the main merge.** No tag is created by this change. Older tags
+exist and do not describe this version: `v0.10.0` is left over from earlier numbering and matches no current version,
+`v1.6.0` and `V1.9.1` are those releases. Releases of 1.10.x are not tagged yet; tagging is the owner's decision.
+
+Changed:
+
+- **Merged `main` (6d588a7, "README: composition-engine is retired, folded into CNS", #110)** into the branch with a
+  merge commit; nothing of the owner's commit or of the branch was dropped. The README keeps both its integration
+  line for `composition-engine` and the branch's file count and the public `CNS` wording.
+- **CI triggers.** `tests.yml` ran only on pushes to `main` and on pull requests, so a push to this branch started no
+  CI at all and the branch had never had a real run. Pushes to `claude/**` (the horsemen branch pattern) now run it
+  too; `main` and `pull_request` are kept.
+- **The blocking `swizzle-gate` matrix moves to the newer tested set:** SWIZZLE 8166c47f (0.8.1, was 04b72b19 0.8.0)
+  and ASSAY 4c415567 (0.11.1, was 5aafbf3b 0.11.0), each comment naming the version of the commit it pins.
+- **numpy and matplotlib in the gate.** ASSAY 0.11.1 exits 1 on a skipped claim, and the claims that need numpy or
+  matplotlib skip without them. The gate job now installs them into the interpreter that runs `swizzle assay`
+  (numpy 2.5.4 on Python 3.12 or newer, numpy 2.4.6 on 3.11, matplotlib 3.11.2); the choice follows the interpreter in
+  use. `Tests/test_workflow_pins.py` holds the trigger and the install.
+
 ## 1.10.1 (2026-10-17)
 
 **Audit fixes: a clean error for a bad case file, `--version` everywhere, and a CI that cannot pass by accident.**
