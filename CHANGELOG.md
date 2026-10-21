@@ -6,6 +6,26 @@ accepted by the publish workflow.
 
 ## Unreleased
 
+## 1.10.6 (2026-10-21)
+
+**The SWIZZLE ref and two test names, nothing else.**
+
+Changed:
+
+- **`swizzle_ref` in the `swizzle-gate` matrix is 6bd88f3a6e9de1f83e64f401e13cbcb5233499fc** (SWIZZLE 0.8.4, head of
+  its `main`; was ec7543cb, SWIZZLE 0.8.2). The old comment called that commit the head of SWIZZLE's
+  `claude/horsemen-production-status-5wsndb` branch, which was no longer true. The comment, the README line that named
+  the old version and the assertion in `Tests/test_workflow_pins.py` now say SWIZZLE 0.8.4. `assay_ref` stays
+  54248beb5a36600f69de7c816cb2271dda20a879 and the CNS pin stays the tag `v1.9.0`.
+- **Two names that still said "full commit" now say tag.** `Tests/test_workflow_pins.py` renames
+  `test_cns_is_installed_from_a_full_commit_in_the_workflow_and_the_extra` to
+  `test_cns_is_installed_from_the_tag_in_the_workflow_and_the_extra` and rewords its module docstring. Every
+  assertion is unchanged.
+
+Pre-existing tests edited (rule 5): `test_the_blocking_gate_pins_the_recorded_tested_set_with_true_version_comments`
+(new SWIZZLE SHA and version, step 1) and the rename and docstring above (step 2). The `ghost-buster --version`
+banner text is untouched.
+
 ## 1.10.5 (2026-10-21)
 
 **Pin spelling and the ASSAY ref, nothing else.**
