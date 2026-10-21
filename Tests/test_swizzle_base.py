@@ -95,6 +95,23 @@ def test_a_pull_request_without_a_base_fails_even_on_a_single_commit(repo):
     assert "::error::swizzle gate" in result.stderr
 
 
+def test_a_shallow_clone_fails_instead_of_reading_its_cut_off_root_as_the_first_commit(repo, tmp_path):
+    _commit(repo, "one")
+    _commit(repo, "two")
+    _commit(repo, "three")
+    clone = tmp_path / "shallow"
+    subprocess.run(["git", "clone", "-q", "--depth", "1", repo.resolve().as_uri(), str(clone)],
+                   check=True, capture_output=True)
+    assert _git(clone, "rev-parse", "--is-shallow-repository") == "true"
+    for event, before in (("push", ZEROS), ("push", ""), ("pull_request", "")):
+        result = _run(clone, event, before)
+        assert result.returncode == 1, (event, result.returncode, result.stdout, result.stderr)
+        assert result.stdout == ""
+        assert "::error::swizzle gate" in result.stderr and "shallow" in result.stderr
+    # the full history of the same repository is still the allowed non-skip
+    assert _run(repo, "push", _git(repo, "rev-parse", "HEAD~1")).returncode == 0
+
+
 def test_an_unknown_event_fails_rather_than_passing(repo):
     _commit(repo, "one")
     result = _run(repo, "workflow_dispatch")

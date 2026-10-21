@@ -9,7 +9,7 @@
 #   3  the very first commit of the repository: there is nothing to compare
 #      against and nothing to regress from. ALLOWED, and announced with a
 #      ::warning:: so it is visible on the run. This is the only skip.
-#   1  no base could be determined where one must exist (a pull request whose
+#   1  no base could be determined where one must exist (a shallow checkout, a pull request whose
 #      merge commit has no first parent, a push whose previous head is
 #      unreachable or absent on a repository that has history, an event this
 #      gate does not know). The gate FAILS: it used to exit 0 here, which let a
@@ -32,6 +32,14 @@ fail() {
 reachable() {
   [ -n "$1" ] && [ "$1" != "$zeros" ] && git -C "$repo" cat-file -e "$1^{commit}" 2>/dev/null
 }
+
+# A shallow checkout cannot tell a root commit from a commit whose parents were
+# cut off: its HEAD has no parent either way, so the root-commit logic below
+# would read it as the repository's first commit and skip the gate. Refuse it
+# first. (The workflow checks out with fetch-depth: 0.)
+if [ "$(git -C "$repo" rev-parse --is-shallow-repository 2>/dev/null)" = true ]; then
+  fail "the checkout is shallow, so the base revision may be missing and a cut-off history looks like a first commit. Check out with full history (actions/checkout fetch-depth: 0)"
+fi
 
 case "$event" in
   pull_request)
