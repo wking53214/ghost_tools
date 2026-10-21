@@ -10,6 +10,8 @@ everything". The working tree is never modified.
 """
 from __future__ import annotations
 
+import math
+import os
 import pathlib
 import shutil
 import subprocess
@@ -23,6 +25,47 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 # used to fail test_the_suites_pass_unmutated (the unmutated copy, not a mutant).
 _IGNORE = shutil.ignore_patterns(".git", "__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache", ".venv",
                                  "*.egg-info", "build", "dist")
+
+
+#: Seconds one mutant's test file may run before it counts as failed.
+DEFAULT_TIMEOUT = 120.0
+#: Upper bound for any timeout, whatever the environment says and however busy
+#: the machine is: a mutant that really hangs must still end the run.
+MAX_TIMEOUT = 900.0
+#: Scaling for a busy machine never goes beyond this factor.
+MAX_LOAD_FACTOR = 4.0
+TIMEOUT_ENV = "GHOST_MUTANT_TIMEOUT"
+
+
+def mutant_timeout(environ=None, loadavg=None, cpus=None) -> float:
+    """The per-mutant timeout in seconds.
+
+    The base is 120 s, or `GHOST_MUTANT_TIMEOUT` (seconds, a positive number;
+    anything else raises ValueError rather than silently using the default).
+    When the one-minute load average exceeds the CPU count the base is
+    multiplied by load/CPUs, at most 4x: a run of the full suite beside other
+    jobs on a shared machine (load 12 to 20 on 4 CPUs) timed out mutants that
+    pass in seconds when alone. The result never exceeds 900 s, so a hung
+    mutant cannot hang CI. The arguments exist for the tests; callers pass none.
+    """
+    environ = os.environ if environ is None else environ
+    base = DEFAULT_TIMEOUT
+    raw = environ.get(TIMEOUT_ENV)
+    if raw is not None and raw.strip() != "":
+        try:
+            base = float(raw)
+        except ValueError:
+            raise ValueError(f"{TIMEOUT_ENV}={raw!r} is not a number of seconds") from None
+        if not math.isfinite(base) or base <= 0:
+            raise ValueError(f"{TIMEOUT_ENV}={raw!r} must be a positive, finite number of seconds")
+    if loadavg is None:
+        try:
+            loadavg = os.getloadavg()[0]
+        except (AttributeError, OSError):   # no load average on this platform: no scaling
+            loadavg = 0.0
+    cpus = cpus or os.cpu_count() or 1
+    factor = min(max(loadavg / cpus, 1.0), MAX_LOAD_FACTOR)
+    return min(base * factor, MAX_TIMEOUT)
 
 
 def run_tests_with_mutation(
@@ -47,7 +90,7 @@ def run_tests_with_mutation(
             # outer level, where there are 584 independent jobs to spread.
             [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider",
              "-n0", test_file],
-            cwd=copy, capture_output=True, text=True, timeout=120,
+            cwd=copy, capture_output=True, text=True, timeout=mutant_timeout(),
         )
 
 
