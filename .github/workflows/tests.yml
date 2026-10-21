@@ -137,7 +137,7 @@ jobs:
           - label: pinned siblings
             blocking: true
             swizzle_ref: ec7543cb10f9b78926e38e819c906721520dc052  # SWIZZLE 0.8.2 (pyproject), head of its claude/horsemen-production-status-5wsndb branch, tested set
-            assay_ref: 01c713a316dc0513d30e566fffe4d94536888e81  # ASSAY 0.11.2 (_version.py), head of its main, tested set
+            assay_ref: 54248beb5a36600f69de7c816cb2271dda20a879  # ASSAY 0.11.2 (_version.py), head of its main, tested set
           - label: latest siblings, non-blocking
             blocking: false
             swizzle_ref: ""   # empty ref: the default branch
