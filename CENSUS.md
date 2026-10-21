@@ -39,32 +39,32 @@ Tiers are proposed from the network categorization. PRODUCT picks are the owner'
 | GSA-815 | LAB | license, CI, no status line | Add the one-line status line in README. |
 | HERALD | LAB | license, CI, no status line | Add the one-line status line in README. |
 | interconnected_alpha | LAB | license, CI, no status line | Add the one-line status line in README. |
-| interconnected_beta | LIBRARY | license, CI, no status line, pins not tags | Keep LIBRARY. In a pin cycle; see follow-up. |
-| interconnected_delta | LIBRARY | license, CI, no status line, pins not tags | Keep LIBRARY. In a pin cycle; see follow-up. |
+| interconnected_beta | LIBRARY | license, CI, no status line, pins not tags | Keep LIBRARY. Pinned by Reporting and delta. Pin zeta by tag (currently no version). |
+| interconnected_delta | LIBRARY | license, CI, no status line, pins not tags | Keep LIBRARY. No cycle with beta (checked). Pin beta and zeta by tag (currently no version). |
 | interconnected_zeta | LIBRARY | license, CI, no status line | Keep LIBRARY. Publish a tag; consumers pin the tag. |
-| JUDGE | LIBRARY | license, CI, no status line, pins not tags | Keep LIBRARY. In a pin cycle; see follow-up. |
+| JUDGE | LIBRARY | license, CI, no status line, pins not tags | Keep LIBRARY. Cycle with WARDEN is being fixed elsewhere. |
 | Link | LAB | license, CI, no status line | Add the one-line status line in README. |
 | OBSERVE | LAB | license, CI, no status line | Add the one-line status line in README. |
-| observe-perceive | PRODUCT | license, CI, no status line | PROMOTE to PRODUCT. Remove the retired AUGUR pin first. |
+| observe-perceive | PRODUCT | license, CI, no status line | PROMOTE to PRODUCT. Retired AUGUR pin is still used by the demo (requirements-demo.txt, fixture_augur.py). Drop only after you decide the demo's fate. |
 | p3-2-governance-research | LAB | license, no CI, status line | Add the one-line status line in README. |
 | PERCEIVE | LAB | license, CI, no status line | Add the one-line status line in README. |
-| Reporting | LAB | license, no CI, no status line | Default branch is claude/lean-technical-review-9n6xwk. Move to main. |
+| Reporting | LAB | license, no CI, no status line | Default branch is claude/lean-technical-review-9n6xwk, and it is the only branch on GitHub. Needs a main branch and a default-branch change in GitHub settings. |
 | sentinel_os | PRODUCT | license, CI, no status line | PROMOTE to PRODUCT. Pin DIT by tag, not branch (V0.1.0). |
 | STACK-Kernel | LAB | license, CI, no status line | Add the one-line status line in README. |
 | SWIZZLE | LIBRARY | license, CI, no status line | Keep LIBRARY. Publish a tag; consumers pin the tag. |
 | TIE | LIBRARY | license, CI, no status line | Keep LIBRARY. Publish a tag; consumers pin the tag. |
 | Triad-42 | LIBRARY | license, CI, no status line, pins not tags | Keep LIBRARY. Publish a tag; consumers pin the tag. |
-| URE | LAB | license, CI, no status line | Pin ghost_tools by tag, not branch (V1.9.1). |
-| WARDEN | LIBRARY | license, CI, no status line, pins not tags | Keep LIBRARY. In a pin cycle; see follow-up. |
+| URE | LAB | license, CI, no status line | Pin is already a tag (V1.9.1 exists on ghost_tools). Census tool misread it as a branch. No change needed. |
+| WARDEN | LIBRARY | license, CI, no status line, pins not tags | Keep LIBRARY. Cycle with JUDGE is being fixed elsewhere. |
 | WATCHER | ARCHIVE (candidate) | no license, no CI, no status line | Local clone has no commits. Confirm the remote and archive if unused. |
 | WATCHER_MCU | LAB | license, CI, no status line | Add the one-line status line in README. |
 | ZTS | LAB | license, CI, no status line | Add the one-line status line in README. |
 
 ## Follow-ups
 
-- Break or accept the pin cycles: WARDEN <-> JUDGE, interconnected_beta <-> interconnected_delta.
+- WARDEN <-> JUDGE cycle: being fixed elsewhere. No beta <-> delta cycle exists (earlier reading was wrong).
 - Move commit and branch pins to tags across the network. Start with `observe-perceive` (8 pins, most by commit).
-- Remove the retired `AUGUR` pin from `observe-perceive`.
+- Retired `AUGUR` pin in `observe-perceive`: decide whether to drop it and retire the demo that uses it.
 
 ## Flags
 
@@ -130,4 +130,5 @@ Fits? ____
 
 ## Log
 
+- 2026-10-21: Corrected: no beta <-> delta cycle; URE pin is a tag; Reporting needs a main branch and a settings change.
 - 2026-10-21: First census run (41 folders). Tiers assigned from the network categorization (PRODUCT: option B). Budget not yet entered.
