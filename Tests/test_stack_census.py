@@ -23,8 +23,12 @@ SHA_B = "b" * 40
 
 
 def _git(repo: Path, *args: str) -> None:
+    # maintenance.auto=false: newer git starts a detached `git maintenance run --auto` after a commit, which
+    # takes .git/objects/maintenance.lock while test_the_census_changes_nothing_on_disk is taking its snapshot
+    # (seen once in CI as a lock file that existed in only one of the two snapshots).
     subprocess.run(["git", "-c", "commit.gpgsign=false", "-c", "user.name=t",
-                    "-c", "user.email=t@example.com", "-C", str(repo), *args],
+                    "-c", "user.email=t@example.com", "-c", "maintenance.auto=false", "-c", "gc.auto=0",
+                    "-C", str(repo), *args],
                    check=True, capture_output=True)
 
 

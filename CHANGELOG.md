@@ -8,7 +8,7 @@ accepted by the publish workflow.
 
 ## 1.10.4 (2026-10-21)
 
-**CI and pins only: the tested set follows ASSAY's merge to `main` and ghost_tools moves to CNS 1.9.0, as a full SHA.**
+**CI, pins and one test fixture: the tested set follows ASSAY's merge to `main` and ghost_tools moves to CNS 1.9.0, as a full SHA.**
 No tag is created by this change. The older `v0.10.0` tag matches no current version; releases of 1.10.x are not
 tagged yet, and tagging is the owner's decision.
 
@@ -26,6 +26,14 @@ Changed:
   the tag `v1.9.0` peels to). The tag form that #111 wrote is not used, because pip treats a tag URL and a SHA URL as
   two different sources. `Tests/test_workflow_pins.py` now expects the `# v1.9.0` comment (the only edit to that
   assertion).
+
+Fixed:
+
+- **`Tests/test_stack_census.py::test_the_census_changes_nothing_on_disk` was flaky on a newer git.** The fixture's
+  `git commit` makes git start a detached `git maintenance run --auto`, which creates `.git/objects/maintenance.lock`
+  while the test snapshots the tree; CI saw that one lock file in only one of the two snapshots (one failure in the
+  first run of 68834a3, none in the second run of the same commit). The fixture now commits with
+  `maintenance.auto=false` and `gc.auto=0`. The assertion is unchanged.
 
 ## 1.10.3 (2026-10-21)
 
