@@ -129,7 +129,10 @@ jobs:
         # Without it both sides fail the suite-dependent cases identically,
         # nothing can regress, and the gate passes whatever changed: measured,
         # the disabled writability check above went through as "unchanged".
-        run: python -m pip install ./swizzle pytest
+        # numpy and matplotlib are for the ASSAY step below: ASSAY's verifier runs every claim it can, and since
+        # ASSAY #21 a claim it cannot run (the solvar cleanup specimen needs both) is a failure, so without them
+        # the answer key is "not proven" and `swizzle assay` exits 2.
+        run: python -m pip install ./swizzle pytest numpy matplotlib
       - name: Regression gate
         # SWIZZLE resolves `corpus/` from its working directory.
         working-directory: swizzle
