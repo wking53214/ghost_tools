@@ -2,9 +2,11 @@
 
 `tests.yml` used to check out the default branch of SWIZZLE and ASSAY, so a
 push to either of them could turn this repository's CI red (or green) with
-no change here, and the CNS install named a tag, which can be moved. Every
-sibling and every dependency the blocking jobs fetch is now a full commit
-SHA with a comment naming what it is and how to bump it; the one place that
+no change here. Every GitHub Action and every sibling the blocking jobs fetch
+is now a full commit SHA with a comment naming what it is and how to bump it.
+CNS is the one exception, by the owner's decision: it is installed from the tag
+`v1.9.0`, spelled the same in every circuit repository, because pip treats a
+tag URL and a commit URL as two different sources. The one place that
 deliberately follows the siblings' latest is a separate job leg that is
 named "non-blocking" and cannot fail the build.
 """
@@ -90,7 +92,7 @@ def test_no_sibling_checkout_follows_a_branch_outside_the_matrix():
     assert _gate().count("repository: wking53214/") == 2
 
 
-def test_cns_is_installed_from_a_full_commit_in_the_workflow_and_the_extra():
+def test_cns_is_installed_from_the_tag_in_the_workflow_and_the_extra():
     text = _text("tests.yml")
     pins = re.findall(r"CNS\.git@(\S+?)\"", text)
     assert pins and all(p == "v1.9.0" for p in pins), pins
