@@ -130,5 +130,6 @@ Fits? ____
 
 ## Log
 
+- 2026-10-21 status: AUGUR pin kept in observe-perceive until the demo is retired. Reporting still needs a main branch and a default-branch change; push access was denied. beta and zeta have no tags, so pinning them by tag needs version numbers first (owner's decision).
 - 2026-10-21: Corrected (census tool now accepts V tags; sentinel_os's DIT pin is a tag): no beta <-> delta cycle; URE pin is a tag; Reporting needs a main branch and a settings change.
 - 2026-10-21: First census run (41 folders). Tiers assigned from the network categorization (PRODUCT: option B). Budget not yet entered.
