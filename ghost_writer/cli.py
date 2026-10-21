@@ -42,7 +42,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         log.error("error: %s is not a file", args.findings)
         return 2
 
-    fs = FindingSet.from_json(args.findings.read_text(encoding="utf-8"))
+    try:
+        fs = FindingSet.from_json(args.findings.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:   # FindingSetError, bad JSON and bad UTF-8 are ValueErrors
+        log.error("error: %s is not a findings file: %s", args.findings, e)
+        return 2
     if args.mode == "triage":
         report = render_triage_report(list(fs), title=args.title or "Ghost Findings, Awaiting Triage")
     else:

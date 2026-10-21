@@ -103,7 +103,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     if not args.findings.is_file():
         log.error("error: %s is not a file", args.findings)
         return 2
-    fs = FindingSet.from_json(args.findings.read_text(encoding="utf-8"))
+    try:
+        fs = FindingSet.from_json(args.findings.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:   # FindingSetError, bad JSON and bad UTF-8 are ValueErrors
+        log.error("error: %s is not a findings file: %s", args.findings, e)
+        return 2
     items = list(fs)
 
     if args.set:

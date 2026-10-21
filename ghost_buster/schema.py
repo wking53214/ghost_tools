@@ -515,6 +515,11 @@ def paths_from_scan_root(findings: List["Finding"], files: List[Any], root: Any)
         ev.file = rel
 
 
+class FindingSetError(ValueError):
+    """A findings file that cannot be read as findings. A usage error for the
+    caller to report (exit 2), not a crash."""
+
+
 class FindingSet:
     """A run's worth of findings, with the JSON round-trip ghost_writer
     and the baseline mechanism both depend on."""
@@ -536,12 +541,39 @@ class FindingSet:
 
     @classmethod
     def from_json(cls, text: str) -> "FindingSet":
-        payload = json.loads(text)
+        """Read a findings file: a bare list of findings, or the object
+        `ghost-buster --json` prints, whose "findings" member is that list.
+
+        Anything else raises FindingSetError (a ValueError): text that is not
+        JSON, an empty file, `{}` (an object with no "findings" list is not a
+        findings payload; `{"findings": []}` is), `[1]` and findings missing
+        a required member. Callers turn it into a usage error, never a
+        traceback."""
+        try:
+            payload = json.loads(text)
+        except ValueError as e:
+            raise FindingSetError(f"not JSON ({e})") from e
         # `ghost-buster --json` prints an object whose "findings" member is
         # the list; baselines and older output are the bare list.
-        if isinstance(payload, dict) and "findings" in payload:
+        if isinstance(payload, dict):
+            if "findings" not in payload:
+                raise FindingSetError('an object without a "findings" list is not a findings payload')
             payload = payload["findings"]
-        return cls([Finding.from_dict(p) for p in payload])
+        if not isinstance(payload, list):
+            raise FindingSetError(
+                'expected a list of findings or an object with a "findings" list, '
+                f"got {type(payload).__name__}")
+        findings = []
+        for i, p in enumerate(payload):
+            if not isinstance(p, dict):
+                raise FindingSetError(f"finding {i} is {type(p).__name__}, not an object")
+            try:
+                findings.append(Finding.from_dict(p))
+            except KeyError as e:
+                raise FindingSetError(f"finding {i} is missing {e}") from e
+            except (TypeError, ValueError, AttributeError) as e:
+                raise FindingSetError(f"finding {i} is malformed ({type(e).__name__}: {e})") from e
+        return cls(findings)
 
     def __len__(self) -> int:
         return len(self.findings)
