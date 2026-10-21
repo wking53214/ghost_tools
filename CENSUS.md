@@ -1,58 +1,70 @@
 # CENSUS.md
 
 Census run: 2026-10-21 (first run). Read-only, from `ghost_tools` `stack-census`.
-Population: 41 local folders: all 40 public repos under `wking53214` (per `list_repos`) plus the local `WATCHER` folder.
-Clones are shallow with history deepened to 1000 commits, so commit counts are capped at 1000 (none reached it except where noted by the tool).
+Population: 41 local folders: 40 public repos under `wking53214` plus the local `WATCHER` folder.
+Clones are shallow, deepened to 1000 commits.
 
-Hints are starting points, not tiers. Tier and decision columns are blank on purpose.
+## Categorization (from the pin network around CNS)
 
-## Facts
+- **Foundation:** `CNS`. Pins nothing; 34 repos depend on it.
+- **Middle libraries:** pinned by others and pin something else.
+- **Top assemblers:** nothing pins them; they pin others.
+- **Leaves:** pin only `CNS`.
+- **Outside the network:** `STACK-Kernel`, `constitution`, `p3-2-governance-research`, `WATCHER`, `Graveyard`.
 
-```
-REPO                      LAST        30D  TOTAL  BRANCH                               LIC  CI   README     PINNED-BY  HINT
-ASSAY                     2026-10-21  28   42     claude/artifact-session-9pzzdz       yes  yes  no-status  1          LIBRARY or higher
-BURNISH                   2026-10-21  73   73     claude/artifact-session-9pzzdz       yes  yes  no-status  0          LAB or PRODUCT (not pinned; your call)
-CCC                       2026-10-21  40   62     main                                 yes  yes  no-status  3          LIBRARY or higher
-CCCb                      2026-10-21  12   12     main                                 yes  yes  no-status  2          LIBRARY or higher
-CNS                       2026-10-21  153  184    main                                 yes  yes  no-status  34         LIBRARY or higher
-Conservation_Kernel       2026-10-21  11   31     main                                 yes  yes  no-status  3          LIBRARY or higher
-constitution              2026-10-07  1    1      main                                 no   no   none       0          LAB or PRODUCT (not pinned; your call)
-DGK                       2026-10-21  54   55     main                                 yes  yes  no-status  1          LIBRARY or higher
-DIT                       2026-10-21  15   19     main                                 yes  yes  no-status  2          LIBRARY or higher
-DRAFTER                   2026-10-21  56   56     claude/artifact-session-9pzzdz       yes  yes  no-status  0          LAB or PRODUCT (not pinned; your call)
-Ecology                   2026-10-21  11   46     main                                 yes  yes  no-status  0          LAB or PRODUCT (not pinned; your call)
-experimental              2026-10-21  178  178    main                                 yes  yes  no-status  0          LAB or PRODUCT (not pinned; your call)
-fortress-kernel           2026-10-21  13   39     Main                                 yes  yes  no-status  1          LIBRARY or higher
-GEMS                      2026-10-21  15   49     main                                 yes  yes  no-status  1          LIBRARY or higher
-ghost_tools               2026-10-21  80   80     claude/artifact-session-9pzzdz       yes  yes  no-status  2          LIBRARY or higher
-Governance_Gateway        2026-10-21  11   27     main                                 yes  yes  no-status  1          LIBRARY or higher
-Graveyard                 2026-10-10  76   76     main                                 yes  no   no-status  0          GRAVEYARD (the record, not counted)
-GSA                       2026-10-21  14   23     main                                 yes  yes  status     0          LAB or PRODUCT (not pinned; your call)
-GSA-815                   2026-10-21  23   70     main                                 yes  yes  no-status  0          LAB or PRODUCT (not pinned; your call)
-HERALD                    2026-10-21  14   50     main                                 yes  yes  no-status  0          LAB or PRODUCT (not pinned; your call)
-interconnected_alpha      2026-10-21  13   13     main                                 yes  yes  no-status  0          LAB or PRODUCT (not pinned; your call)
-interconnected_beta       2026-10-21  12   12     main                                 yes  yes  no-status  2          LIBRARY or higher
-interconnected_delta      2026-10-21  12   12     main                                 yes  yes  no-status  1          LIBRARY or higher
-interconnected_zeta       2026-10-21  13   13     main                                 yes  yes  no-status  4          LIBRARY or higher
-JUDGE                     2026-10-21  59   59     claude/artifact-session-9pzzdz       yes  yes  no-status  1          LIBRARY or higher
-Link                      2026-10-21  14   14     main                                 yes  yes  no-status  0          LAB or PRODUCT (not pinned; your call)
-OBSERVE                   2026-10-21  11   206    main                                 yes  yes  no-status  0          LAB or PRODUCT (not pinned; your call)
-observe-perceive          2026-10-21  30   78     main                                 yes  yes  no-status  0          LAB or PRODUCT (not pinned; your call)
-p3-2-governance-research  2026-10-15  19   19     main                                 yes  no   status     0          LAB or PRODUCT (not pinned; your call)
-PERCEIVE                  2026-10-21  11   17     main                                 yes  yes  no-status  0          LAB or PRODUCT (not pinned; your call)
-Reporting                 2026-10-08  11   11     claude/lean-technical-review-9n6xwk  yes  no   no-status  0          LAB or PRODUCT (not pinned; your call)
-sentinel_os               2026-10-21  48   333    main                                 yes  yes  no-status  0          LAB or PRODUCT (not pinned; your call)
-STACK-Kernel              2026-10-20  114  114    main                                 yes  yes  no-status  0          LAB or PRODUCT (not pinned; your call)
-SWIZZLE                   2026-10-21  80   110    claude/artifact-session-9pzzdz       yes  yes  no-status  1          LIBRARY or higher
-TIE                       2026-10-21  11   23     main                                 yes  yes  no-status  1          LIBRARY or higher
-Triad-42                  2026-10-21  6    19     main                                 yes  yes  no-status  1          LIBRARY or higher
-URE                       2026-10-21  11   24     main                                 yes  yes  no-status  0          LAB or PRODUCT (not pinned; your call)
-WARDEN                    2026-10-21  111  111    claude/artifact-session-9pzzdz       yes  yes  no-status  3          LIBRARY or higher
-WATCHER                   ?           ?    ?      claude/artifact-session-9pzzdz       no   no   none       0          LAB or PRODUCT (not pinned; your call)
-WATCHER_MCU               2026-10-21  29   29     main                                 yes  yes  no-status  0          LAB or PRODUCT (not pinned; your call)
-ZTS                       2026-10-21  47   51     main                                 yes  yes  no-status  0          LAB or PRODUCT (not pinned; your call)
+## Tier decisions
 
-```
+Tiers are proposed from the network categorization. PRODUCT picks are the owner's choice (option B). Pin cycles (WARDEN and JUDGE; interconnected_beta and interconnected_delta) are a follow-up, not decided here.
+
+| Repo | Tier | Promises (from census) | Decision |
+|---|---|---|---|
+| ASSAY | LIBRARY | license, CI, no status line | Keep LIBRARY. Publish a tag; consumers pin the tag. |
+| BURNISH | LAB | license, CI, no status line | Add the one-line status line in README. |
+| CCC | LIBRARY | license, CI, no status line, pins not tags | Keep LIBRARY. Publish a tag; consumers pin the tag. |
+| CCCb | LIBRARY | license, CI, no status line | Keep LIBRARY. Publish a tag; consumers pin the tag. |
+| CNS | LIBRARY | license, CI, no status line | Keep LIBRARY. Pinned by tag. |
+| Conservation_Kernel | LIBRARY | license, CI, no status line | Keep LIBRARY. Publish a tag; consumers pin the tag. |
+| constitution | ARCHIVE (candidate) | no license, no CI, no status line | No license, no CI, one commit. Archive, or add a license and status line. |
+| DGK | LIBRARY | license, CI, no status line | Keep LIBRARY. Publish a tag; consumers pin the tag. |
+| DIT | LIBRARY | license, CI, no status line | Keep LIBRARY. Publish a tag; consumers pin the tag. |
+| DRAFTER | LAB | license, CI, no status line | Add the one-line status line in README. |
+| Ecology | LAB | license, CI, no status line | Add the one-line status line in README. |
+| experimental | LAB | license, CI, no status line | Add the one-line status line in README. |
+| fortress-kernel | LIBRARY | license, CI, no status line | Keep LIBRARY. Publish a tag; consumers pin the tag. |
+| GEMS | LIBRARY | license, CI, no status line, pins not tags | Keep LIBRARY. Publish a tag; consumers pin the tag. |
+| ghost_tools | LIBRARY | license, CI, no status line, pins not tags | Keep LIBRARY. Publish a tag; consumers pin the tag. |
+| Governance_Gateway | LIBRARY | license, CI, no status line | Keep LIBRARY. Publish a tag; consumers pin the tag. |
+| Graveyard | RECORD (not tiered) | license, no CI, no status line | Keep as the record of retired repos. |
+| GSA | LAB | license, CI, status line | Add the one-line status line in README. |
+| GSA-815 | LAB | license, CI, no status line | Add the one-line status line in README. |
+| HERALD | LAB | license, CI, no status line | Add the one-line status line in README. |
+| interconnected_alpha | LAB | license, CI, no status line | Add the one-line status line in README. |
+| interconnected_beta | LIBRARY | license, CI, no status line, pins not tags | Keep LIBRARY. In a pin cycle; see follow-up. |
+| interconnected_delta | LIBRARY | license, CI, no status line, pins not tags | Keep LIBRARY. In a pin cycle; see follow-up. |
+| interconnected_zeta | LIBRARY | license, CI, no status line | Keep LIBRARY. Publish a tag; consumers pin the tag. |
+| JUDGE | LIBRARY | license, CI, no status line, pins not tags | Keep LIBRARY. In a pin cycle; see follow-up. |
+| Link | LAB | license, CI, no status line | Add the one-line status line in README. |
+| OBSERVE | LAB | license, CI, no status line | Add the one-line status line in README. |
+| observe-perceive | PRODUCT | license, CI, no status line | PROMOTE to PRODUCT. Remove the retired AUGUR pin first. |
+| p3-2-governance-research | LAB | license, no CI, status line | Add the one-line status line in README. |
+| PERCEIVE | LAB | license, CI, no status line | Add the one-line status line in README. |
+| Reporting | LAB | license, no CI, no status line | Default branch is claude/lean-technical-review-9n6xwk. Move to main. |
+| sentinel_os | PRODUCT | license, CI, no status line | PROMOTE to PRODUCT. Pin DIT by tag, not branch (V0.1.0). |
+| STACK-Kernel | LAB | license, CI, no status line | Add the one-line status line in README. |
+| SWIZZLE | LIBRARY | license, CI, no status line | Keep LIBRARY. Publish a tag; consumers pin the tag. |
+| TIE | LIBRARY | license, CI, no status line | Keep LIBRARY. Publish a tag; consumers pin the tag. |
+| Triad-42 | LIBRARY | license, CI, no status line, pins not tags | Keep LIBRARY. Publish a tag; consumers pin the tag. |
+| URE | LAB | license, CI, no status line | Pin ghost_tools by tag, not branch (V1.9.1). |
+| WARDEN | LIBRARY | license, CI, no status line, pins not tags | Keep LIBRARY. In a pin cycle; see follow-up. |
+| WATCHER | ARCHIVE (candidate) | no license, no CI, no status line | Local clone has no commits. Confirm the remote and archive if unused. |
+| WATCHER_MCU | LAB | license, CI, no status line | Add the one-line status line in README. |
+| ZTS | LAB | license, CI, no status line | Add the one-line status line in README. |
+
+## Follow-ups
+
+- Break or accept the pin cycles: WARDEN <-> JUDGE, interconnected_beta <-> interconnected_delta.
+- Move commit and branch pins to tags across the network. Start with `observe-perceive` (8 pins, most by commit).
+- Remove the retired `AUGUR` pin from `observe-perceive`.
 
 ## Flags
 
@@ -110,52 +122,6 @@ FLAGS (43)
   AUGUR <- observe-perceive  [retired 2026-10-07]
 ```
 
-## Tier decisions (fill in)
-
-| Repo | Tier (PRODUCT / LIBRARY / LAB / ARCHIVE) | Promises match tier? | Decision (PROMOTE / DEMOTE / ARCHIVE / no change because...) |
-|---|---|---|---|
-| ASSAY |  |  |  |
-| BURNISH |  |  |  |
-| CCC |  |  |  |
-| CCCb |  |  |  |
-| CNS |  |  |  |
-| Conservation_Kernel |  |  |  |
-| constitution |  |  |  |
-| DGK |  |  |  |
-| DIT |  |  |  |
-| DRAFTER |  |  |  |
-| Ecology |  |  |  |
-| experimental |  |  |  |
-| fortress-kernel |  |  |  |
-| GEMS |  |  |  |
-| ghost_tools |  |  |  |
-| Governance_Gateway |  |  |  |
-| Graveyard |  |  |  |
-| GSA |  |  |  |
-| GSA-815 |  |  |  |
-| HERALD |  |  |  |
-| interconnected_alpha |  |  |  |
-| interconnected_beta |  |  |  |
-| interconnected_delta |  |  |  |
-| interconnected_zeta |  |  |  |
-| JUDGE |  |  |  |
-| Link |  |  |  |
-| OBSERVE |  |  |  |
-| observe-perceive |  |  |  |
-| p3-2-governance-research |  |  |  |
-| PERCEIVE |  |  |  |
-| Reporting |  |  |  |
-| sentinel_os |  |  |  |
-| STACK-Kernel |  |  |  |
-| SWIZZLE |  |  |  |
-| TIE |  |  |  |
-| Triad-42 |  |  |  |
-| URE |  |  |  |
-| WARDEN |  |  |  |
-| WATCHER |  |  |  |
-| WATCHER_MCU |  |  |  |
-| ZTS |  |  |  |
-
 ## Budget line
 
 Honest weekly build hours: ____
@@ -164,4 +130,4 @@ Fits? ____
 
 ## Log
 
-- 2026-10-21: First census run (41 folders). Tiers not yet assigned.
+- 2026-10-21: First census run (41 folders). Tiers assigned from the network categorization (PRODUCT: option B). Budget not yet entered.
