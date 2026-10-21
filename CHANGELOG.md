@@ -6,11 +6,26 @@ accepted by the publish workflow.
 
 ## Unreleased
 
-- **CI only, no version change: the `swizzle-gate` pinned leg follows ASSAY's squash merge.** ASSAY's branch was
-  squash-merged into its `main` as b6b1ccf1 (0.11.2, tree byte-identical to the branch head 023589f), so the old pin
-  4c415567 (0.11.1) pointed off `main`. `assay_ref` is now b6b1ccf1feb39993e50d38b875cd52ff0bd38039 (0.11.2) and
-  `swizzle_ref` is ec7543cb10f9b78926e38e819c906721520dc052 (SWIZZLE 0.8.2, was 8166c47f 0.8.1). The README names the
-  tested set and `Tests/test_workflow_pins.py` holds the two SHAs and their version comments.
+## 1.10.4 (2026-10-21)
+
+**CI and pins only: the tested set follows ASSAY's merge to `main` and ghost_tools moves to CNS 1.9.0, as a full SHA.**
+No tag is created by this change. The older `v0.10.0` tag matches no current version; releases of 1.10.x are not
+tagged yet, and tagging is the owner's decision.
+
+Changed:
+
+- **The `swizzle-gate` pinned leg follows ASSAY's merge to `main`.** ASSAY's branch was squash-merged into its `main`
+  as b6b1ccf1 (0.11.2, tree byte-identical to the branch head 023589f), so the old pin 4c415567 (0.11.1) pointed off
+  `main`. `assay_ref` is now 01c713a316dc0513d30e566fffe4d94536888e81, the head of ASSAY's `main` (0.11.2; one commit
+  after the squash merge, which only moves ASSAY's own `cns` extra to CNS 1.9.0). `swizzle_ref` is
+  ec7543cb10f9b78926e38e819c906721520dc052 (SWIZZLE 0.8.2, was 8166c47f 0.8.1). The README names the tested set and
+  `Tests/test_workflow_pins.py` holds the two SHAs and their version comments.
+- **CNS moves from v1.8.0 to v1.9.0 (merge of main, #111), kept as a full commit SHA.** The `cns` extra, the CI install
+  line and `CNS_PIN` in `Tests/test_cns_independence.py` are all
+  `cns @ git+https://github.com/wking53214/CNS.git@da18e411743d4e3b0e783105394d845fb1c16746  # v1.9.0` (the commit
+  the tag `v1.9.0` peels to). The tag form that #111 wrote is not used, because pip treats a tag URL and a SHA URL as
+  two different sources. `Tests/test_workflow_pins.py` now expects the `# v1.9.0` comment (the only edit to that
+  assertion).
 
 ## 1.10.3 (2026-10-21)
 

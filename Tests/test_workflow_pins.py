@@ -98,7 +98,7 @@ def test_cns_is_installed_from_a_full_commit_in_the_workflow_and_the_extra():
     extra = re.findall(r"CNS\.git@([0-9a-zA-Z.]+)\"", pyproject)
     assert extra and all(SHA.match(p) for p in extra), extra
     assert set(pins) == set(extra)
-    assert "# v1.8.0" in pyproject and "# v1.8.0" in text
+    assert "# v1.9.0" in pyproject and "# v1.9.0" in text
 
 
 def test_publish_triggers_on_both_v_and_capital_v_tags_and_strips_either():
@@ -145,12 +145,12 @@ def test_the_gate_installs_the_numpy_and_matplotlib_that_assays_verifier_needs()
 
 
 def test_the_blocking_gate_pins_the_recorded_tested_set_with_true_version_comments():
-    # SWIZZLE 0.8.2 (branch head) and ASSAY 0.11.2 (its squash-merge commit on main).
+    # SWIZZLE 0.8.2 (branch head) and ASSAY 0.11.2 (head of its main).
     text = _text("tests.yml")
     swizzle = re.search(r"^\s*swizzle_ref: ([0-9a-f]{40})\s+# (.*)$", text, re.M)
     assay = re.search(r"^\s*assay_ref: ([0-9a-f]{40})\s+# (.*)$", text, re.M)
     assert swizzle and assay
     assert swizzle[1] == "ec7543cb10f9b78926e38e819c906721520dc052" and "SWIZZLE 0.8.2" in swizzle[2]
-    assert assay[1] == "b6b1ccf1feb39993e50d38b875cd52ff0bd38039" and "ASSAY 0.11.2" in assay[2]
+    assert assay[1] == "01c713a316dc0513d30e566fffe4d94536888e81" and "ASSAY 0.11.2" in assay[2]
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     assert swizzle[1] in readme and assay[1] in readme
