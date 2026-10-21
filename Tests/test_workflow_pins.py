@@ -142,3 +142,15 @@ def test_the_gate_installs_the_numpy_and_matplotlib_that_assays_verifier_needs()
     assert '"numpy==$numpy"' in gate and "matplotlib==3.11.2" in gate
     # installed into the interpreter that runs swizzle, before the gate runs
     assert gate.index("matplotlib==3.11.2") < gate.index("python -m swizzle assay")
+
+
+def test_the_blocking_gate_pins_the_recorded_tested_set_with_true_version_comments():
+    # SWIZZLE 0.8.2 (branch head) and ASSAY 0.11.2 (its squash-merge commit on main).
+    text = _text("tests.yml")
+    swizzle = re.search(r"^\s*swizzle_ref: ([0-9a-f]{40})\s+# (.*)$", text, re.M)
+    assay = re.search(r"^\s*assay_ref: ([0-9a-f]{40})\s+# (.*)$", text, re.M)
+    assert swizzle and assay
+    assert swizzle[1] == "ec7543cb10f9b78926e38e819c906721520dc052" and "SWIZZLE 0.8.2" in swizzle[2]
+    assert assay[1] == "b6b1ccf1feb39993e50d38b875cd52ff0bd38039" and "ASSAY 0.11.2" in assay[2]
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert swizzle[1] in readme and assay[1] in readme

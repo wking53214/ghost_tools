@@ -134,8 +134,8 @@ jobs:
         include:
           - label: pinned siblings
             blocking: true
-            swizzle_ref: 8166c47f321ecfb66b8efa72c1deac5d954e8e48  # SWIZZLE 0.8.1 (pyproject), tested set
-            assay_ref: 4c415567d1c1cb2c1a9e8f343a7a11a5064258c8  # ASSAY 0.11.1 (_version.py), tested set
+            swizzle_ref: ec7543cb10f9b78926e38e819c906721520dc052  # SWIZZLE 0.8.2 (pyproject), head of its claude/horsemen-production-status-5wsndb branch, tested set
+            assay_ref: b6b1ccf1feb39993e50d38b875cd52ff0bd38039  # ASSAY 0.11.2 (_version.py), the squash-merge commit on its main, tested set
           - label: latest siblings, non-blocking
             blocking: false
             swizzle_ref: ""   # empty ref: the default branch

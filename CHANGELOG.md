@@ -6,6 +6,12 @@ accepted by the publish workflow.
 
 ## Unreleased
 
+- **CI only, no version change: the `swizzle-gate` pinned leg follows ASSAY's squash merge.** ASSAY's branch was
+  squash-merged into its `main` as b6b1ccf1 (0.11.2, tree byte-identical to the branch head 023589f), so the old pin
+  4c415567 (0.11.1) pointed off `main`. `assay_ref` is now b6b1ccf1feb39993e50d38b875cd52ff0bd38039 (0.11.2) and
+  `swizzle_ref` is ec7543cb10f9b78926e38e819c906721520dc052 (SWIZZLE 0.8.2, was 8166c47f 0.8.1). The README names the
+  tested set and `Tests/test_workflow_pins.py` holds the two SHAs and their version comments.
+
 ## 1.10.3 (2026-10-21)
 
 **Round-3 audit fixes: a findings file or baseline of the wrong shape is a usage error, and the gate refuses shallow
