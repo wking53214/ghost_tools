@@ -31,12 +31,14 @@ jobs:
           # The cns extra of pyproject.toml, same pin. Installed by name rather than
           # as ".[cns]" because this job runs from source and never builds the
           # package. Without it Tests/test_cns_*.py skip themselves. A test
-          # holds this line equal to the extra. The pin is the full commit of
-          # the tag in the trailing comment. To bump: resolve the new tag to its
-          # commit (git ls-remote https://github.com/wking53214/CNS.git
-          # 'refs/tags/vX.Y.Z^{}') and change it here, in pyproject.toml and in
-          # Tests/test_cns_independence.py together.
-          python -m pip install "cns @ git+https://github.com/wking53214/CNS.git@da18e411743d4e3b0e783105394d845fb1c16746"  # v1.9.0
+          # holds this line equal to the extra. The pin is the tag spelling, the same
+          # in every circuit repository (pip treats a tag URL and a commit URL
+          # as two different sources); the trailing comment names the commit
+          # the tag peels to. To bump: resolve the new tag to its commit (git
+          # ls-remote https://github.com/wking53214/CNS.git
+          # 'refs/tags/vX.Y.Z^{}') and change the tag here, in pyproject.toml
+          # and in Tests/test_cns_independence.py together.
+          python -m pip install "cns @ git+https://github.com/wking53214/CNS.git@v1.9.0"  # v1.9.0 = da18e411743d4e3b0e783105394d845fb1c16746
       - name: Install gitleaks
         # Pinned exact version, same as ruff above. Tests/test_secrets*.py
         # skip themselves if this binary is absent; installed here so CI

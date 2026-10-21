@@ -93,10 +93,10 @@ def test_no_sibling_checkout_follows_a_branch_outside_the_matrix():
 def test_cns_is_installed_from_a_full_commit_in_the_workflow_and_the_extra():
     text = _text("tests.yml")
     pins = re.findall(r"CNS\.git@(\S+?)\"", text)
-    assert pins and all(SHA.match(p) for p in pins), pins
+    assert pins and all(p == "v1.9.0" for p in pins), pins
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     extra = re.findall(r"CNS\.git@([0-9a-zA-Z.]+)\"", pyproject)
-    assert extra and all(SHA.match(p) for p in extra), extra
+    assert extra and all(p == "v1.9.0" for p in extra), extra
     assert set(pins) == set(extra)
     assert "# v1.9.0" in pyproject and "# v1.9.0" in text
 
