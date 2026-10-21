@@ -49,7 +49,7 @@ Tiers are proposed from the network categorization. PRODUCT picks are the owner'
 | p3-2-governance-research | LAB | license, no CI, status line | Add the one-line status line in README. |
 | PERCEIVE | LAB | license, CI, no status line | Add the one-line status line in README. |
 | Reporting | LAB | license, no CI, no status line | Default branch is claude/lean-technical-review-9n6xwk, and it is the only branch on GitHub. Needs a main branch and a default-branch change in GitHub settings. |
-| sentinel_os | PRODUCT | license, CI, no status line | PROMOTE to PRODUCT. Pin DIT by tag, not branch (V0.1.0). |
+| sentinel_os | PRODUCT | license, CI, no status line | PROMOTE to PRODUCT. Its pin on DIT (V0.1.0) is already a tag. |
 | STACK-Kernel | LAB | license, CI, no status line | Add the one-line status line in README. |
 | SWIZZLE | LIBRARY | license, CI, no status line | Keep LIBRARY. Publish a tag; consumers pin the tag. |
 | TIE | LIBRARY | license, CI, no status line | Keep LIBRARY. Publish a tag; consumers pin the tag. |
@@ -130,5 +130,5 @@ Fits? ____
 
 ## Log
 
-- 2026-10-21: Corrected: no beta <-> delta cycle; URE pin is a tag; Reporting needs a main branch and a settings change.
+- 2026-10-21: Corrected (census tool now accepts V tags; sentinel_os's DIT pin is a tag): no beta <-> delta cycle; URE pin is a tag; Reporting needs a main branch and a settings change.
 - 2026-10-21: First census run (41 folders). Tiers assigned from the network categorization (PRODUCT: option B). Budget not yet entered.
