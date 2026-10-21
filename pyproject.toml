@@ -47,7 +47,7 @@ packages = ["ghost_buster", "ghost_writer", "blackhole_extrapolator", "stack_cen
 semantic = ["anthropic"]
 dev = ["pytest>=8", "pytest-xdist>=3"]
 # The CNS gate and row connector in ghost_buster/cns_adapter.py. Optional; ghost_tools runs without it.
-cns = ["cns @ git+https://github.com/wking53214/CNS.git@v1.8.0"]
+cns = ["cns @ git+https://github.com/wking53214/CNS.git@v1.9.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["Tests"]

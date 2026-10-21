@@ -29,7 +29,7 @@ jobs:
           # as ".[cns]" because this job runs from source and never builds the
           # package. Without it Tests/test_cns_*.py skip themselves. A test
           # holds this line equal to the extra.
-          python -m pip install "cns @ git+https://github.com/wking53214/CNS.git@v1.8.0"
+          python -m pip install "cns @ git+https://github.com/wking53214/CNS.git@v1.9.0"
       - name: Install gitleaks
         # Pinned exact version, same as ruff above. Tests/test_secrets*.py
         # skip themselves if this binary is absent; installed here so CI
