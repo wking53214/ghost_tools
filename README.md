@@ -167,7 +167,7 @@ ASSAY specimens   →  known-damage corpus; `swizzle assay` scores this tool aga
 Warden                →  runs ghost_buster to observe, then re-inspect after an authorized change
                           (the Drafter proposes from these findings, Burnish finishes, the Judge decides;
                           `warden tagteam PATH --stack FOLDER` seats all seven, see STACK.md)
-composition-engine     →  GhostToolsAdapter (one adapter, optional)
+composition-engine     →  retired, folded into CNS (cns_composition.super_gate); GhostToolsAdapter now lives in cns_composition (one adapter, optional)
 observe-perceive       ✗ does not import
 swizzle-gate CI        replays SWIZZLE cases and ASSAY specimens against this tool (no secret needed)
 ```
