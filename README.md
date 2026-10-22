@@ -1,6 +1,6 @@
 # ghost_tools
 
-Version 1.10.7 (`pyproject.toml`; see CHANGELOG.md). A Python toolkit that scans a code repository for things that are present and wrong: documentation that disagrees with the code, duplicated code, tests that cannot fail, committed secrets and structural leftovers. Assurance loop: **this scanner <- [`SWIZZLE`](https://github.com/wking53214/SWIZZLE) + [`ASSAY`](https://github.com/wking53214/ASSAY) specimens**.
+Version 1.10.8 (`pyproject.toml`; see CHANGELOG.md). A Python toolkit that scans a code repository for things that are present and wrong: documentation that disagrees with the code, duplicated code, tests that cannot fail, committed secrets and structural leftovers. Assurance loop: **this scanner <- [`SWIZZLE`](https://github.com/wking53214/SWIZZLE) + [`ASSAY`](https://github.com/wking53214/ASSAY) specimens**.
 
 ## 1. Pipeline Position & Role
 

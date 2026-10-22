@@ -6,6 +6,37 @@ accepted by the publish workflow.
 
 ## Unreleased
 
+## 1.10.8 (2026-10-22)
+
+**The CNS pin is the tag v2.0.0, and the README says what works, what does not and what broke. Two changes, nothing else.**
+
+Changed:
+
+- **Step 1: the CNS pin is `cns @ git+https://github.com/wking53214/CNS.git@v2.0.0`** (was the tag `v1.9.0`), with the
+  comment `# v2.0.0 = b13e5d2f9e0e4291725f82794b89117c3d840ac1` (the commit the annotated tag peels to) on the `cns`
+  extra and on the CI install line. `CNS_PIN` in `Tests/test_cns_independence.py`, the install hint in
+  `ghost_buster/cns_adapter.py` and the README follow. The CNS adapter, finding gate, report check and independence
+  tests, `Tests/test_workflow_pins.py` and `Tests/test_install_hints.py` were run against the package installed from
+  that tag on Python 3.11, 3.12 and 3.13. `swizzle_ref` and `assay_ref` are unchanged.
+- **Step 2: the README.** Sections 1b and 4 to 4e are new or rewritten (sections 1, 2, 2b, 3, 5 and 6 are edited in
+  places, and 2b gains the CNS migration note): how to install and run, what works and the
+  test, CI job or command that shows it, what does not work or is not proven, the open known defects, what broke and
+  how it was fixed (checked against this CHANGELOG, `git log` and the tests; entries the ledger offered that could not
+  be checked were dropped or corrected), self-hosting, and the ceilings code cannot fix. The sentences calling it a product
+  candidate and citing a commercial audit, and the words "each from a real defect" after the seven rules, were removed
+  because nothing in the repository backs them. The README no longer says which releases are tagged. The
+  `ghost-buster --version` banner text is untouched and is listed under the known defects as the owner's decision.
+  Four tests in `Tests/test_docs_claims.py` are new: the required README sections exist, none of a list of marketing
+  words is used, every test the README names exists, and the versions and dates in its ledger match this CHANGELOG.
+
+Pre-existing tests edited (rule 5), each with the step that caused it: `Tests/test_workflow_pins.py` (step 1: the
+module docstring and the three assertions in `test_cns_is_installed_from_the_tag_in_the_workflow_and_the_extra` say
+`v2.0.0`, nothing else changed); `Tests/test_install_hints.py` (step 1: its docstring and the one input string in
+`test_the_checker_accepts_the_commands_that_work` quote the new pin; the assertion is unchanged); the `CNS_PIN`
+constant in `Tests/test_cns_independence.py` (step 1); `test_the_readme_and_changelog_say_truthfully_what_is_tagged` in
+`Tests/test_docs_claims.py` (step 2: the README no longer lists tags, so the tag sentences are asserted of the CHANGELOG
+only, and the README is asserted not to say "not tagged yet"; the CHANGELOG assertions are unchanged).
+
 ## 1.10.7 (2026-10-22)
 
 **Report delivery, workflow permissions, install hints and the tested set. Four changes, nothing else.**
