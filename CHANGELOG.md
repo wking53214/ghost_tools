@@ -6,6 +6,45 @@ accepted by the publish workflow.
 
 ## Unreleased
 
+## 1.10.7 (2026-10-22)
+
+**Report delivery, workflow permissions, install hints and the tested set. Four changes, nothing else.**
+
+Fixed:
+
+- **Step 1: a report that cannot be delivered is one plain line, not a traceback.** `ghost-buster DIR --no-tests
+  --no-branches --single-repo | head -c0` printed a `BrokenPipeError` traceback from `_print_report`, then "internal
+  error, the scan did not complete", and exited 3, while `| head -3` exited 0. The other five report-printing commands
+  (`ghost-writer`, `ghost-triage`, `blackhole-extrapolator`, `stack-census`, `ghost-rank`) ended in a raw traceback and
+  Python's exit 1, the number for "findings", and a closed standard output vanished without a word and exited 0. All
+  six now go through `ghost_buster/delivery.py`. A reader that left (broken pipe) gives one plain stderr line and the
+  exit code the run earned, as JUDGE 0.4.8 does. Standard output closed before the command started, full
+  (`/dev/full`) or failing in any other way gives one plain stderr line and turns an exit of 0 into the new exit code 4;
+  a non-zero code (1, 2, 3, 130) is kept, so a crashed scan never looks clean. `--version` and `--help` follow the same
+  rule. The README exit-code table documents code 4 and the rule, and its Python file count is 221.
+  `Tests/test_report_delivery.py` runs all six commands against a pipe nobody reads, a closed file descriptor 1 and
+  `/dev/full` (as a child's standard output only), and fails on the old code.
+
+Changed:
+
+- **Step 2: `.github/workflows/tests.yml` declares `permissions: contents: read`** at the top, as `publish.yml` already
+  declares its own. Every action stays pinned to a full commit SHA. Two tests in `Tests/test_workflow_pins.py` hold it.
+- **Step 3: install hints name commands that work.** `pip install 'ghost-tools[cns]'` resolves on PyPI to the older
+  ghost-tools 1.6.0, which has no `cns` extra, and installs the wrong thing. `ghost_buster/cns_adapter.py` and three
+  README passages now say `pip install -e '.[cns]'` from a checkout, or for CNS alone
+  `pip install "cns @ git+https://github.com/wking53214/CNS.git@v1.9.0"`. `Tests/test_install_hints.py` fails on any
+  `pip install` of a bare circuit distribution in a file a user reads.
+- **Step 4: the tested set.** `swizzle_ref` is 522658415b026ac3211d3fc130ba7da7c77cc400 (SWIZZLE 0.8.5, head of its
+  `main`) and `assay_ref` is a1732f2bf3748235661f65b96e590a6d44ace71c (ASSAY 0.11.3, a commit on its `main`; ASSAY's
+  `main` has since added only a `recovered-originals/` folder outside `specimens/`, and the comment and the README say
+  so rather than calling it the head). The CNS pin stays the tag `v1.9.0`. The `ghost-buster --version` banner text is
+  untouched.
+
+Pre-existing tests edited (rule 5), each with the step that caused it: `test_each_cns_backed_function_says_what_is_missing_when_cns_is_blocked`
+in `Tests/test_cns_independence.py` (step 3: asserts the new hint text) and
+`test_the_blocking_gate_pins_the_recorded_tested_set_with_true_version_comments` in `Tests/test_workflow_pins.py`
+(step 4: the new SHAs and versions). No other pre-existing test changed.
+
 ## 1.10.6 (2026-10-21)
 
 **The SWIZZLE ref and two test names, nothing else.**
