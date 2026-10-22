@@ -124,7 +124,7 @@ def test_each_cns_backed_function_says_what_is_missing_when_cns_is_blocked():
             try:
                 call()
             except CnsNotInstalled as exc:
-                assert "pip install 'ghost-tools[cns]'" in str(exc), exc
+                assert "pip install -e '.[cns]'" in str(exc), exc
                 assert isinstance(exc, ImportError)
             else:
                 raise SystemExit("did not raise")

@@ -23,14 +23,17 @@ Seven rules (each from a real defect): silence is the defect; fail-closed; say w
 
 Defaults, all 27 detectors and the mutant census: [docs/REFERENCE.md](docs/REFERENCE.md), checked by the test suite. Which failure of AI-assisted work each horseman catches, and which none does: [docs/FAILURE_MODES.md](docs/FAILURE_MODES.md).
 
-220 Python files (everything under the repository root except `Tests/fixtures`; `Tests/test_docs_claims.py` recounts them and fails if this number drifts). Stdlib-oriented CLI, no runtime dependencies, Python 3.11 to 3.13. Kernel scan measures duplication/drift against the `CNS` schema ([public](https://github.com/wking53214/CNS)) when present.
+221 Python files (everything under the repository root except `Tests/fixtures`; `Tests/test_docs_claims.py` recounts them and fails if this number drifts). Stdlib-oriented CLI, no runtime dependencies, Python 3.11 to 3.13. Kernel scan measures duplication/drift against the `CNS` schema ([public](https://github.com/wking53214/CNS)) when present.
 
 ## 2b. Optional CNS connection
 
 `ghost_buster.cns_adapter` connects ghost_tools to CNS in both directions. It is
 **optional**: ghost_tools imports and runs without CNS, and nothing loads `cns`
-until a CNS-backed function is called. Install the pinned package with
-`pip install 'ghost-tools[cns]'`. Without it, `FindingGate`, `cns_chain` and
+until a CNS-backed function is called. Install the pinned package from a checkout
+of this repository with `pip install -e '.[cns]'`, or install just CNS with
+`pip install "cns @ git+https://github.com/wking53214/CNS.git@v1.9.0"`. Do not ask PyPI
+for a `cns` extra of `ghost-tools`: the project of that name there is an older release
+(1.6.0) that has none, and it installs the wrong thing. Without CNS, `FindingGate`, `cns_chain` and
 `check_report` raise `CnsNotInstalled` (an `ImportError` naming that command),
 and `translate_status` returns its advisory record as before. CNS is never
 modified by this package.
@@ -72,7 +75,7 @@ the CLI and a real scan working without it.
 
 ## 4. Brutally Honest Current Status & Gaps
 
-Crowded category (ruff, mutmut, Sonar). Differentiation is fail-closed silence reporting + SWIZZLE adversarial loop. Calibration records with no corpus must say so. CNS-aware scan needs the optional, public `CNS` package (`pip install 'ghost-tools[cns]'`). Commercial audit used this tool on the portfolio and found real vacuous tests. That is the existence proof, not a market.
+Crowded category (ruff, mutmut, Sonar). Differentiation is fail-closed silence reporting + SWIZZLE adversarial loop. Calibration records with no corpus must say so. CNS-aware scan needs the optional, public `CNS` package (`pip install -e '.[cns]'` from a checkout). Commercial audit used this tool on the portfolio and found real vacuous tests. That is the existence proof, not a market.
 
 ## 5. Core Invariants & Guarantees
 
@@ -172,7 +175,7 @@ A finding's id hashes the detector, the file's path relative to the scanned fold
 Test suite: `pip install -e ".[dev]"` (pytest and pytest-xdist; `addopts = "-n auto"` needs the latter) and run `pytest`. It takes minutes with several cores and about fifteen on one, because most of it is the mutant suites. The hand-mutant suites run each mutant's test file with a timeout of 120 seconds. `GHOST_MUTANT_TIMEOUT` (seconds, a positive number; anything else is an error) sets that base, a one-minute load average above the CPU count multiplies it by load/CPUs (at most 4x), and no timeout ever exceeds 900 seconds, so a hung mutant still ends the run. The counts of passed and skipped tests are not written here: a number in prose goes stale, and the CI log is the record. The skips are not bugs. Some tests need the `gitleaks` binary and some need the `cns` package, and skip themselves, with the reason, where it is absent; the tests workflow installs both, so there they run:
 
 - `Tests/test_secrets.py`, `Tests/test_secrets_disclosure.py`, `Tests/test_secrets_mutants.py`: skip with "gitleaks is not installed". To run them, put a `gitleaks` binary (v8, from the gitleaks project releases) on `PATH`.
-- `Tests/test_cns_adapter.py`, `Tests/test_cns_finding_gate.py` and `Tests/test_cns_report_check.py`: skip when `cns` cannot be imported. Install the pinned package with `pip install 'ghost-tools[cns]'` and they run. `Tests/test_cns_independence.py` needs nothing and always runs.
+- `Tests/test_cns_adapter.py`, `Tests/test_cns_finding_gate.py` and `Tests/test_cns_report_check.py`: skip when `cns` cannot be imported. Install the pinned package with `pip install -e '.[cns]'` from a checkout and they run. `Tests/test_cns_independence.py` needs nothing and always runs.
 
 The static gates are `python -m ruff check .` (rules E, F, W, B) and `python -m mypy` (configuration and the few justified exceptions in `pyproject.toml`); both are hard gates in CI on Python 3.11, 3.12 and 3.13.
 

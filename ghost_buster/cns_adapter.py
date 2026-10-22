@@ -160,7 +160,10 @@ def translate_finding(finding: Any, *, gate_name: str = "ghost_tools.cns_adapter
 # a check is called. Importing this module never loads CNS.
 # ---------------------------------------------------------------------------
 
-INSTALL_HINT = "pip install 'ghost-tools[cns]'"
+#: Commands that work. The PyPI project named ghost-tools is an older release (1.6.0) with no `cns` extra, so asking
+#: PyPI for that extra installs the wrong thing; the extra exists only in a checkout of this repository.
+INSTALL_HINT = ("from a ghost_tools checkout: pip install -e '.[cns]'; "
+                'for CNS alone: pip install "cns @ git+https://github.com/wking53214/CNS.git@v1.9.0"')
 
 #: What a gate's ``subject`` is when the finding has no readable id.
 DEFAULT_SUBJECT = "finding"
