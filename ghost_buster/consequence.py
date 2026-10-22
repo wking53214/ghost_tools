@@ -46,6 +46,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Set, Tuple
 
 from . import add_version_argument
+from .delivery import delivers
 from .diagnostics import add_verbose_argument, configure, get_logger
 
 log = get_logger(__name__)
@@ -228,6 +229,7 @@ def _report_name(spec: str) -> Tuple[str, Path]:
     return name, Path(path)
 
 
+@delivers("ghost-rank")
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         prog="ghost-rank",

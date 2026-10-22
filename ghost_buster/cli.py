@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, TextIO
 
 from . import version_string
+from .delivery import delivers
 from .diagnostics import configure as configure_diagnostics, get_logger
 from . import attest
 from .baseline import Baseline
@@ -60,6 +61,8 @@ EXIT_FINDINGS = 1   # scan ran; new CRITICAL or MAJOR findings (this is not a fa
 EXIT_USAGE = 2      # scan did not start: bad arguments, target missing/unreadable, unreadable baseline/ledger/casefile
 EXIT_CRASH = 3      # scan started and died: an unhandled error inside ghost_buster itself
 EXIT_INTERRUPTED = 130  # Ctrl-C (128 + SIGINT, the shell convention)
+# EXIT_OUTPUT (4, ghost_buster/delivery.py): the scan ran and would have exited 0, but standard output was closed,
+# full or failing, so the report was not delivered. A reader that left (broken pipe) keeps the earned code.
 
 _BY_REQUEST = ("skipped at your request", "opt-in and not requested")
 
@@ -660,6 +663,7 @@ def _handle_dispatch_modes(args) -> Optional[int]:
     return None
 
 
+@delivers("ghost_buster")
 def main(argv: Optional[List[str]] = None) -> int:
     """Run one scan and return its exit code (see EXIT_* above).
 

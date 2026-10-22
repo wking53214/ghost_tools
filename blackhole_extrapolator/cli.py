@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from ghost_buster import add_version_argument
+from ghost_buster.delivery import delivers
 from ghost_buster.diagnostics import add_verbose_argument, configure, get_logger
 
 from .detect import _declared_dependencies, false_absence_hints, scan
@@ -54,6 +55,7 @@ def _kind_for(evidence) -> VoidKind:
     return VoidKind.NEVER_BUILT
 
 
+@delivers("blackhole_extrapolator")
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         prog="blackhole_extrapolator",

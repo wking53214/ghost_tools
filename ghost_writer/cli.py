@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from ghost_buster import add_version_argument
+from ghost_buster.delivery import delivers
 from ghost_buster.diagnostics import add_verbose_argument, configure, get_logger
 from ghost_buster.schema import FindingSet
 
@@ -22,6 +23,7 @@ from .report import render_ghost_report, render_triage_report
 log = get_logger(__name__)
 
 
+@delivers("ghost_writer")
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(prog="ghost_writer")
     parser.add_argument("findings", type=Path, help="a FindingSet JSON file (from ghost_buster --json)")

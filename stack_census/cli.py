@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from ghost_buster import add_version_argument
+from ghost_buster.delivery import delivers
 from ghost_buster.diagnostics import add_verbose_argument, configure, get_logger
 
 from . import render
@@ -43,6 +44,7 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+@delivers("stack-census")
 def main(argv: Optional[List[str]] = None) -> int:
     args = _parser().parse_args(argv)
     configure(verbose=args.verbose)

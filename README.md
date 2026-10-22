@@ -23,7 +23,7 @@ Seven rules (each from a real defect): silence is the defect; fail-closed; say w
 
 Defaults, all 27 detectors and the mutant census: [docs/REFERENCE.md](docs/REFERENCE.md), checked by the test suite. Which failure of AI-assisted work each horseman catches, and which none does: [docs/FAILURE_MODES.md](docs/FAILURE_MODES.md).
 
-218 Python files (everything under the repository root except `Tests/fixtures`; `Tests/test_docs_claims.py` recounts them and fails if this number drifts). Stdlib-oriented CLI, no runtime dependencies, Python 3.11 to 3.13. Kernel scan measures duplication/drift against the `CNS` schema ([public](https://github.com/wking53214/CNS)) when present.
+220 Python files (everything under the repository root except `Tests/fixtures`; `Tests/test_docs_claims.py` recounts them and fails if this number drifts). Stdlib-oriented CLI, no runtime dependencies, Python 3.11 to 3.13. Kernel scan measures duplication/drift against the `CNS` schema ([public](https://github.com/wking53214/CNS)) when present.
 
 ## 2b. Optional CNS connection
 
@@ -120,8 +120,11 @@ Limits: `setup.py` is read with a text pattern, not run, so entry points built i
 | 1 | The scan ran and found something new at MAJOR or CRITICAL. | Read the findings. This is the tool working. |
 | 2 | The scan did not start: bad arguments, target missing or unreadable, unreadable baseline, ledger or case file, nothing to scan. | Fix the command or the inputs. A plain reason is on stderr. |
 | 3 | The scan started and the tool crashed (an unhandled error inside ghost_buster). | Treat as "unknown", never as "findings". The reason is on stderr, with a traceback. |
+| 4 | The run would have exited 0, but its report could not be delivered: standard output is closed, full (`/dev/full`, a disk with no room) or failing. | The scan ran; nothing reached you. Fix where stdout goes and run again. One plain line on stderr says why. |
 
-Anything other than 0 or 1 means no verdict was reached. `--verify-chain` keeps its own use of 1 (a break in the ledger chain).
+Anything other than 0 or 1 means no verdict was reached, except that a 4 says the verdict was reached and not delivered. `--verify-chain` keeps its own use of 1 (a break in the ledger chain).
+
+Report delivery, for all six commands (`ghost-buster`, `ghost-writer`, `ghost-triage`, `blackhole-extrapolator`, `stack-census`, `ghost-rank`): a reader that goes away (`ghost-buster DIR | head -3`, a broken pipe) is not an error of the run, so the command finishes, writes one plain line to stderr and exits with the code it earned (0, 1 or 2 as above), with no traceback. Any other delivery failure (standard output closed before the command started, a full device, an I/O error) writes the same one line and turns an exit of 0 into 4; an exit that was already non-zero (1 findings, 2 did not start, 3 crashed, 130 interrupted) is kept, so a crashed scan never looks clean. `--version` and `--help` follow the same rule. The code is `ghost_buster/delivery.py`; `Tests/test_report_delivery.py` runs all six commands against a pipe nobody reads, a closed file descriptor 1 and `/dev/full`.
 
 ### `--json` output
 

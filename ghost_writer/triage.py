@@ -30,6 +30,7 @@ from typing import Iterable, List, Optional, Tuple
 
 from ghost_buster import add_version_argument
 from ghost_buster.casefile import Casefile, CasefileError
+from ghost_buster.delivery import delivers
 from ghost_buster.diagnostics import add_verbose_argument, configure, get_logger
 from ghost_buster.schema import Finding, FindingSet
 
@@ -76,6 +77,7 @@ def _parse_decision(text: str) -> Tuple[str, str, str]:
     return ident.strip(), disposition.strip(), note.strip()
 
 
+@delivers("ghost_triage")
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         prog="ghost_triage",
