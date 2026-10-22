@@ -156,3 +156,19 @@ def test_the_blocking_gate_pins_the_recorded_tested_set_with_true_version_commen
     assert assay[1] == "54248beb5a36600f69de7c816cb2271dda20a879" and "ASSAY 0.11.2" in assay[2]
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     assert swizzle[1] in readme and assay[1] in readme
+
+
+@pytest.mark.parametrize("name", ["tests.yml", "publish.yml"])
+def test_every_workflow_declares_its_permissions(name):
+    text = _text(name)
+    assert re.search(r"^\s*permissions:\s*$", text, re.M), f"{name} has no permissions block"
+
+
+def test_the_tests_workflow_is_read_only_at_the_top_and_no_job_widens_it():
+    text = _text("tests.yml")
+    # A top-level key (column 0), before the jobs, granting contents: read and nothing else.
+    top = text[:text.index("\njobs:")]
+    assert re.search(r"^permissions:\n  contents: read\n(?!  )", top, re.M), top
+    # No job-level block, and nothing anywhere asks for a write scope.
+    assert not re.search(r"^\s{2,}permissions:", text, re.M)
+    assert not re.search(r":\s*write\b", text)

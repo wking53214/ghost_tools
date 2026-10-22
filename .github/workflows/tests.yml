@@ -8,6 +8,11 @@ on:
     branches: [main, "claude/**"]
   pull_request:
 
+# Least privilege for every job below: they read the repository and write
+# nothing (no job pushes, comments or publishes). publish.yml declares its own.
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
