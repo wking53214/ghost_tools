@@ -147,13 +147,13 @@ def test_the_gate_installs_the_numpy_and_matplotlib_that_assays_verifier_needs()
 
 
 def test_the_blocking_gate_pins_the_recorded_tested_set_with_true_version_comments():
-    # SWIZZLE 0.8.4 (head of its main) and ASSAY 0.11.2 (head of its main).
+    # SWIZZLE 0.8.5 (head of its main) and ASSAY 0.11.3 (a commit on its main).
     text = _text("tests.yml")
     swizzle = re.search(r"^\s*swizzle_ref: ([0-9a-f]{40})\s+# (.*)$", text, re.M)
     assay = re.search(r"^\s*assay_ref: ([0-9a-f]{40})\s+# (.*)$", text, re.M)
     assert swizzle and assay
-    assert swizzle[1] == "6bd88f3a6e9de1f83e64f401e13cbcb5233499fc" and "SWIZZLE 0.8.4" in swizzle[2]
-    assert assay[1] == "54248beb5a36600f69de7c816cb2271dda20a879" and "ASSAY 0.11.2" in assay[2]
+    assert swizzle[1] == "522658415b026ac3211d3fc130ba7da7c77cc400" and "SWIZZLE 0.8.5" in swizzle[2]
+    assert assay[1] == "a1732f2bf3748235661f65b96e590a6d44ace71c" and "ASSAY 0.11.3" in assay[2]
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     assert swizzle[1] in readme and assay[1] in readme
 

@@ -141,8 +141,8 @@ jobs:
         include:
           - label: pinned siblings
             blocking: true
-            swizzle_ref: 6bd88f3a6e9de1f83e64f401e13cbcb5233499fc  # SWIZZLE 0.8.4 (pyproject), head of its main, tested set
-            assay_ref: 54248beb5a36600f69de7c816cb2271dda20a879  # ASSAY 0.11.2 (_version.py), head of its main, tested set
+            swizzle_ref: 522658415b026ac3211d3fc130ba7da7c77cc400  # SWIZZLE 0.8.5 (pyproject), head of its main, tested set
+            assay_ref: a1732f2bf3748235661f65b96e590a6d44ace71c  # ASSAY 0.11.3 (_version.py), a commit on its main (main has since added only recovered-originals/), tested set
           - label: latest siblings, non-blocking
             blocking: false
             swizzle_ref: ""   # empty ref: the default branch
