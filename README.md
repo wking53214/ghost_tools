@@ -31,7 +31,7 @@ Defaults, all 27 detectors and the mutant census: [docs/REFERENCE.md](docs/REFER
 **optional**: ghost_tools imports and runs without CNS, and nothing loads `cns`
 until a CNS-backed function is called. Install the pinned package from a checkout
 of this repository with `pip install -e '.[cns]'`, or install just CNS with
-`pip install "cns @ git+https://github.com/wking53214/CNS.git@v1.9.0"`. Do not ask PyPI
+`pip install "cns @ git+https://github.com/wking53214/CNS.git@v2.0.0"`. Do not ask PyPI
 for a `cns` extra of `ghost-tools`: the project of that name there is an older release
 (1.6.0) that has none, and it installs the wrong thing. Without CNS, `FindingGate`, `cns_chain` and
 `check_report` raise `CnsNotInstalled` (an `ImportError` naming that command),
