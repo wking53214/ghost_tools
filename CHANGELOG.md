@@ -6,6 +6,49 @@ accepted by the publish workflow.
 
 ## Unreleased
 
+## 1.10.9 (2026-10-24)
+
+**Wave F: a baseline path that does not exist is refused, false sentences about the pins and self-hosting are corrected, and suffixed finding ids no longer depend on the folder. Three changes, nothing else.**
+
+Fixed:
+
+- **Step 1: a `--baseline FILE` that does not exist is a usage error.** It was read as an empty baseline (exit 0,
+  `baseline.path` null, no unmeasured row), although the README's exit table says an unreadable baseline is exit 2.
+  Found by the round-6 audit and reproduced first. It is now refused before the scan: exit 2, one plain line, the
+  usual error envelope under `--json`. A folder or an unreadable file is refused the same way. `--accept` may still
+  create the file it names, an existing empty baseline still works, and a missing default baseline in the scanned
+  folder is unchanged. Six tests in `Tests/test_baseline_integrity.py`, three of which fail on the old code.
+
+- **Step 3: a suffixed finding id does not depend on the folder the scan ran in.** Findings that share detector, file
+  and summary get a suffix hashed from their place, and the place included the detail, which can name the file by its
+  absolute path. The same checkout scanned from two folders gave different suffixed ids, so a committed baseline entry
+  carrying one was stale in every other folder, including every throwaway clone. Reproduced (two copies of this
+  repository: both suffixed ids differed), then the scan folder is cut out of the detail before hashing. A baseline
+  written from the same folder under the old suffix still matches (kept among the previous ids); one written in
+  another folder never could. This repository's committed baseline holds no suffixed entry, so none of its ids
+  changed. Three tests in `Tests/test_finding_identity.py`, two of which fail on the old code.
+
+Changed:
+
+- **Step 2: false and stale sentences.** The README and the comments in `tests.yml` no longer call the SWIZZLE pin the
+  head of SWIZZLE's `main` or say ASSAY's `main` added only `recovered-originals/`; the pins are described as the last
+  set this repository's CI tested on its own, and the whole-stack check is named as the CNS `stack` job. The README
+  states no CI time per Python version. Its self-hosting paragraph now cites the CNS record
+  `docs/evidence/SELFHOSTING_2026-10-23.md` (ACCEPT_UNVERIFIED at 1.10.8, 7 declined checks, 10 gaps, 132 findings
+  standing), and known defect 7 names the Judge consequence of the baseline that hides one finding. The README ledger
+  gains the 1.10.9 entries. Two new tests: `test_no_pin_is_called_the_head_of_a_siblings_main` in
+  `Tests/test_workflow_pins.py` and `test_the_readme_self_hosting_paragraph_states_what_the_record_says` in
+  `Tests/test_docs_claims.py`.
+
+Pre-existing tests edited (rule 5), with the step that caused each: step 1 changes what a `--baseline` path that does
+not exist means, and 34 call sites in 12 test files (`test_archive`, `test_boundary`, `test_correlate`,
+`test_defaults`, `test_kernel`, `test_ledger`, `test_project`, `test_readiness`, `test_secrets`, `test_structure`,
+`test_testsuite`, `test_trust`) passed such a path without creating it, only to keep the scan from reading a baseline
+in the scanned folder. Each now passes `empty_baseline(tmp_path)` from the new `Tests/empty_baseline.py`, an existing
+file that holds `[]`, written beside the test's folder. Nothing else about those tests changed. The README's Python
+file count is 222 for the new helper. The CNS pin text (`@v2.0.0`) and the `swizzle_ref` and `assay_ref` pins are
+unchanged.
+
 ## 1.10.8 (2026-10-22)
 
 **The CNS pin is the tag v2.0.0, and the README says what works, what does not and what broke. Two changes, nothing else.**
