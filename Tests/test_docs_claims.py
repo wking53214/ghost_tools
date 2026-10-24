@@ -232,3 +232,21 @@ def test_the_versions_in_the_readme_ledger_are_changelog_releases_on_the_same_da
             assert not date or date == released[version], (
                 f"{version}: README says {date}, CHANGELOG says {released[version]}")
     assert checked, "the README ledger names no release the CHANGELOG has a heading for"
+
+
+# Read from the CNS repository's docs/evidence/SELFHOSTING_2026-10-23.md, the ghost_tools row (run 1, commit
+# 5a9154d3c76670f5bf1f46d845acadfed46d7bc8, version 1.10.8). The record is in another repository, so the numbers
+# are copied here: if the README changes them, this test names the file to re-read.
+_SELFHOSTING = {"commit": "5a9154d3c76670f5bf1f46d845acadfed46d7bc8", "decision": "ACCEPT_UNVERIFIED",
+                "passed": "2432", "skipped": "38", "declined": "7", "gaps": "10", "standing": "132"}
+
+
+def test_the_readme_self_hosting_paragraph_states_what_the_record_says():
+    section = README[README.index("## 4d."):README.index("## 4e.")]
+    assert "SELFHOSTING_2026-10-23.md" in section and "claude/horsemen-production-status-5wsndb" in section
+    for key, value in _SELFHOSTING.items():
+        assert value in section, f"the self-hosting paragraph lost the recorded {key}: {value}"
+    for sentence in ("What the record does not mean", "does not mean there are no secrets, no weak tests",
+                     "not 1.10.9 or later"):
+        assert sentence in section, sentence
+    assert "no such page exists" not in README

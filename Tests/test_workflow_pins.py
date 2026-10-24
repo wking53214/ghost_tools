@@ -172,3 +172,14 @@ def test_the_tests_workflow_is_read_only_at_the_top_and_no_job_widens_it():
     # No job-level block, and nothing anywhere asks for a write scope.
     assert not re.search(r"^\s{2,}permissions:", text, re.M)
     assert not re.search(r":\s*write\b", text)
+
+
+def test_no_pin_is_called_the_head_of_a_siblings_main():
+    """The SWIZZLE pin was described as the head of SWIZZLE's main and ASSAY's main as having added only
+    `recovered-originals/`. Neither was true. The pins are the last set this repository's CI tested on its own."""
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    current = readme[:readme.index("## 4c.")] + readme[readme.index("## 4d."):]   # 4c tells the history
+    for name, text in (("README.md", current), ("tests.yml", _text("tests.yml"))):
+        assert not re.search(r"head of (SWIZZLE's|its|ASSAY's) `?main", text), name
+        assert "recovered-originals" not in text, name
+    assert "last SWIZZLE and ASSAY commits this repository's CI tested on its own" in readme
