@@ -251,3 +251,52 @@ def test_the_baseline_cannot_suppress_the_report_of_its_own_rot(tmp_path, monkey
     capsys.readouterr()
     stored = json.loads((repo / ".ghost_baseline.json").read_text())
     assert not [r for r in stored if r["detector"] == "stale_baseline"]
+
+
+# ---------------------------------------------------------------- 6. a baseline the user named must exist (1.10.9)
+
+def test_a_baseline_named_with_baseline_that_does_not_exist_is_a_usage_error(tmp_path, capsys):
+    """It used to be read as an empty baseline: exit 0, `baseline.path` null, no row saying so."""
+    root = _checkout(tmp_path / "proj")
+    missing = tmp_path / "no-such-baseline.json"
+    assert not missing.exists()
+    assert main([str(root), "--no-tests", "--baseline", str(missing)]) == 2
+    err = capsys.readouterr().err
+    assert "does not exist" in err and str(missing) in err
+    assert not missing.exists()
+
+
+def test_the_refusal_comes_before_the_scan_and_is_the_error_envelope_under_json(tmp_path, capsys):
+    root = _checkout(tmp_path / "proj")
+    missing = tmp_path / "no-such-baseline.json"
+    assert main([str(root), "--no-tests", "--json", "--baseline", str(missing)]) == 2
+    captured = capsys.readouterr()
+    out = json.loads(captured.out)
+    assert out["status"] == "error" and out["exit_code"] == 2 and out["error"]["kind"] == "usage"
+    assert "scanning" not in captured.err
+
+
+def test_a_baseline_that_is_a_folder_is_a_usage_error(tmp_path, capsys):
+    root = _checkout(tmp_path / "proj")
+    assert main([str(root), "--no-tests", "--baseline", str(tmp_path)]) == 2
+    assert "folder" in capsys.readouterr().err
+
+
+def test_accept_may_create_the_baseline_it_names(tmp_path):
+    root = _checkout(tmp_path / "proj")
+    target = tmp_path / "new-baseline.json"
+    assert main([str(root), "--no-tests", "--accept", "--baseline", str(target)]) == 0
+    assert target.is_file()
+
+
+def test_an_existing_empty_baseline_still_works(tmp_path):
+    root = _checkout(tmp_path / "proj")
+    empty = tmp_path / "empty.json"
+    empty.write_text("[]")
+    assert main([str(root), "--no-tests", "--baseline", str(empty)]) in (0, 1)
+
+
+def test_the_default_baseline_in_the_scanned_folder_may_be_absent(tmp_path):
+    root = _checkout(tmp_path / "proj")
+    assert not (root / ".ghost_baseline.json").exists()
+    assert main([str(root), "--no-tests"]) in (0, 1)

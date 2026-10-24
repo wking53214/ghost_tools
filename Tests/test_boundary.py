@@ -18,6 +18,7 @@ from ghost_buster.boundary import (
 from ghost_buster.cli import main
 from ghost_buster.pipeline import _collect_files
 from ghost_buster.schema import Severity
+from empty_baseline import empty_baseline
 
 GUARDED = '''import sys
 
@@ -287,7 +288,7 @@ def test_the_cli_does_not_prompt_when_stdin_is_not_a_terminal(tmp_path, capsys, 
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
     root = _consumer(tmp_path)
     rc = main([str(root), "--no-tests", "--no-secrets", "--no-branches", "--no-ledger",
-               "--no-project", "--no-structure", "--baseline", str(tmp_path / "b.json")])
+               "--no-project", "--no-structure", "--baseline", empty_baseline(tmp_path)])
     err = capsys.readouterr().err
     assert rc in (0, 1), "a prompt that reads a closed stdin is a crash, not a scan"
     assert "--join" in err, "it must still say the seams went unchecked"
@@ -299,7 +300,7 @@ def test_single_repo_flag_skips_the_question(tmp_path, capsys, monkeypatch):
     root = _consumer(tmp_path)
     rc = main([str(root), "--single-repo", "--no-tests", "--no-secrets", "--no-branches",
                "--no-ledger", "--no-project", "--no-structure",
-               "--baseline", str(tmp_path / "b.json")])
+               "--baseline", empty_baseline(tmp_path)])
     assert rc in (0, 1), "a prompt that reads a closed stdin is a crash, not a scan"
     assert "boundary scan joined" not in capsys.readouterr().err
 
@@ -308,7 +309,7 @@ def test_the_cli_joins_when_told_to(tmp_path, capsys):
     consumer, provider = _consumer(tmp_path), _provider(tmp_path)
     main([str(consumer), "--join", str(provider), "--no-tests", "--no-secrets",
           "--no-branches", "--no-ledger", "--no-project", "--no-structure",
-          "--baseline", str(tmp_path / "b.json")])
+          "--baseline", empty_baseline(tmp_path)])
     assert "boundary scan joined 2 repositories" in capsys.readouterr().err
 
 
@@ -330,7 +331,7 @@ def _boundary_state(root, tmp_path, capsys):
     ledger_path = tmp_path / "led.json"
     main([str(root), "--single-repo", "--no-tests", "--no-secrets", "--no-branches",
           "--no-project", "--no-structure", "--ledger-path", str(ledger_path),
-          "--baseline", str(tmp_path / "b.json")])
+          "--baseline", empty_baseline(tmp_path)])
     capsys.readouterr()
     return Ledger(ledger_path).runs[-1].checks["boundary"], ledger_path
 
@@ -367,6 +368,6 @@ def test_a_seamless_repo_never_grows_a_boundary_blind_spot(tmp_path, capsys):
         _, ledger_path = _boundary_state(root, tmp_path, capsys)
     main([str(root), "--single-repo", "--json", "--no-tests", "--no-secrets",
           "--no-branches", "--no-project", "--no-structure",
-          "--ledger-path", str(ledger_path), "--baseline", str(tmp_path / "b.json")])
+          "--ledger-path", str(ledger_path), "--baseline", empty_baseline(tmp_path)])
     rows = json.loads(capsys.readouterr().out)["findings"]
     assert not [r for r in rows if r.get("attributes", {}).get("check") == "boundary"]

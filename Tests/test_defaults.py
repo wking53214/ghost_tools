@@ -21,6 +21,7 @@ from __future__ import annotations
 import pytest
 
 from ghost_buster.cli import _build_parser, main
+from empty_baseline import empty_baseline
 
 # (attribute, opt-out flag, the phrase that must appear when declined)
 CHECKS = [
@@ -45,7 +46,7 @@ def project(tmp_path):
 
 
 def _run(project, tmp_path, *flags):
-    return main([str(project), "--baseline", str(tmp_path / "b.json"), *flags])
+    return main([str(project), "--baseline", empty_baseline(tmp_path), *flags])
 
 
 @pytest.mark.parametrize("attr,_flag,_phrase", CHECKS, ids=[c[0] for c in CHECKS])

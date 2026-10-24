@@ -19,6 +19,7 @@ from ghost_buster.ledger import (
     MAX_RUNS_KEPT, NOT_APPLICABLE, NOT_RUN, PERSISTENT_AFTER, RAN, SCHEMA_VERSION,
 )
 from ghost_buster.schema import Category, Evidence, Finding, Layer, Severity, Status
+from empty_baseline import empty_baseline
 
 ALL_RAN = {"structural": RAN, "branches": RAN, "tests": RAN, "secrets": RAN}
 
@@ -285,7 +286,7 @@ def test_accepting_into_the_baseline_does_not_erase_memory(tmp_path, capsys):
     proj.mkdir()
     (proj / "m.py").write_text("def used():\n    return used\n\ndef dead():\n    return 2\n")
     base = ["--ledger", "--no-tests", "--no-secrets", "--no-branches",
-            "--baseline", str(tmp_path / "b.json")]
+            "--baseline", empty_baseline(tmp_path)]
     main([str(proj), *base])
     main([str(proj), "--accept", *base])
     capsys.readouterr()
@@ -303,7 +304,7 @@ def test_history_is_reported_alongside_the_findings_not_instead_of_them(tmp_path
     proj = tmp_path / "proj"
     proj.mkdir()
     base = ["--ledger", "--json", "--no-tests", "--no-secrets", "--no-branches",
-            "--baseline", str(tmp_path / "b.json")]
+            "--baseline", empty_baseline(tmp_path)]
     live = "def used():\n    return used\n"
     dead = live + "\ndef gone():\n    return 2\n"
 
@@ -329,7 +330,7 @@ def test_ledger_is_opt_in_and_writes_a_file_when_asked(tmp_path, capsys):
     proj = tmp_path / "proj"
     proj.mkdir()
     (proj / "m.py").write_text("x = 1\n")
-    common = ["--no-tests", "--no-secrets", "--no-branches", "--baseline", str(tmp_path / "b.json")]
+    common = ["--no-tests", "--no-secrets", "--no-branches", "--baseline", empty_baseline(tmp_path)]
     main([str(proj), *common])
     capsys.readouterr()
     assert not (proj / ".ghost_ledger.json").exists()
@@ -343,7 +344,7 @@ def test_no_ledger_writes_nothing_and_leaves_a_receipt(tmp_path, capsys):
     proj.mkdir()
     (proj / "m.py").write_text("x = 1\n")
     main([str(proj), "--no-ledger", "--no-tests", "--no-secrets", "--no-branches",
-          "--baseline", str(tmp_path / "b.json")])
+          "--baseline", empty_baseline(tmp_path)])
     err = capsys.readouterr().err
     assert not (proj / ".ghost_ledger.json").exists()
     assert "ledger SKIPPED at your request (--no-ledger)" in err
@@ -355,6 +356,6 @@ def test_a_corrupt_ledger_fails_the_run_rather_than_starting_over(tmp_path, caps
     (proj / "m.py").write_text("x = 1\n")
     (proj / ".ghost_ledger.json").write_text("{not json", encoding="utf-8")
     rc = main([str(proj), "--ledger", "--no-tests", "--no-secrets", "--no-branches",
-               "--baseline", str(tmp_path / "b.json")])
+               "--baseline", empty_baseline(tmp_path)])
     assert rc == 2
     assert "error: ledger" in capsys.readouterr().err

@@ -610,6 +610,31 @@ def _validate_casefile(args) -> Optional[int]:
     return None
 
 
+def _validate_baseline(args) -> Optional[int]:
+    """Refuse a --baseline FILE that is not there, is a folder or cannot be read, before the scan.
+
+    A path the user named that does not exist used to be read as an empty baseline: exit 0, `baseline.path`
+    null, no row saying so, so a mistyped path looked like "nothing is suppressed" and a CI step passed on
+    nothing. With --accept the file is being created, so a missing file is fine there. A baseline found in the
+    scanned folder (no --baseline) is not named by the user and keeps its old rules."""
+    if args.baseline is None:
+        return None
+    path = Path(args.baseline)
+    if path.exists() and not path.is_file():
+        return _fail(args, EXIT_USAGE, "usage", f"error: --baseline {path} is a folder, not a baseline file")
+    if not path.exists():
+        if args.accept:
+            return None
+        return _fail(args, EXIT_USAGE, "usage",
+                     f"error: --baseline {path} does not exist. Nothing was scanned. Check the path, or pass "
+                     "--accept to create it")
+    try:
+        path.read_bytes()
+    except OSError as e:
+        return _fail(args, EXIT_USAGE, "usage", f"error: baseline {path} could not be read: {type(e).__name__}: {e}")
+    return None
+
+
 def _load_baseline(baseline_path) -> Baseline:
     """Load baseline, with proper error handling."""
     try:
@@ -745,6 +770,10 @@ def _main(args) -> int:
         return result
 
     result = _validate_casefile(args)
+    if result is not None:
+        return result
+
+    result = _validate_baseline(args)
     if result is not None:
         return result
 

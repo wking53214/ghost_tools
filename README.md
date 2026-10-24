@@ -64,7 +64,7 @@ Seven rules the code is written to: silence is the defect; fail-closed; say what
 
 Defaults, all 27 detectors and the mutant census: [docs/REFERENCE.md](docs/REFERENCE.md), checked by the test suite. Which failure of AI-assisted work each horseman catches, and which none does: [docs/FAILURE_MODES.md](docs/FAILURE_MODES.md).
 
-221 Python files (everything under the repository root except `Tests/fixtures`; `Tests/test_docs_claims.py` recounts them and fails if this number drifts). Stdlib-oriented CLI, no runtime dependencies, Python 3.11 to 3.13. Kernel scan measures duplication/drift against the `CNS` schema ([public](https://github.com/wking53214/CNS)) when present.
+222 Python files (everything under the repository root except `Tests/fixtures`; `Tests/test_docs_claims.py` recounts them and fails if this number drifts). Stdlib-oriented CLI, no runtime dependencies, Python 3.11 to 3.13. Kernel scan measures duplication/drift against the `CNS` schema ([public](https://github.com/wking53214/CNS)) when present.
 
 ## 2b. Optional CNS connection
 
@@ -272,7 +272,7 @@ Limits: `setup.py` is read with a text pattern, not run, so entry points built i
 |---|---|---|
 | 0 | The scan ran. Nothing new at MAJOR or CRITICAL. | Read `status` (below): 0 with `"incomplete"` is not a clean bill of health. |
 | 1 | The scan ran and found something new at MAJOR or CRITICAL. | Read the findings. This is the tool working. |
-| 2 | The scan did not start: bad arguments, target missing or unreadable, unreadable baseline, ledger or case file, nothing to scan. | Fix the command or the inputs. A plain reason is on stderr. |
+| 2 | The scan did not start: bad arguments, target missing or unreadable, unreadable baseline (including a `--baseline` file that does not exist), ledger or case file, nothing to scan. | Fix the command or the inputs. A plain reason is on stderr. |
 | 3 | The scan started and the tool crashed (an unhandled error inside ghost_buster). | Treat as "unknown", never as "findings". The reason is on stderr, with a traceback. |
 | 4 | The run would have exited 0, but its report could not be delivered: standard output is closed, full (`/dev/full`, a disk with no room) or failing. | The scan ran; nothing reached you. Fix where stdout goes and run again. One plain line on stderr says why. |
 
