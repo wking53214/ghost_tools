@@ -162,7 +162,7 @@ def test_the_two_tests_above_pass_in_a_tree_that_has_been_built(tmp_path):
     (tree / "build" / "lib").mkdir(parents=True)
 
     done = subprocess.run(
-        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-n0",
+        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-o", "addopts=",
          "-k", "not built", "Tests/test_version_provenance.py"],
         cwd=tree, capture_output=True, text=True, timeout=300,
         env={"PATH": "/usr/bin:/bin", "HOME": str(tmp_path), "PYTHONDONTWRITEBYTECODE": "1"})
