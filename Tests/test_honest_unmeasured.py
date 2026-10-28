@@ -107,3 +107,18 @@ def test_checks_the_caller_turned_off_are_listed_but_do_not_make_the_run_incompl
     assert off["mutate"]["by_request"] is True
     assert payload["status"] == "ok"
     assert payload["exit_code"] == 0 and payload["error"] is None
+
+
+def test_a_ledger_that_was_not_written_is_listed_with_every_other_check_that_did_not_run(tmp_path, capsys):
+    root = _tree(tmp_path, {"a.py": "X = 1\n"})
+    _git(root)
+    _, payload = _scan(root, *QUIET, capsys=capsys)
+    off = {u["check"]: u for u in payload["unmeasured"]}
+    assert off["ledger"]["state"] == "declined" and off["ledger"]["by_request"] is True
+    assert "--no-ledger" in off["ledger"]["reason"]
+    assert payload["status"] == "ok"
+    _, payload = _scan(root, *[f for f in QUIET if f != "--no-ledger"], capsys=capsys)
+    off = {u["check"]: u for u in payload["unmeasured"]}
+    assert off["ledger"]["state"] == "not_run" and off["ledger"]["by_request"] is True
+    assert payload["status"] == "ok"
+    assert not (root / ".ghost_ledger.json").exists()

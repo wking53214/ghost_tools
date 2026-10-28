@@ -6,6 +6,18 @@ accepted by the publish workflow.
 
 ## Unreleased
 
+Fixed:
+
+- **Step 1: a ledger that was not written is listed in `--json` `unmeasured` like every other check that did not
+  run.** `_record_in_ledger` only printed a stderr line (`ledger SKIPPED at your request (--no-ledger)` or `ledger
+  NOT UPDATED (opt-in: ...)`) and never set `checks["ledger"]`, so a run with the ledger off, which is the default and
+  what the CI self-scan and `tools/self_baseline.py` do, had no machine-readable record that custody was off. It now
+  records `declined` under `--no-ledger` and `not_run` when the ledger was simply not requested, both `by_request`, so
+  `status` stays `ok`. The two stderr lines are unchanged. `Tests/test_honest_unmeasured.py` holds both cases.
+  Two pre-existing mutant sites named the exact lines this step changes and were re-aimed at the new lines, nothing
+  else about them changed: `declining the ledger leaves no receipt` in `Tests/test_ledger_mutants.py` and `the
+  ledger stage loses its receipt channel` in `Tests/test_pipeline_boundary_mutants.py`.
+
 ## 1.10.7 (2026-10-22)
 
 **Report delivery, workflow permissions, install hints and the tested set. Four changes, nothing else.**
