@@ -4,7 +4,7 @@ The hint `pip install 'ghost-tools[cns]'` resolved on PyPI to the owner's older 
 extra (its extras are `semantic` and `dev`), so it installed the wrong thing and the CNS tests and adapter stayed
 unusable. The stack's repositories are not published to PyPI under their own names as these versions; what works is an
 install from a checkout (`pip install -e '.[cns]'`) or from the repository at a pinned tag
-(`pip install "cns @ git+https://github.com/wking53214/CNS.git@v2.0.0"`).
+(`pip install "cns @ git+https://github.com/wking53214/CNS.git@v2.1.0"`).
 
 The check reads every file a user reads (README, STACK, PROVENANCE, docs, the shipped Python, the workflows and
 scripts), finds each `pip install ...` command and fails on a requirement that is a bare name of a circuit
@@ -86,7 +86,7 @@ def test_the_checker_finds_the_hint_that_installed_the_wrong_thing():
 def test_the_checker_accepts_the_commands_that_work():
     assert bare_circuit_requirements("pip install -e '.[cns]'") == []
     assert bare_circuit_requirements('pip install -e ".[dev]"') == []
-    assert bare_circuit_requirements('pip install "cns @ git+https://github.com/wking53214/CNS.git@v2.0.0"') == []
+    assert bare_circuit_requirements('pip install "cns @ git+https://github.com/wking53214/CNS.git@v2.1.0"') == []
     assert bare_circuit_requirements("python -m pip install ./swizzle pytest") == []
     assert bare_circuit_requirements("pip install -r requirements.txt anthropic") == []
 
