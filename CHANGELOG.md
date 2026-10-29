@@ -6,6 +6,26 @@ accepted by the publish workflow.
 
 ## Unreleased
 
+## 1.10.10 (2026-10-29)
+
+Not tagged. **The CNS pin moves to the tag v2.1.0. One change, nothing else.**
+
+Changed:
+
+- **Pin21 step 1: the CNS pin is `cns @ git+https://github.com/wking53214/CNS.git@v2.1.0`** (was the tag `v2.0.0`), with
+  the comment `# v2.1.0 = fde931ffa89aebec95647742256ad53033bd3d02` (the commit the annotated tag peels to; the tag
+  object is `0cc90472f7edc46c3bf40079e69fb03a06718e29`) on the `cns` extra and on the CI install line. `CNS_PIN` in
+  `Tests/test_cns_independence.py`, the install hint in `ghost_buster/cns_adapter.py` and the README follow, and the
+  README migration note names the move. `swizzle_ref` and `assay_ref` are unchanged. The suite, ruff and mypy were run
+  against the package installed from that tag on Python 3.13.
+- **Pin21 step 2: version 1.10.10** (`pyproject.toml` and the README version line) and this entry.
+
+Pre-existing tests edited (rule 5), each with the step that caused it: `Tests/test_workflow_pins.py` (step 1: the module
+docstring and the three assertions in `test_cns_is_installed_from_the_tag_in_the_workflow_and_the_extra` say `v2.1.0`,
+nothing else changed); `Tests/test_install_hints.py` (step 1: its docstring and the one input string in
+`test_the_checker_accepts_the_commands_that_work` quote the new pin; the assertion is unchanged); the `CNS_PIN` constant
+in `Tests/test_cns_independence.py` (step 1).
+
 ## 1.10.9 (2026-10-24)
 
 **Wave F: a baseline path that does not exist is refused, false sentences about the pins and self-hosting are corrected, and suffixed finding ids no longer depend on the folder. Three changes, nothing else.**
