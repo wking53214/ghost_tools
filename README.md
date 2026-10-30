@@ -137,7 +137,7 @@ Other tools cover parts of this ground (ruff, mutmut, SonarQube). This repositor
 
 ### What works, and what proves it
 
-Each line names the test, the CI job or the command that shows it. A test file named here means every test in the file passes in CI. The CI jobs are in `.github/workflows/tests.yml`. The most recent run recorded for the previous release (1.10.7, commit `43b1a184058f12e01c772328dd6788920c598cc4`) is GitHub Actions run 39817675573: all six jobs concluded `success`.
+Each line names the test, the CI job or the command that shows it. A test file named here means every test in the file passes in CI. The CI jobs are in `.github/workflows/tests.yml`. The run for any head is on the repository's Actions page, and the last checked runs are listed in the CNS repository's `docs/STATUS.md`.
 
 | What works | Proof |
 |---|---|
@@ -222,7 +222,7 @@ Newest first. Most entries from 1.10.0 on were found by audit rounds, where a re
 
 ## 4d. Self-hosting
 
-This repository's scanner scans this repository on every push (CI job `self-scan`). That is not the same as the full circuit governing it. The full circuit (the Warden seating the Drafter, Judge and Burnish around this scanner) was run over a fresh clone of this repository at commit `5a9154d3c76670f5bf1f46d845acadfed46d7bc8` (version 1.10.8) on 2026-10-22 and 2026-10-23, one run. The record is `docs/evidence/SELFHOSTING_2026-10-23.md` in the [CNS repository](https://github.com/wking53214/CNS/blob/claude/horsemen-production-status-5wsndb/docs/evidence/SELFHOSTING_2026-10-23.md) (on the CNS branch `claude/horsemen-production-status-5wsndb` until that branch is merged). For ghost_tools it recorded: decision ACCEPT_UNVERIFIED (Warden exit 3), not ACCEPT. The loop converged and the finishing change stood against a green suite (2432 passed, 38 skipped, all skips because `gitleaks` was not installed there), but the committed `.ghost_baseline.json` hides one finding (`long_function` on `_build_parser`, see section 4b item 7), Warden counts that as a gap, and the Judge answered INSUFFICIENT with "these checks never ran: ghost_partial". The finishing change was put back and held. The record lists 7 declined checks in every run (mutate, kernel, structure, tests, project, secrets, correlate), 10 gaps in this one, and 132 Ghost findings still standing at the end.
+This repository's scanner scans this repository on every push (CI job `self-scan`). That is not the same as the full circuit governing it. The full circuit as it was then (before the owner's ruling of 2026-10-29 released the Drafter, Burnish and WATCHER_MCU from it; the Warden seated the Drafter, Judge and Burnish around this scanner) was run over a fresh clone of this repository at commit `5a9154d3c76670f5bf1f46d845acadfed46d7bc8` (version 1.10.8) on 2026-10-22 and 2026-10-23, one run. The record is `docs/evidence/SELFHOSTING_2026-10-23.md` in the [CNS repository](https://github.com/wking53214/CNS/blob/claude/horsemen-production-status-5wsndb/docs/evidence/SELFHOSTING_2026-10-23.md) (on the CNS branch `claude/horsemen-production-status-5wsndb` until that branch is merged). For ghost_tools it recorded: decision ACCEPT_UNVERIFIED (Warden exit 3), not ACCEPT. The loop converged and the finishing change stood against a green suite (2432 passed, 38 skipped, all skips because `gitleaks` was not installed there), but the committed `.ghost_baseline.json` hides one finding (`long_function` on `_build_parser`, see section 4b item 7), Warden counts that as a gap, and the Judge answered INSUFFICIENT with "these checks never ran: ghost_partial". The finishing change was put back and held. The record lists 7 declined checks in every run (mutate, kernel, structure, tests, project, secrets, correlate), 10 gaps in this one, and 132 Ghost findings still standing at the end.
 
 What the record does not mean: an ACCEPT in that record (other repositories ended ACCEPT) still carries those 7 declined checks as gaps, so it does not mean there are no secrets, no weak tests and no structural problems. The record covers commit 5a9154d, not 1.10.9 or later, and this repository was not re-run after the finisher was fixed (Burnish 0.3.12, which stopped writing suite counts into READMEs; that fix mattered to SWIZZLE and JUDGE, not here). Nothing is claimed about a run on the current commit.
 
@@ -350,8 +350,8 @@ No test in the suite is marked expected-to-fail (`grep -rn "mark.xfail" Tests` f
 SWIZZLE attack worlds  →  ghost_buster  →  findings
 ASSAY specimens   →  known-damage corpus; `swizzle assay` scores this tool against it
 Warden                →  runs ghost_buster to observe, then re-inspect after an authorized change
-                          (the Drafter proposes from these findings, Burnish finishes, the Judge decides;
-                          `warden tagteam PATH --stack FOLDER` seats all seven, see STACK.md)
+                          (any actor's change enters through Warden's claim seat, the Judge decides;
+                          the circuit is five repositories, Drafter, Burnish and WATCHER_MCU are released from it, see STACK.md)
 composition-engine     →  retired, folded into CNS (cns_composition.super_gate); GhostToolsAdapter now lives in cns_composition (one adapter, optional)
 observe-perceive       ✗ does not import
 swizzle-gate CI        replays SWIZZLE cases and ASSAY specimens against this tool (no secret needed)
