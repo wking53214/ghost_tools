@@ -597,6 +597,17 @@ def _validate_ledger_path(args) -> Optional[int]:
                  "Create it first, or pass --create-ledger-dir to have it created")
 
 
+def _validate_joins(args) -> Optional[int]:
+    """Refuse a --join that is absent or not a folder, before the scan: exit 2
+    naming the path, like every other path argument. It used to print "boundary
+    scan joined 2 repositories" and exit 0, so a typo read as a checked seam."""
+    for path in args.join:
+        if not path.is_dir():
+            what = "does not exist" if not path.exists() else "is not a directory"
+            return _fail(args, EXIT_USAGE, "usage", f"error: --join {path} {what}")
+    return None
+
+
 def _validate_casefile(args) -> Optional[int]:
     """Refuse a --casefile (or a case file found in the scanned folder) that
     cannot be read, before the scan, the same way a bad baseline is refused:
@@ -766,6 +777,10 @@ def _main(args) -> int:
         return result
 
     result = _validate_ledger_path(args)
+    if result is not None:
+        return result
+
+    result = _validate_joins(args)
     if result is not None:
         return result
 

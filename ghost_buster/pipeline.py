@@ -385,7 +385,12 @@ def _resolve_join_mode(args, files, say=to_stderr) -> List[Path]:
     except (EOFError, KeyboardInterrupt):
         print(file=sys.stderr)
         return []
-    return [Path(p) for p in answer.split() if p]
+    typed = [Path(p) for p in answer.split() if p]
+    for p in typed:
+        # A path typed at the prompt is held to the same rule as --join: a typo is not a checked seam.
+        if not p.is_dir():
+            raise Stop(f"error: --join {p} " + ("does not exist" if not p.exists() else "is not a directory"))
+    return typed
 
 
 
