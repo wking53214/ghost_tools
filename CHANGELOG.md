@@ -6,6 +6,24 @@ accepted by the publish workflow.
 
 ## Unreleased
 
+## 1.10.12 (2026-10-30)
+
+Not tagged. **The CNS pin moves from the tag v2.1.0 to the tag v2.2.0. No other change.**
+
+Changed:
+
+- **The `cns` extra, the CI install line, `CNS_PIN` in `Tests/test_cns_independence.py` and the `CnsNotInstalled` hint**
+  now read `cns @ git+https://github.com/wking53214/CNS.git@v2.2.0`, with the comment `v2.2.0 =
+  ce6bd05578a7a3e3cafa0cfa1e9a2cca8a5f171f`. v2.2.0 is a lightweight tag, so the tag is that commit. The `cns` package at
+  v2.2.0 equals v2.1.0 except its version string; the release adds a composition layer beside it that ghost_tools does not
+  import. `swizzle_ref` and `assay_ref` are unchanged.
+- Tests that asserted the old pin text now assert the new one and nothing else about them changed: `Tests/test_workflow_pins.py`
+  (the docstring and three assertions), `Tests/test_install_hints.py` (the docstring and one input string) and the
+  `CNS_PIN` constant in `Tests/test_cns_independence.py`.
+- The Warden runs that pin this ghost_tools decline eight checks (mutate, kernel, structure, tests, project, secrets,
+  correlate, ledger), not seven. The count is eight because 1.10.11 lists the ledger as declined under `--no-ledger`, not
+  because Warden declined a new check. This entry changes no count in this repository's own text.
+
 ## 1.10.11 (2026-10-30)
 
 Not tagged. **Merge of `main` (1.10.9 plus the unmeasured-ledger change of PR #112, `f0eeaf7`) into the branch that carries 1.10.10 (the CNS pin at v2.1.0). One merge, no other change.**
