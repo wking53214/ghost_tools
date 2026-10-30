@@ -250,3 +250,12 @@ def test_the_readme_self_hosting_paragraph_states_what_the_record_says():
                      "not 1.10.9 or later"):
         assert sentence in section, sentence
     assert "no such page exists" not in README
+
+
+def test_stack_doc_names_the_five_circuit_repositories_and_not_the_old_seven():
+    """The circuit is five repositories since the owner ruling of 2026-10-29; STACK.md must not say seven."""
+    stack = (ROOT / "STACK.md").read_text(encoding="utf-8")
+    assert "Seven repositories" not in stack and "all seven" not in stack
+    assert "Five repositories" in stack
+    for name in ("ghost_tools", "SWIZZLE", "ASSAY", "Judge", "Warden"):
+        assert "/" + name + ")" in stack, name
