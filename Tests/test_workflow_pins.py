@@ -5,7 +5,7 @@ push to either of them could turn this repository's CI red (or green) with
 no change here. Every GitHub Action and every sibling the blocking jobs fetch
 is now a full commit SHA with a comment naming what it is and how to bump it.
 CNS is the one exception, by the owner's decision: it is installed from the tag
-`v2.1.0`, spelled the same in every circuit repository, because pip treats a
+`v2.2.0`, spelled the same in every circuit repository, because pip treats a
 tag URL and a commit URL as two different sources. The one place that
 deliberately follows the siblings' latest is a separate job leg that is
 named "non-blocking" and cannot fail the build.
@@ -95,12 +95,12 @@ def test_no_sibling_checkout_follows_a_branch_outside_the_matrix():
 def test_cns_is_installed_from_the_tag_in_the_workflow_and_the_extra():
     text = _text("tests.yml")
     pins = re.findall(r"CNS\.git@(\S+?)\"", text)
-    assert pins and all(p == "v2.1.0" for p in pins), pins
+    assert pins and all(p == "v2.2.0" for p in pins), pins
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     extra = re.findall(r"CNS\.git@([0-9a-zA-Z.]+)\"", pyproject)
-    assert extra and all(p == "v2.1.0" for p in extra), extra
+    assert extra and all(p == "v2.2.0" for p in extra), extra
     assert set(pins) == set(extra)
-    assert "# v2.1.0" in pyproject and "# v2.1.0" in text
+    assert "# v2.2.0" in pyproject and "# v2.2.0" in text
 
 
 def test_publish_triggers_on_both_v_and_capital_v_tags_and_strips_either():

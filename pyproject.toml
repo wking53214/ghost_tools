@@ -50,7 +50,7 @@ semantic = ["anthropic"]
 # (Tests/test_workflow_pins.py holds the two together).
 dev = ["pytest>=8", "pytest-xdist>=3", "ruff==0.15.22", "mypy==2.4.0"]
 # The CNS gate and row connector in ghost_buster/cns_adapter.py. Optional; ghost_tools runs without it.
-cns = ["cns @ git+https://github.com/wking53214/CNS.git@v2.1.0"]  # v2.1.0 = fde931ffa89aebec95647742256ad53033bd3d02
+cns = ["cns @ git+https://github.com/wking53214/CNS.git@v2.2.0"]  # v2.2.0 = ce6bd05578a7a3e3cafa0cfa1e9a2cca8a5f171f
 
 [tool.pytest.ini_options]
 testpaths = ["Tests"]
