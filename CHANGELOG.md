@@ -6,6 +6,18 @@ accepted by the publish workflow.
 
 ## Unreleased
 
+## 1.10.14 (2026-10-30)
+
+Not tagged. **A `--join` that names nothing readable is a usage error. Documentation corrections.**
+
+Fixed:
+
+- `ghost-buster DIR --join PATH` with an absent path or a plain file exited 0 and printed "boundary scan joined 2 repositories" with no unmeasured row, so a typo read as a checked seam. It is now exit 2 with a message naming the path (the `--json` error envelope under `--json`), for every `--join` and for a path typed at the interactive join prompt. Tests: five in `Tests/test_boundary.py` (absent path, plain file, one bad among good, JSON envelope, the prompt).
+
+Changed:
+
+- README: the non-goals line no longer lists Drafter and Burnish as if they were circuit members (they are released from the circuit and work on their own), and the quickstart sentence "run as written ... on 2026-10-22" is labelled as a dated record for 1.10.8. `docs/FAILURE_MODES.md` no longer says "seven repositories of the circuit": it names the five of the circuit and says Drafter and Burnish are released from it, and its Drafter sentences say a Drafter is optional. No code change, no test change.
+
 ## 1.10.13 (2026-10-30)
 
 Not tagged. **Documentation only: the circuit is five repositories since the owner ruling of 2026-10-29. No code change.**
