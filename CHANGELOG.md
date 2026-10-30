@@ -6,6 +6,32 @@ accepted by the publish workflow.
 
 ## Unreleased
 
+## 1.10.11 (2026-10-30)
+
+Not tagged. **Merge of `main` (1.10.9 plus the unmeasured-ledger change of PR #112, `f0eeaf7`) into the branch that carries 1.10.10 (the CNS pin at v2.1.0). One merge, no other change.**
+
+Changed:
+
+- **The two lines of work are both kept.** `main`'s change (below, formerly under Unreleased on `main`) and the branch's
+  1.10.10 work (the CNS pin at the tag v2.1.0, entry kept unchanged under 1.10.10) touch different files except this
+  CHANGELOG, the only textual conflict. The version is one patch above both, 1.10.11 (`pyproject.toml` and the README
+  version line). The CNS pin, `swizzle_ref` and `assay_ref` are unchanged from 1.10.10.
+
+Fixed (from `main`, PR #112):
+
+- **A ledger that was not written is listed in `--json` `unmeasured` like every other check that did not
+  run.** `_record_in_ledger` only printed a stderr line (`ledger SKIPPED at your request (--no-ledger)` or `ledger
+  NOT UPDATED (opt-in: ...)`) and never set `checks["ledger"]`, so a run with the ledger off, which is the default and
+  what the CI self-scan and `tools/self_baseline.py` do, had no machine-readable record that custody was off. It now
+  records `declined` under `--no-ledger` and `not_run` when the ledger was simply not requested, both `by_request`, so
+  `status` stays `ok`. The two stderr lines are unchanged. `Tests/test_honest_unmeasured.py` holds both cases.
+  Two pre-existing mutant sites named the exact lines this change touches and were re-aimed at the new lines, nothing
+  else about them changed: `declining the ledger leaves no receipt` in `Tests/test_ledger_mutants.py` and `the
+  ledger stage loses its receipt channel` in `Tests/test_pipeline_boundary_mutants.py`.
+- **The provenance test no longer needs pytest-xdist.** The subprocess run in
+  `test_the_two_tests_above_pass_in_a_tree_that_has_been_built` (`Tests/test_version_provenance.py`) passes
+  `-o addopts=` instead of `-n0`.
+
 ## 1.10.10 (2026-10-29)
 
 Not tagged. **The CNS pin moves to the tag v2.1.0. One change, nothing else.**

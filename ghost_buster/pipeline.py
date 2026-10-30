@@ -632,7 +632,7 @@ def _correlate(args, findings, checks, test_report, say, reasons=None) -> None:
     checks["correlate"] = RAN
 
 
-def _record_in_ledger(args, files, findings, checks, baseline_path, say) -> None:
+def _record_in_ledger(args, files, findings, checks, baseline_path, say, reasons=None) -> None:
     """Fold this run into the repository's history, then derive what the
     history says: which findings are old, and which way the series is
     going. Both are appended to `findings` as derived findings -- see
@@ -642,10 +642,15 @@ def _record_in_ledger(args, files, findings, checks, baseline_path, say) -> None
     # Opt-in: a default scan writes nothing into the folder it scans. An
     # explicit --ledger, or an explicit --ledger-path, is the request.
     wanted = args.ledger if args.ledger is not None else args.ledger_path is not None
+    reasons = {} if reasons is None else reasons
     if not wanted:
+        # Custody that was off is a fact about the scan, like an absent
+        # mutation run: it is recorded so --json lists it as unmeasured.
         if args.ledger is False:
-            _skipped("ledger", "--no-ledger", say)
+            _declined(checks, reasons, "ledger", "ledger", "--no-ledger", say)
         else:
+            checks["ledger"] = NOT_RUN
+            reasons["ledger"] = "opt-in and not requested (--ledger or --ledger-path FILE)"
             say("ghost_buster: ledger NOT UPDATED (opt-in: --ledger or --ledger-path FILE)"
                 + (f"; the existing {ledger_path} was left untouched" if ledger_path.is_file() else ""))
         return
@@ -763,7 +768,7 @@ def _gather(args, say) -> Evidence:
     # the diff, `--accept` would quietly erase history: a finding you
     # agreed to stop hearing about would also stop being remembered, and
     # a regression years later would read as a first sighting.
-    _record_in_ledger(args, files, findings, checks, baseline_path, say)
+    _record_in_ledger(args, files, findings, checks, baseline_path, say, reasons)
 
     paths_from_scan_root(findings, files, args.path)
 

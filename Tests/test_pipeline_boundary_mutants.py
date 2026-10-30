@@ -36,8 +36,8 @@ MUTANTS = [
      "    _correlate(args, findings, checks, test_report, say, reasons)",
      "    pass"),
     ("the ledger stage loses its receipt channel", _PIPE,
-     "def _record_in_ledger(args, files, findings, checks, baseline_path, say) -> None:",
-     "def _record_in_ledger(args, files, findings, checks, baseline_path) -> None:"),
+     "def _record_in_ledger(args, files, findings, checks, baseline_path, say, reasons=None) -> None:",
+     "def _record_in_ledger(args, files, findings, checks, baseline_path, reasons=None) -> None:"),
     ("main takes the presentation back", _CLI,
      "        _present(args, evidence, new, known, priors, archive, casefile_path)",
      "        _print_report(new, known, priors)\n"
