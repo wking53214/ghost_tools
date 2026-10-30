@@ -6,6 +6,15 @@ accepted by the publish workflow.
 
 ## Unreleased
 
+## 1.10.13 (2026-10-30)
+
+Not tagged. **Documentation only: the circuit is five repositories since the owner ruling of 2026-10-29. No code change.**
+
+Changed:
+
+- `STACK.md` now says five repositories (ASSAY, ghost_tools, SWIZZLE, Warden, Judge), that any actor's real change enters through Warden's claim seat, that DRAFTER, BURNISH and WATCHER_MCU are released from the circuit, that a bare `--stack` still requires all six checkouts, and that every run declines eight Ghost checks (the count is eight because ghost_tools 1.10.11 lists the ledger as declined under `--no-ledger`, not because Warden declined a new check). A new test, `Tests/test_docs_claims.py::test_stack_doc_names_the_five_circuit_repositories_and_not_the_old_seven`, holds it. No existing test needed an edit.
+- README section 7 no longer says `warden tagteam PATH --stack FOLDER` seats all seven. The README no longer cites the 1.10.7 run as the most recent: the run for any head is on the Actions page and the last checked runs are listed in the CNS repository's `docs/STATUS.md`. The self-hosting paragraph says the circuit it describes is the one before the ruling. The dated 7-declined-checks record is unchanged.
+
 ## 1.10.12 (2026-10-30)
 
 Not tagged. **The CNS pin moves from the tag v2.1.0 to the tag v2.2.0. No other change.**
