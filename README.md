@@ -72,7 +72,7 @@ Defaults, all 27 detectors and the mutant census: [docs/REFERENCE.md](docs/REFER
 **optional**: ghost_tools imports and runs without CNS, and nothing loads `cns`
 until a CNS-backed function is called. Install the pinned package from a checkout
 of this repository with `pip install -e '.[cns]'`, or install just CNS with
-`pip install "cns @ git+https://github.com/wking53214/CNS.git@v2.2.0"`. Do not ask PyPI
+`pip install "cns @ git+https://github.com/wking53214/CNS.git@v2.3.0"`. Do not ask PyPI
 for a `cns` extra of `ghost-tools`: the project of that name there is an older release
 (1.6.0) that has none, and it installs the wrong thing. Without CNS, `FindingGate`, `cns_chain` and
 `check_report` raise `CnsNotInstalled` (an `ImportError` naming that command),
@@ -124,6 +124,7 @@ that points at commit `fde931ffa89aebec95647742256ad53033bd3d02`. The same three
 Version 1.10.12 moved the pin to the tag `v2.2.0`, a lightweight tag, so the tag is the commit
 `ce6bd05578a7a3e3cafa0cfa1e9a2cca8a5f171f`. CNS 2.2.0 equals 2.1.0 in the `cns` package; it adds the composition layer
 beside it. The same three places carry the pin.
+As of 2026-10-31 the CNS pin is the tag `v2.3.0` (a lightweight tag: the tag is the commit `41592fb7b6735abe140f745353c09ba3eed8e7a2`), moved from `v2.2.0` so that the circuit installs against one CNS release; no code in this repository changed.
 
 ## 3. What It Does NOT Do / Non-Goals
 
