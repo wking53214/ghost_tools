@@ -43,12 +43,12 @@ def test_translate_confirmed_shape():
 )
 def test_mapping_table(status, outcome):
     r = cns_adapter.translate_status(status, {"path": "x.py"})
-    assert r.translation.cns_outcome == outcome
+    assert r.translation.cns_outcome == (outcome if r.translation.cns_present else None)
 
 
 def test_unknown_status_is_retry():
     r = cns_adapter.translate_status("not-a-status", {"path": "x.py"})
-    assert r.translation.cns_outcome == "retry"
+    assert r.translation.cns_outcome == ("retry" if r.translation.cns_present else None)
 
 
 def test_advisory_when_cns_forced_missing(monkeypatch):
@@ -70,3 +70,18 @@ def test_digest_stable_when_cns_present():
     a = cns_adapter.translate_status(Status.CONFIRMED, s)
     b = cns_adapter.translate_status(Status.CONFIRMED, s)
     assert a.translation.subject_digest == b.translation.subject_digest
+
+
+@pytest.mark.parametrize("status", list(Status) + ["not-a-status"])
+def test_no_outcome_is_claimed_when_cns_is_missing(monkeypatch, status):
+    # Without CNS nothing was judged, so no gate outcome (least of all "pass") is reported.
+    monkeypatch.setattr(
+        cns_adapter,
+        "cns_available",
+        lambda: cns_adapter.CnsAvailability(ok=False, missing=("cns.gate",), error="forced"),
+    )
+    r = cns_adapter.translate_status(status, {"path": "a.py"})
+    assert r.translation.cns_outcome is None
+    assert r.translation.cns_present is False
+    assert r.translation.information_lost
+    assert r.translation.reason

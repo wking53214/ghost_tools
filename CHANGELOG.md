@@ -6,6 +6,9 @@ accepted by the publish workflow.
 
 ## Unreleased
 
+### Fixed
+- `translate_status` with CNS absent reported the mapped outcome (`pass` for a confirmed or suppressed finding) beside `authority=advisory_only`. Nothing was judged, so `TranslationRecord.cns_outcome` is now `None` in that case. With CNS present nothing changes.
+
 ## 1.10.14 (2026-10-30)
 
 Not tagged. **A `--join` that names nothing readable is a usage error. Documentation corrections.**

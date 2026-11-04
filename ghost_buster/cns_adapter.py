@@ -3,7 +3,8 @@
 CNS is never required to import or run ghost_tools. When ``cns.gate`` is
 present, this module can produce a ``GateResult`` whose ``subject_digest``
 comes from CNS. When CNS is absent, it returns an advisory translation
-with no digest and no claimed gate authority.
+with no digest, no claimed gate authority and no outcome (``cns_outcome`` is
+None, never "pass").
 
 This module does not modify CNS. It does not vendor CNS. It does not
 treat a domain Status as a GateOutcome without an explicit mapping.
@@ -51,7 +52,7 @@ class CnsAvailability:
 class TranslationRecord:
     source_model: str
     source_value: str
-    cns_outcome: str
+    cns_outcome: Optional[str]  # None when CNS is absent: nothing was judged
     reason: str
     information_preserved: str
     information_lost: str
@@ -102,7 +103,7 @@ def translate_status(
         tr = TranslationRecord(
             source_model="ghost_tools.schema.Status",
             source_value=value,
-            cns_outcome=outcome,
+            cns_outcome=None,
             reason=f"{reason} | CNS unavailable: {avail.error or avail.missing}",
             information_preserved="status label and explicit mapping table only",
             information_lost=(
