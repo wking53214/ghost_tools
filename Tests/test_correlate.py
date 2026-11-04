@@ -21,6 +21,7 @@ from ghost_buster.correlate import (
     run_connectors,
 )
 from ghost_buster.schema import Category, Evidence, Finding, Layer, Severity, Status
+from empty_baseline import empty_baseline
 
 
 def _finding(detector, file, *, summary="s", severity=Severity.MAJOR,
@@ -508,13 +509,13 @@ def test_cli_reports_correlation_and_a_bad_correlate_with_is_a_usage_error(tmp_p
     proj.mkdir()
     (proj / "m.py").write_text("x = 1\n")
 
-    rc = main([str(proj), "--json", "--baseline", str(tmp_path / "b.json")])
+    rc = main([str(proj), "--json", "--baseline", empty_baseline(tmp_path)])
     out, err = capsys.readouterr()
     assert rc == 0
     assert "correlation found nothing to connect" in err
 
     rc = main([str(proj), "--correlate-with", str(tmp_path / "missing.json"),
-               "--baseline", str(tmp_path / "b.json")])
+               "--baseline", empty_baseline(tmp_path)])
     out, err = capsys.readouterr()
     assert rc == 2
     assert "--correlate-with" in err
@@ -525,7 +526,7 @@ def test_cli_no_correlate_skips_the_pass(tmp_path, capsys):
     proj = tmp_path / "proj"
     proj.mkdir()
     (proj / "m.py").write_text("x = 1\n")
-    rc = main([str(proj), "--no-correlate", "--baseline", str(tmp_path / "b.json")])
+    rc = main([str(proj), "--no-correlate", "--baseline", empty_baseline(tmp_path)])
     out, err = capsys.readouterr()
     assert rc == 0
     # v0.11.0: a skipped pass is no longer silent. What must be absent is the

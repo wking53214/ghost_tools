@@ -175,8 +175,87 @@ def test_the_static_gates_are_configured_and_run_in_ci():
 
 
 def test_the_readme_and_changelog_say_truthfully_what_is_tagged():
-    """No document claims "no release is tagged": older tags exist. What they say instead is checked."""
-    for name, text in (("README", README), ("CHANGELOG", CHANGELOG)):
-        assert "`v0.10.0`" in text and "matches no current version" in text, name
-        assert "not tagged yet" in text and "owner's decision" in text, name
+    """No document claims "no release is tagged": older tags exist. The CHANGELOG, which is history, says what it
+    said at the time and is held to that wording. The README does not list tags or say whether a release is tagged,
+    because such a sentence goes stale: it points at the repository's tags and releases instead."""
+    assert "`v0.10.0`" in CHANGELOG and "matches no current version" in CHANGELOG
+    assert "not tagged yet" in CHANGELOG and "owner's decision" in CHANGELOG
     assert not re.search(r"no release has been tagged", README + CHANGELOG, re.I)
+    assert "not tagged yet" not in README
+    assert "tags and releases" in README
+
+
+_README_SECTIONS = ("1b. How to install and run", "4. Brutally Honest Current Status & Gaps",
+                    "What works, and what proves it", "What does not work, or is not proven",
+                    "4b. Known defects", "4c. What broke and how it was fixed", "4d. Self-hosting",
+                    "4e. Ceilings code cannot fix")
+
+_MARKETING_WORDS = ("robust", "powerful", "production-ready", "production ready", "seamless", "comprehensive",
+                    "blazing", "enterprise", "battle-tested", "state-of-the-art")
+
+
+def test_the_readme_has_the_sections_that_say_what_works_and_what_does_not():
+    headings = re.findall(r"^#{2,3} (.+)$", README, re.M)
+    missing = [name for name in _README_SECTIONS if not any(h.startswith(name) for h in headings)]
+    assert not missing, f"the README lost these sections: {missing}"
+
+
+def test_the_readme_uses_none_of_the_marketing_words():
+    text = README.lower()
+    found = [word for word in _MARKETING_WORDS if re.search(r"\b" + re.escape(word), text)]
+    assert not found, f"plain sentences only; the README uses {found}"
+
+
+def test_every_test_the_readme_names_exists():
+    """A claim that something works names its proof, so the proof has to be there. A file is `Tests/x.py`; a test
+    is `Tests/x.py::name`, or `::name` right after another mention of the same file."""
+    current = None
+    missing = []
+    for match in re.finditer(r"(Tests/\w+\.py)|::(test_\w+)", README):
+        if match.group(1):
+            current = ROOT / match.group(1)
+            if not current.is_file():
+                missing.append(match.group(1))
+                current = None
+        elif current is not None and f"def {match.group(2)}(" not in current.read_text(encoding="utf-8"):
+            missing.append(f"{current.name}::{match.group(2)}")
+    assert not missing, f"the README names tests that do not exist: {missing}"
+
+
+def test_the_versions_in_the_readme_ledger_are_changelog_releases_on_the_same_date():
+    section = README[README.index("## 4c."):README.index("## 4d.")]
+    released = dict(re.findall(r"^## (\d+\.\d+\.\d+) \((\d{4}-\d{2}-\d{2})\)", CHANGELOG, re.M))
+    checked = 0
+    for version, date in re.findall(r"^- \*\*(\d+\.\d+\.\d+)(?: \((\d{4}-\d{2}-\d{2})\))?", section, re.M):
+        if version in released:       # 0.3.1 sits in the CHANGELOG's "0.4 and earlier" block, not under a heading
+            checked += 1
+            assert not date or date == released[version], (
+                f"{version}: README says {date}, CHANGELOG says {released[version]}")
+    assert checked, "the README ledger names no release the CHANGELOG has a heading for"
+
+
+# Read from the CNS repository's docs/evidence/SELFHOSTING_2026-10-23.md, the ghost_tools row (run 1, commit
+# 5a9154d3c76670f5bf1f46d845acadfed46d7bc8, version 1.10.8). The record is in another repository, so the numbers
+# are copied here: if the README changes them, this test names the file to re-read.
+_SELFHOSTING = {"commit": "5a9154d3c76670f5bf1f46d845acadfed46d7bc8", "decision": "ACCEPT_UNVERIFIED",
+                "passed": "2432", "skipped": "38", "declined": "7", "gaps": "10", "standing": "132"}
+
+
+def test_the_readme_self_hosting_paragraph_states_what_the_record_says():
+    section = README[README.index("## 4d."):README.index("## 4e.")]
+    assert "SELFHOSTING_2026-10-23.md" in section and "claude/horsemen-production-status-5wsndb" in section
+    for key, value in _SELFHOSTING.items():
+        assert value in section, f"the self-hosting paragraph lost the recorded {key}: {value}"
+    for sentence in ("What the record does not mean", "does not mean there are no secrets, no weak tests",
+                     "not 1.10.9 or later"):
+        assert sentence in section, sentence
+    assert "no such page exists" not in README
+
+
+def test_stack_doc_names_the_five_circuit_repositories_and_not_the_old_seven():
+    """The circuit is five repositories since the owner ruling of 2026-10-29; STACK.md must not say seven."""
+    stack = (ROOT / "STACK.md").read_text(encoding="utf-8")
+    assert "Seven repositories" not in stack and "all seven" not in stack
+    assert "Five repositories" in stack
+    for name in ("ghost_tools", "SWIZZLE", "ASSAY", "Judge", "Warden"):
+        assert "/" + name + ")" in stack, name

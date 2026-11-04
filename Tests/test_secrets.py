@@ -18,6 +18,7 @@ import pytest
 from ghost_buster.cli import main
 from ghost_buster.schema import Category, Severity, Status
 from ghost_buster.secrets import render_report, scan
+from empty_baseline import empty_baseline
 
 pytestmark = pytest.mark.skipif(
     shutil.which("gitleaks") is None,
@@ -227,7 +228,7 @@ def test_timeout_does_not_read_as_a_clean_scan(tmp_path):
 def test_cli_secrets_flag_runs_the_scan_and_reports(tmp_path, capsys):
     repo = _init_repo(tmp_path / "repo")
     _commit(repo, "config.py", f"AWS_KEY = '{AWS_KEY}'\n", "add key")
-    rc = main([str(repo), "--secrets", "--json", "--baseline", str(tmp_path / "b.json")])
+    rc = main([str(repo), "--secrets", "--json", "--baseline", empty_baseline(tmp_path)])
     out, err = capsys.readouterr()
     assert rc == 1
     assert "ghost_buster: secrets scan" in err
@@ -248,7 +249,7 @@ def test_cli_finds_a_committed_secret_with_no_flag_at_all(tmp_path, capsys):
     repo = _init_repo(tmp_path / "repo")
     _commit(repo, "config.py", f"AWS_KEY = '{AWS_KEY}'\n", "add key")
     (repo / "module.py").write_text("x = 1\n")
-    rc = main([str(repo), "--json", "--baseline", str(tmp_path / "b.json")])
+    rc = main([str(repo), "--json", "--baseline", empty_baseline(tmp_path)])
     out, err = capsys.readouterr()
     assert rc == 1, "a committed credential is a CRITICAL finding, so the run fails"
     assert '"detector": "committed_secret"' in out
@@ -260,7 +261,7 @@ def test_cli_no_secrets_skips_the_scan_and_leaves_a_receipt(tmp_path, capsys):
     repo = _init_repo(tmp_path / "repo")
     _commit(repo, "config.py", f"AWS_KEY = '{AWS_KEY}'\n", "add key")
     (repo / "module.py").write_text("x = 1\n")
-    rc = main([str(repo), "--json", "--no-secrets", "--baseline", str(tmp_path / "b.json")])
+    rc = main([str(repo), "--json", "--no-secrets", "--baseline", empty_baseline(tmp_path)])
     out, err = capsys.readouterr()
     assert rc == 0
     assert "committed_secret" not in out

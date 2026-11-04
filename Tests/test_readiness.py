@@ -18,6 +18,7 @@ from ghost_buster.readiness import (
     assess,
 )
 from ghost_buster.schema import Category, Evidence, Finding, Layer, Severity, Status
+from empty_baseline import empty_baseline
 
 
 def _f(detector, severity=Severity.MAJOR):
@@ -162,7 +163,7 @@ def test_the_cli_reads_retirements_from_the_case_file(tmp_path, capsys, monkeypa
                      fake.id, "m.py", "suppress")]
     cf.save()
     main([str(repo), "--no-tests", "--no-branches", "--no-project", "--no-correlate", "--no-ledger",
-          "--single-repo", "--baseline", str(tmp_path / "b.json")])
+          "--single-repo", "--baseline", empty_baseline(tmp_path)])
     out = capsys.readouterr().out
     assert "1 retired as false in the case file" in out
     assert "met      no committed secrets" in out

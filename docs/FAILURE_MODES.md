@@ -1,8 +1,9 @@
 # How AI-assisted workflows fail, and which horseman catches each
 
-A map from the failure modes of multi-model, vibe-coded work to the seven
-repositories of the circuit (ASSAY, ghost_tools, SWIZZLE, Warden, Drafter,
-Judge, Burnish). The list on the left is a research synthesis cross-checked
+A map from the failure modes of multi-model, vibe-coded work to the
+repositories that catch them: the five of the circuit (ASSAY, ghost_tools,
+SWIZZLE, Warden, Judge) and Drafter and Burnish, which are released from the
+circuit (owner ruling of 2026-10-29) and work on their own. The list on the left is a research synthesis cross-checked
 against this project's own history (2026-10-14); the right-hand columns say
 what is mechanically caught today, by what, and what is not caught by
 anything but a person. "Caught" means a detector, a gate or a rule exists,
@@ -34,7 +35,7 @@ the "looks done, isn't" tier.
 | **Context rot and bleed** across long sessions | Warden (by construction) | Every run is a fresh process with a fresh snapshot; nothing carries over but the tree and the grant | Rot inside the session that wrote the proposal |
 | **Invention sprawl**: new names and fake hashes minted per session | ghost_tools | `near_duplicate_function`, `duplicate_file`, `drifted_copy` (one thing under several names), `vestigial_domain_name`, `name_disagreement` (one value passed under two names), `placeholder_name` | A hash in a document that matches no commit. Designed, not built: it would false-positive on every honest cross-repository citation |
 | **Handoff loss between AIs**: flattened text, lossy summaries | ghost_tools, ASSAY | `flattened_copy` (an unparseable file that is a readable one with its whitespace destroyed; ASSAY 3.3), `merge_conflict_marker`, `unassessable_file` (a file nothing could read is a MAJOR finding, never a skip) | A summary that dropped a requirement |
-| **AI grading AI** | Warden, Judge, SWIZZLE | Separate seats, one-way imports: the Drafter proposes, Ghost re-inspects, the Judge decides, and none of them may grade its own work. SWIZZLE's oracles are frozen before the target runs. Warden cannot grant itself, and a stack name cannot authorize a change to Warden's own tree | Two seats filled by the same model family share biases. Fill the Judge from a different family when it matters |
+| **AI grading AI** | Warden, Judge, SWIZZLE | Separate seats, one-way imports: a real change enters through Warden's claim seat (or a Drafter, which is released from the circuit and optional), Ghost re-inspects, the Judge decides, and none of them may grade its own work. SWIZZLE's oracles are frozen before the target runs. Warden cannot grant itself, and a stack name cannot authorize a change to Warden's own tree | Two seats filled by the same model family share biases. Fill the Judge from a different family when it matters |
 
 ## Tier 3: agent behaviour and understanding
 
@@ -73,7 +74,7 @@ before it writes anything, and the Judge sees the score.
 
 - Re-verify every status label the scanner surfaces. The scanner proves the
   label is there; it does not prove it is false.
-- Read the `drafter_skipped` and `unmeasured` lists in Warden's output. A
+- Read the `unmeasured` list in Warden's output, and `drafter_skipped` when a Drafter was seated. A
   silent check is the defect; these are where the silence is named.
 - Fill the Judge from a different model family than the one that wrote the
   code, when the decision matters.

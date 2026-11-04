@@ -18,6 +18,7 @@ from ghost_buster.schema import Severity
 from ghost_buster.structure import (
     build_model, derive_findings, render_model, render_report, requirement_name,
 )
+from empty_baseline import empty_baseline
 
 PYPROJECT = '''[project]
 name = "demo"
@@ -441,14 +442,14 @@ def test_the_model_serialises_to_json(tmp_path):
 def test_the_cli_runs_it_by_default(tmp_path, capsys):
     root = _repo(tmp_path)
     main([str(root), "--no-tests", "--no-secrets", "--no-branches", "--no-ledger",
-          "--no-project", "--baseline", str(tmp_path / "b.json")])
+          "--no-project", "--baseline", empty_baseline(tmp_path)])
     assert "structure scan mapped" in capsys.readouterr().err
 
 
 def test_no_structure_leaves_a_receipt(tmp_path, capsys):
     root = _repo(tmp_path)
     main([str(root), "--no-structure", "--no-tests", "--no-secrets", "--no-branches",
-          "--no-ledger", "--no-project", "--baseline", str(tmp_path / "b.json")])
+          "--no-ledger", "--no-project", "--baseline", empty_baseline(tmp_path)])
     err = capsys.readouterr().err
     assert "structure scan SKIPPED at your request (--no-structure)" in err
     assert "structure scan mapped" not in err
@@ -459,7 +460,7 @@ def test_structure_out_writes_the_model(tmp_path, capsys):
     out = tmp_path / "model.json"
     main([str(root), "--structure-out", str(out), "--no-tests", "--no-secrets",
           "--no-branches", "--no-ledger", "--no-project",
-          "--baseline", str(tmp_path / "b.json")])
+          "--baseline", empty_baseline(tmp_path)])
     capsys.readouterr()
     assert json.loads(out.read_text())["distribution"] == "demo"
 

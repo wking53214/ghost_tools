@@ -6,17 +6,164 @@ accepted by the publish workflow.
 
 ## Unreleased
 
+## 1.10.14 (2026-10-30)
+
+Not tagged. **A `--join` that names nothing readable is a usage error. Documentation corrections.**
+
 Fixed:
 
-- **Step 1: a ledger that was not written is listed in `--json` `unmeasured` like every other check that did not
+- `ghost-buster DIR --join PATH` with an absent path or a plain file exited 0 and printed "boundary scan joined 2 repositories" with no unmeasured row, so a typo read as a checked seam. It is now exit 2 with a message naming the path (the `--json` error envelope under `--json`), for every `--join` and for a path typed at the interactive join prompt. Tests: five in `Tests/test_boundary.py` (absent path, plain file, one bad among good, JSON envelope, the prompt).
+
+Changed:
+
+- README: the non-goals line no longer lists Drafter and Burnish as if they were circuit members (they are released from the circuit and work on their own), and the quickstart sentence "run as written ... on 2026-10-22" is labelled as a dated record for 1.10.8. `docs/FAILURE_MODES.md` no longer says "seven repositories of the circuit": it names the five of the circuit and says Drafter and Burnish are released from it, and its Drafter sentences say a Drafter is optional. No code change, no test change.
+
+## 1.10.13 (2026-10-30)
+
+Not tagged. **Documentation only: the circuit is five repositories since the owner ruling of 2026-10-29. No code change.**
+
+Changed:
+
+- `STACK.md` now says five repositories (ASSAY, ghost_tools, SWIZZLE, Warden, Judge), that any actor's real change enters through Warden's claim seat, that DRAFTER, BURNISH and WATCHER_MCU are released from the circuit, that a bare `--stack` still requires all six checkouts, and that every run declines eight Ghost checks (the count is eight because ghost_tools 1.10.11 lists the ledger as declined under `--no-ledger`, not because Warden declined a new check). A new test, `Tests/test_docs_claims.py::test_stack_doc_names_the_five_circuit_repositories_and_not_the_old_seven`, holds it. No existing test needed an edit.
+- README section 7 no longer says `warden tagteam PATH --stack FOLDER` seats all seven. The README no longer cites the 1.10.7 run as the most recent: the run for any head is on the Actions page and the last checked runs are listed in the CNS repository's `docs/STATUS.md`. The self-hosting paragraph says the circuit it describes is the one before the ruling. The dated 7-declined-checks record is unchanged.
+
+## 1.10.12 (2026-10-30)
+
+Not tagged. **The CNS pin moves from the tag v2.1.0 to the tag v2.2.0. No other change.**
+
+Changed:
+
+- **The `cns` extra, the CI install line, `CNS_PIN` in `Tests/test_cns_independence.py` and the `CnsNotInstalled` hint**
+  now read `cns @ git+https://github.com/wking53214/CNS.git@v2.2.0`, with the comment `v2.2.0 =
+  ce6bd05578a7a3e3cafa0cfa1e9a2cca8a5f171f`. v2.2.0 is a lightweight tag, so the tag is that commit. The `cns` package at
+  v2.2.0 equals v2.1.0 except its version string; the release adds a composition layer beside it that ghost_tools does not
+  import. `swizzle_ref` and `assay_ref` are unchanged.
+- Tests that asserted the old pin text now assert the new one and nothing else about them changed: `Tests/test_workflow_pins.py`
+  (the docstring and three assertions), `Tests/test_install_hints.py` (the docstring and one input string) and the
+  `CNS_PIN` constant in `Tests/test_cns_independence.py`.
+- The Warden runs that pin this ghost_tools decline eight checks (mutate, kernel, structure, tests, project, secrets,
+  correlate, ledger), not seven. The count is eight because 1.10.11 lists the ledger as declined under `--no-ledger`, not
+  because Warden declined a new check. This entry changes no count in this repository's own text.
+
+## 1.10.11 (2026-10-30)
+
+Not tagged. **Merge of `main` (1.10.9 plus the unmeasured-ledger change of PR #112, `f0eeaf7`) into the branch that carries 1.10.10 (the CNS pin at v2.1.0). One merge, no other change.**
+
+Changed:
+
+- **The two lines of work are both kept.** `main`'s change (below, formerly under Unreleased on `main`) and the branch's
+  1.10.10 work (the CNS pin at the tag v2.1.0, entry kept unchanged under 1.10.10) touch different files except this
+  CHANGELOG, the only textual conflict. The version is one patch above both, 1.10.11 (`pyproject.toml` and the README
+  version line). The CNS pin, `swizzle_ref` and `assay_ref` are unchanged from 1.10.10.
+
+Fixed (from `main`, PR #112):
+
+- **A ledger that was not written is listed in `--json` `unmeasured` like every other check that did not
   run.** `_record_in_ledger` only printed a stderr line (`ledger SKIPPED at your request (--no-ledger)` or `ledger
   NOT UPDATED (opt-in: ...)`) and never set `checks["ledger"]`, so a run with the ledger off, which is the default and
   what the CI self-scan and `tools/self_baseline.py` do, had no machine-readable record that custody was off. It now
   records `declined` under `--no-ledger` and `not_run` when the ledger was simply not requested, both `by_request`, so
   `status` stays `ok`. The two stderr lines are unchanged. `Tests/test_honest_unmeasured.py` holds both cases.
-  Two pre-existing mutant sites named the exact lines this step changes and were re-aimed at the new lines, nothing
+  Two pre-existing mutant sites named the exact lines this change touches and were re-aimed at the new lines, nothing
   else about them changed: `declining the ledger leaves no receipt` in `Tests/test_ledger_mutants.py` and `the
   ledger stage loses its receipt channel` in `Tests/test_pipeline_boundary_mutants.py`.
+- **The provenance test no longer needs pytest-xdist.** The subprocess run in
+  `test_the_two_tests_above_pass_in_a_tree_that_has_been_built` (`Tests/test_version_provenance.py`) passes
+  `-o addopts=` instead of `-n0`.
+
+## 1.10.10 (2026-10-29)
+
+Not tagged. **The CNS pin moves to the tag v2.1.0. One change, nothing else.**
+
+Changed:
+
+- **Pin21 step 1: the CNS pin is `cns @ git+https://github.com/wking53214/CNS.git@v2.1.0`** (was the tag `v2.0.0`), with
+  the comment `# v2.1.0 = fde931ffa89aebec95647742256ad53033bd3d02` (the commit the annotated tag peels to; the tag
+  object is `0cc90472f7edc46c3bf40079e69fb03a06718e29`) on the `cns` extra and on the CI install line. `CNS_PIN` in
+  `Tests/test_cns_independence.py`, the install hint in `ghost_buster/cns_adapter.py` and the README follow, and the
+  README migration note names the move. `swizzle_ref` and `assay_ref` are unchanged. The suite, ruff and mypy were run
+  against the package installed from that tag on Python 3.13.
+- **Pin21 step 2: version 1.10.10** (`pyproject.toml` and the README version line) and this entry.
+
+Pre-existing tests edited (rule 5), each with the step that caused it: `Tests/test_workflow_pins.py` (step 1: the module
+docstring and the three assertions in `test_cns_is_installed_from_the_tag_in_the_workflow_and_the_extra` say `v2.1.0`,
+nothing else changed); `Tests/test_install_hints.py` (step 1: its docstring and the one input string in
+`test_the_checker_accepts_the_commands_that_work` quote the new pin; the assertion is unchanged); the `CNS_PIN` constant
+in `Tests/test_cns_independence.py` (step 1).
+
+## 1.10.9 (2026-10-24)
+
+**Wave F: a baseline path that does not exist is refused, false sentences about the pins and self-hosting are corrected, and suffixed finding ids no longer depend on the folder. Three changes, nothing else.**
+
+Fixed:
+
+- **Step 1: a `--baseline FILE` that does not exist is a usage error.** It was read as an empty baseline (exit 0,
+  `baseline.path` null, no unmeasured row), although the README's exit table says an unreadable baseline is exit 2.
+  Found by the round-6 audit and reproduced first. It is now refused before the scan: exit 2, one plain line, the
+  usual error envelope under `--json`. A folder or an unreadable file is refused the same way. `--accept` may still
+  create the file it names, an existing empty baseline still works, and a missing default baseline in the scanned
+  folder is unchanged. Six tests in `Tests/test_baseline_integrity.py`, three of which fail on the old code.
+
+- **Step 3: a suffixed finding id does not depend on the folder the scan ran in.** Findings that share detector, file
+  and summary get a suffix hashed from their place, and the place included the detail, which can name the file by its
+  absolute path. The same checkout scanned from two folders gave different suffixed ids, so a committed baseline entry
+  carrying one was stale in every other folder, including every throwaway clone. Reproduced (two copies of this
+  repository: both suffixed ids differed), then the scan folder is cut out of the detail before hashing. A baseline
+  written from the same folder under the old suffix still matches (kept among the previous ids); one written in
+  another folder never could. This repository's committed baseline holds no suffixed entry, so none of its ids
+  changed. Three tests in `Tests/test_finding_identity.py`, two of which fail on the old code.
+
+Changed:
+
+- **Step 2: false and stale sentences.** The README and the comments in `tests.yml` no longer call the SWIZZLE pin the
+  head of SWIZZLE's `main` or say ASSAY's `main` added only `recovered-originals/`; the pins are described as the last
+  set this repository's CI tested on its own, and the whole-stack check is named as the CNS `stack` job. The README
+  states no CI time per Python version. Its self-hosting paragraph now cites the CNS record
+  `docs/evidence/SELFHOSTING_2026-10-23.md` (ACCEPT_UNVERIFIED at 1.10.8, 7 declined checks, 10 gaps, 132 findings
+  standing), and known defect 7 names the Judge consequence of the baseline that hides one finding. The README ledger
+  gains the 1.10.9 entries. Two new tests: `test_no_pin_is_called_the_head_of_a_siblings_main` in
+  `Tests/test_workflow_pins.py` and `test_the_readme_self_hosting_paragraph_states_what_the_record_says` in
+  `Tests/test_docs_claims.py`.
+
+Pre-existing tests edited (rule 5), with the step that caused each: step 1 changes what a `--baseline` path that does
+not exist means, and 34 call sites in 12 test files (`test_archive`, `test_boundary`, `test_correlate`,
+`test_defaults`, `test_kernel`, `test_ledger`, `test_project`, `test_readiness`, `test_secrets`, `test_structure`,
+`test_testsuite`, `test_trust`) passed such a path without creating it, only to keep the scan from reading a baseline
+in the scanned folder. Each now passes `empty_baseline(tmp_path)` from the new `Tests/empty_baseline.py`, an existing
+file that holds `[]`, written beside the test's folder. Nothing else about those tests changed. The README's Python
+file count is 222 for the new helper. The CNS pin text (`@v2.0.0`) and the `swizzle_ref` and `assay_ref` pins are
+unchanged.
+
+## 1.10.8 (2026-10-22)
+
+**The CNS pin is the tag v2.0.0, and the README says what works, what does not and what broke. Two changes, nothing else.**
+
+Changed:
+
+- **Step 1: the CNS pin is `cns @ git+https://github.com/wking53214/CNS.git@v2.0.0`** (was the tag `v1.9.0`), with the
+  comment `# v2.0.0 = b13e5d2f9e0e4291725f82794b89117c3d840ac1` (the commit the annotated tag peels to) on the `cns`
+  extra and on the CI install line. `CNS_PIN` in `Tests/test_cns_independence.py`, the install hint in
+  `ghost_buster/cns_adapter.py` and the README follow. The CNS adapter, finding gate, report check and independence
+  tests, `Tests/test_workflow_pins.py` and `Tests/test_install_hints.py` were run against the package installed from
+  that tag on Python 3.11, 3.12 and 3.13. `swizzle_ref` and `assay_ref` are unchanged.
+- **Step 2: the README.** Sections 1b and 4 to 4e are new or rewritten (sections 1, 2, 2b, 3, 5 and 6 are edited in
+  places, and 2b gains the CNS migration note): how to install and run, what works and the
+  test, CI job or command that shows it, what does not work or is not proven, the open known defects, what broke and
+  how it was fixed (checked against this CHANGELOG, `git log` and the tests; entries the ledger offered that could not
+  be checked were dropped or corrected), self-hosting, and the ceilings code cannot fix. The sentences calling it a product
+  candidate and citing a commercial audit, and the words "each from a real defect" after the seven rules, were removed
+  because nothing in the repository backs them. The README no longer says which releases are tagged. The
+  `ghost-buster --version` banner text is untouched and is listed under the known defects as the owner's decision.
+  Four tests in `Tests/test_docs_claims.py` are new: the required README sections exist, none of a list of marketing
+  words is used, every test the README names exists, and the versions and dates in its ledger match this CHANGELOG.
+
+Pre-existing tests edited (rule 5), each with the step that caused it: `Tests/test_workflow_pins.py` (step 1: the
+module docstring and the three assertions in `test_cns_is_installed_from_the_tag_in_the_workflow_and_the_extra` say
+`v2.0.0`, nothing else changed); `Tests/test_install_hints.py` (step 1: its docstring and the one input string in
+`test_the_checker_accepts_the_commands_that_work` quote the new pin; the assertion is unchanged); the `CNS_PIN`
+constant in `Tests/test_cns_independence.py` (step 1); `test_the_readme_and_changelog_say_truthfully_what_is_tagged` in
+`Tests/test_docs_claims.py` (step 2: the README no longer lists tags, so the tag sentences are asserted of the CHANGELOG
+only, and the README is asserted not to say "not tagged yet"; the CHANGELOG assertions are unchanged).
 
 ## 1.10.7 (2026-10-22)
 

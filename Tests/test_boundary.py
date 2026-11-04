@@ -18,6 +18,7 @@ from ghost_buster.boundary import (
 from ghost_buster.cli import main
 from ghost_buster.pipeline import _collect_files
 from ghost_buster.schema import Severity
+from empty_baseline import empty_baseline
 
 GUARDED = '''import sys
 
@@ -287,7 +288,7 @@ def test_the_cli_does_not_prompt_when_stdin_is_not_a_terminal(tmp_path, capsys, 
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
     root = _consumer(tmp_path)
     rc = main([str(root), "--no-tests", "--no-secrets", "--no-branches", "--no-ledger",
-               "--no-project", "--no-structure", "--baseline", str(tmp_path / "b.json")])
+               "--no-project", "--no-structure", "--baseline", empty_baseline(tmp_path)])
     err = capsys.readouterr().err
     assert rc in (0, 1), "a prompt that reads a closed stdin is a crash, not a scan"
     assert "--join" in err, "it must still say the seams went unchecked"
@@ -299,7 +300,7 @@ def test_single_repo_flag_skips_the_question(tmp_path, capsys, monkeypatch):
     root = _consumer(tmp_path)
     rc = main([str(root), "--single-repo", "--no-tests", "--no-secrets", "--no-branches",
                "--no-ledger", "--no-project", "--no-structure",
-               "--baseline", str(tmp_path / "b.json")])
+               "--baseline", empty_baseline(tmp_path)])
     assert rc in (0, 1), "a prompt that reads a closed stdin is a crash, not a scan"
     assert "boundary scan joined" not in capsys.readouterr().err
 
@@ -308,8 +309,70 @@ def test_the_cli_joins_when_told_to(tmp_path, capsys):
     consumer, provider = _consumer(tmp_path), _provider(tmp_path)
     main([str(consumer), "--join", str(provider), "--no-tests", "--no-secrets",
           "--no-branches", "--no-ledger", "--no-project", "--no-structure",
-          "--baseline", str(tmp_path / "b.json")])
+          "--baseline", empty_baseline(tmp_path)])
     assert "boundary scan joined 2 repositories" in capsys.readouterr().err
+
+
+# A --join that names nothing readable used to print "boundary scan joined 2
+# repositories" with no unmeasured row and exit 0, so a typo read as a checked
+# seam. Like every other path argument it is now exit 2 naming the path.
+
+_QUIET_JOIN = ["--no-tests", "--no-secrets", "--no-branches", "--no-ledger",
+               "--no-project", "--no-structure"]
+
+
+def test_a_join_path_that_does_not_exist_is_a_usage_error(tmp_path, capsys):
+    consumer = _consumer(tmp_path)
+    missing = tmp_path / "no_such_repo"
+    code = main([str(consumer), "--join", str(missing), *_QUIET_JOIN,
+                 "--baseline", empty_baseline(tmp_path)])
+    err = capsys.readouterr().err
+    assert code == 2
+    assert str(missing) in err and "--join" in err
+    assert "boundary scan joined" not in err
+
+
+def test_a_join_path_that_is_a_plain_file_is_a_usage_error(tmp_path, capsys):
+    consumer = _consumer(tmp_path)
+    plain = tmp_path / "plain.txt"
+    plain.write_text("not a repository\n")
+    code = main([str(consumer), "--join", str(plain), *_QUIET_JOIN,
+                 "--baseline", empty_baseline(tmp_path)])
+    err = capsys.readouterr().err
+    assert code == 2
+    assert str(plain) in err and "--join" in err
+    assert "boundary scan joined" not in err
+
+
+def test_one_bad_join_among_good_ones_still_refuses(tmp_path, capsys):
+    consumer, provider = _consumer(tmp_path), _provider(tmp_path)
+    missing = tmp_path / "typo"
+    code = main([str(consumer), "--join", str(provider), "--join", str(missing), *_QUIET_JOIN,
+                 "--baseline", empty_baseline(tmp_path)])
+    err = capsys.readouterr().err
+    assert code == 2 and str(missing) in err
+    assert "boundary scan joined" not in err
+
+
+def test_a_bad_join_under_json_is_the_usual_error_envelope(tmp_path, capsys):
+    consumer = _consumer(tmp_path)
+    missing = tmp_path / "no_such_repo"
+    code = main([str(consumer), "--join", str(missing), "--json", *_QUIET_JOIN,
+                 "--baseline", empty_baseline(tmp_path)])
+    out = capsys.readouterr().out
+    assert code == 2
+    assert json.loads(out)["status"] == "error"
+
+
+def test_a_bad_path_typed_at_the_join_prompt_is_refused_the_same_way(tmp_path, capsys, monkeypatch):
+    consumer = _consumer(tmp_path)
+    missing = tmp_path / "typo"
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True, raising=False)
+    monkeypatch.setattr("builtins.input", lambda *a: str(missing))
+    code = main([str(consumer), *_QUIET_JOIN, "--baseline", empty_baseline(tmp_path)])
+    err = capsys.readouterr().err
+    assert code == 2 and str(missing) in err
+    assert "boundary scan joined" not in err
 
 
 # ---------------------------------------------------------------------------
@@ -330,7 +393,7 @@ def _boundary_state(root, tmp_path, capsys):
     ledger_path = tmp_path / "led.json"
     main([str(root), "--single-repo", "--no-tests", "--no-secrets", "--no-branches",
           "--no-project", "--no-structure", "--ledger-path", str(ledger_path),
-          "--baseline", str(tmp_path / "b.json")])
+          "--baseline", empty_baseline(tmp_path)])
     capsys.readouterr()
     return Ledger(ledger_path).runs[-1].checks["boundary"], ledger_path
 
@@ -367,6 +430,6 @@ def test_a_seamless_repo_never_grows_a_boundary_blind_spot(tmp_path, capsys):
         _, ledger_path = _boundary_state(root, tmp_path, capsys)
     main([str(root), "--single-repo", "--json", "--no-tests", "--no-secrets",
           "--no-branches", "--no-project", "--no-structure",
-          "--ledger-path", str(ledger_path), "--baseline", str(tmp_path / "b.json")])
+          "--ledger-path", str(ledger_path), "--baseline", empty_baseline(tmp_path)])
     rows = json.loads(capsys.readouterr().out)["findings"]
     assert not [r for r in rows if r.get("attributes", {}).get("check") == "boundary"]

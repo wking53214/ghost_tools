@@ -212,3 +212,51 @@ def test_the_round_trip_keeps_the_id():
     finding = _finding("claims 12, and 30 exist", identity_key="claims 12")
     restored = Finding.from_dict(finding.as_dict())
     assert restored.id == finding.id
+
+
+# ------------------------------------------- the suffix does not depend on the folder (1.10.9)
+
+def _twins(root):
+    """Two findings that need a suffix: same detector, file and summary, different lines, and a detail that names
+    the file by its absolute path, as `loop_invariant_call` does."""
+    from ghost_buster.schema import disambiguate_ids, scanning
+    pkg = root / "pkg"
+    pkg.mkdir(parents=True)
+    target = pkg / "mod.py"
+    target.write_text("x = 1\n", encoding="utf-8")
+    with scanning(root):
+        found = [
+            Finding(detector="loop_invariant_call", category=Category.COMPLEXITY, layer=Layer.MECHANICAL,
+                    severity=Severity.MINOR, status=Status.CONFIRMED, summary="a call in a loop",
+                    detail=f"{target}:{line} computes the same thing every iteration",
+                    evidence=Evidence(file=str(target), line_start=line, line_end=line))
+            for line in (10, 20)]
+        assert disambiguate_ids(found) == 2
+    return found
+
+
+def test_the_suffix_of_a_colliding_finding_is_the_same_from_two_folders(tmp_path):
+    """The suffix hashed the detail, the detail named the file by its absolute path, so the same checkout
+    copied to two folders gave different ids: 15 of 17 suffixed ids differed between two folders, and a
+    committed baseline entry that carried one was stale everywhere else."""
+    one = _twins(tmp_path / "first" / "checkout")
+    two = _twins(tmp_path / "elsewhere" / "deeper" / "checkout")
+    assert [f.id for f in one] == [f.id for f in two]
+
+
+def test_findings_that_need_a_suffix_still_get_distinct_ids(tmp_path):
+    found = _twins(tmp_path / "checkout")
+    assert len({f.id for f in found}) == 2
+    assert all(f.id.count("-") == 2 for f in found)
+
+
+def test_the_suffix_an_earlier_version_wrote_in_the_same_folder_still_matches(tmp_path):
+    """Before 1.10.9 the suffix hashed the detail as written. A baseline made from the same folder under that
+    scheme holds those ids, so they stay among the finding's previous ids."""
+    import hashlib
+    found = _twins(tmp_path / "checkout")[0]
+    base = found.id.rsplit("-", 1)[0]
+    where = "|".join(str(p) for p in (found.evidence.file, found.evidence.line_start, found.evidence.line_end,
+                                      found.detail))
+    earlier = f"{base}-{hashlib.sha256(where.encode('utf-8')).hexdigest()[:6]}"
+    assert earlier != found.id and earlier in found.previous_ids

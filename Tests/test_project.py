@@ -12,6 +12,7 @@ import pytest
 from ghost_buster.cli import main
 from ghost_buster.project import find_ci_config, render_report, scan
 from ghost_buster.schema import Severity
+from empty_baseline import empty_baseline
 
 WORKFLOW = "name: t\non: [push]\njobs:\n  t:\n    runs-on: ubuntu-latest\n"
 
@@ -150,14 +151,14 @@ def test_a_missing_directory_reports_that_it_could_not_run(tmp_path):
 def test_the_cli_runs_it_by_default(tmp_path, capsys):
     root = _repo(tmp_path, tests=1)
     main([str(root), "--no-tests", "--no-secrets", "--no-branches", "--no-ledger",
-          "--baseline", str(tmp_path / "b.json")])
+          "--baseline", empty_baseline(tmp_path)])
     assert "project scan found no CI configuration" in capsys.readouterr().err
 
 
 def test_no_project_leaves_a_receipt(tmp_path, capsys):
     root = _repo(tmp_path, tests=1)
     main([str(root), "--no-project", "--no-tests", "--no-secrets", "--no-branches",
-          "--no-ledger", "--baseline", str(tmp_path / "b.json")])
+          "--no-ledger", "--baseline", empty_baseline(tmp_path)])
     err = capsys.readouterr().err
     assert "project scan SKIPPED at your request (--no-project)" in err
     assert "no CI configuration" not in err

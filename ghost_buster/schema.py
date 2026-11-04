@@ -653,6 +653,27 @@ def authoritative(findings: Iterable[Finding]) -> List[Finding]:
     return [f for f in findings if f.status in AUTHORITATIVE]
 
 
+def _detail_without_root(f: Finding) -> str:
+    """`f.detail` with the folder the scan ran in cut out of any absolute path it names.
+
+    The suffix `disambiguate_ids` adds hashes the finding's place, and the place used the detail as written.
+    A detail that names a file by its absolute path ("/home/x/proj/pkg/mod.py:1485") therefore put the
+    checkout's location into the id: the same checkout scanned from two folders gave different suffixes
+    (reproduced on this repository: both `loop_invariant_call` ids that needed one differed), so a committed
+    baseline entry carrying a suffix was stale in every other folder, and every run on a throwaway clone.
+    The prefix is taken from the finding itself: its absolute file minus its project-relative file."""
+    detail = f.detail or ""
+    absolute, relative = f.evidence.absolute_file, f.evidence.file
+    roots = []
+    if absolute and relative and absolute.replace("\\", "/").endswith(relative):
+        roots.append(absolute[:len(absolute) - len(relative)])
+    if _SCAN_ROOT is not None:
+        roots.append(_SCAN_ROOT.rstrip("/") + "/")
+    for root in sorted(set(r for r in roots if len(r) > 1), key=len, reverse=True):
+        detail = detail.replace(root, "")
+    return detail
+
+
 def disambiguate_ids(findings: List[Finding]) -> int:
     """Give every finding its own id, and say how many needed help.
 
@@ -715,7 +736,7 @@ def disambiguate_ids(findings: List[Finding]) -> int:
         # reported twice, not two findings; they keep the shared id.
         def place(f: Finding):
             return (_nfc(f.evidence.file), f.evidence.line_start or 0,
-                    f.evidence.line_end or 0, f.detail)
+                    f.evidence.line_end or 0, _detail_without_root(f))
         distinct = {place(f) for f in group}
         if len(distinct) < 2:
             continue
@@ -731,6 +752,12 @@ def disambiguate_ids(findings: List[Finding]) -> int:
                     '|'.join(str(x) for x in (pfile,) + place(f)[1:]).encode('utf-8')).hexdigest()[:6],
                  pfile)
                 for pid, pfile in f._pre_nfc]
+            # The suffix this scheme gave before the detail lost the scan folder (1.10.9): a baseline written
+            # from the same folder under it still matches.
+            earlier = "|".join(str(part) for part in place(f)[:3] + (f.detail,))
+            earlier_id = f"{base}-{hashlib.sha256(earlier.encode('utf-8')).hexdigest()[:6]}"
+            if earlier_id != f.id:
+                f._pre_nfc.append((earlier_id, f.evidence.file))
             renamed += 1
     _disambiguate_previous_keys(findings)
     return renamed
@@ -750,13 +777,14 @@ def _disambiguate_previous_keys(findings: List[Finding]) -> None:
         for base in f._pre_key:
             by_old.setdefault(base, []).append(f)
     for base, group in by_old.items():
-        places = {(_nfc(f.evidence.file), f.evidence.line_start or 0, f.evidence.line_end or 0, f.detail)
+        places = {(_nfc(f.evidence.file), f.evidence.line_start or 0, f.evidence.line_end or 0, _detail_without_root(f))
                   for f in group}
         for f in group:
             if len(places) < 2:
                 suffixed = base
             else:
                 where = "|".join(str(part) for part in (
-                    _nfc(f.evidence.file), f.evidence.line_start or 0, f.evidence.line_end or 0, f.detail))
+                    _nfc(f.evidence.file), f.evidence.line_start or 0, f.evidence.line_end or 0,
+                    _detail_without_root(f)))
                 suffixed = f"{base}-{hashlib.sha256(where.encode('utf-8')).hexdigest()[:6]}"
             f._pre_key_ids = [suffixed if b == base else i for b, i in zip(f._pre_key, f._pre_key_ids, strict=True)]

@@ -43,7 +43,7 @@ jobs:
           # ls-remote https://github.com/wking53214/CNS.git
           # 'refs/tags/vX.Y.Z^{}') and change the tag here, in pyproject.toml
           # and in Tests/test_cns_independence.py together.
-          python -m pip install "cns @ git+https://github.com/wking53214/CNS.git@v1.9.0"  # v1.9.0 = da18e411743d4e3b0e783105394d845fb1c16746
+          python -m pip install "cns @ git+https://github.com/wking53214/CNS.git@v2.3.0"  # v2.3.0 = 41592fb7b6735abe140f745353c09ba3eed8e7a2
       - name: Install gitleaks
         # Pinned exact version, same as ruff above. Tests/test_secrets*.py
         # skip themselves if this binary is absent; installed here so CI
@@ -128,9 +128,12 @@ jobs:
     # the matrix below in the same commit (README, "Bumping the CI pins").
     # Tests/test_workflow_pins.py holds both to 40 hex characters.
     #
-    # The pins are the circuit's "tested set": the commits the whole stack was
-    # last tested together at. One or more commits behind a sibling's branch
-    # head is expected, not drift; the non-blocking leg reports real drift.
+    # The pins are this repository's "tested set": the last SWIZZLE and ASSAY
+    # commits this repository's CI tested on its own. They are not claimed to be
+    # the head of anyone's main. Whether the landing set of all the repositories
+    # works together is checked by the `stack` job in the CNS repository, not
+    # here. One or more commits behind a sibling's branch head is expected, not
+    # drift; the non-blocking leg reports real drift.
     name: swizzle-gate (${{ matrix.label }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -141,8 +144,8 @@ jobs:
         include:
           - label: pinned siblings
             blocking: true
-            swizzle_ref: 522658415b026ac3211d3fc130ba7da7c77cc400  # SWIZZLE 0.8.5 (pyproject), head of its main, tested set
-            assay_ref: a1732f2bf3748235661f65b96e590a6d44ace71c  # ASSAY 0.11.3 (_version.py), a commit on its main (main has since added only recovered-originals/), tested set
+            swizzle_ref: 522658415b026ac3211d3fc130ba7da7c77cc400  # SWIZZLE 0.8.5 (pyproject), tested set: the last one this repository's CI tested on its own
+            assay_ref: a1732f2bf3748235661f65b96e590a6d44ace71c  # ASSAY 0.11.3 (_version.py), tested set: the last one this repository's CI tested on its own
           - label: latest siblings, non-blocking
             blocking: false
             swizzle_ref: ""   # empty ref: the default branch

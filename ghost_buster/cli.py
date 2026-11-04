@@ -597,6 +597,17 @@ def _validate_ledger_path(args) -> Optional[int]:
                  "Create it first, or pass --create-ledger-dir to have it created")
 
 
+def _validate_joins(args) -> Optional[int]:
+    """Refuse a --join that is absent or not a folder, before the scan: exit 2
+    naming the path, like every other path argument. It used to print "boundary
+    scan joined 2 repositories" and exit 0, so a typo read as a checked seam."""
+    for path in args.join:
+        if not path.is_dir():
+            what = "does not exist" if not path.exists() else "is not a directory"
+            return _fail(args, EXIT_USAGE, "usage", f"error: --join {path} {what}")
+    return None
+
+
 def _validate_casefile(args) -> Optional[int]:
     """Refuse a --casefile (or a case file found in the scanned folder) that
     cannot be read, before the scan, the same way a bad baseline is refused:
@@ -607,6 +618,31 @@ def _validate_casefile(args) -> Optional[int]:
         Casefile(path)
     except CasefileError as e:
         return _fail(args, EXIT_USAGE, "usage", f"error: {e}")
+    return None
+
+
+def _validate_baseline(args) -> Optional[int]:
+    """Refuse a --baseline FILE that is not there, is a folder or cannot be read, before the scan.
+
+    A path the user named that does not exist used to be read as an empty baseline: exit 0, `baseline.path`
+    null, no row saying so, so a mistyped path looked like "nothing is suppressed" and a CI step passed on
+    nothing. With --accept the file is being created, so a missing file is fine there. A baseline found in the
+    scanned folder (no --baseline) is not named by the user and keeps its old rules."""
+    if args.baseline is None:
+        return None
+    path = Path(args.baseline)
+    if path.exists() and not path.is_file():
+        return _fail(args, EXIT_USAGE, "usage", f"error: --baseline {path} is a folder, not a baseline file")
+    if not path.exists():
+        if args.accept:
+            return None
+        return _fail(args, EXIT_USAGE, "usage",
+                     f"error: --baseline {path} does not exist. Nothing was scanned. Check the path, or pass "
+                     "--accept to create it")
+    try:
+        path.read_bytes()
+    except OSError as e:
+        return _fail(args, EXIT_USAGE, "usage", f"error: baseline {path} could not be read: {type(e).__name__}: {e}")
     return None
 
 
@@ -744,7 +780,15 @@ def _main(args) -> int:
     if result is not None:
         return result
 
+    result = _validate_joins(args)
+    if result is not None:
+        return result
+
     result = _validate_casefile(args)
+    if result is not None:
+        return result
+
+    result = _validate_baseline(args)
     if result is not None:
         return result
 
