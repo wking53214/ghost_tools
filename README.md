@@ -80,7 +80,8 @@ and `translate_status` returns its advisory record as before. CNS is never
 modified by this package.
 
 - `translate_status` maps one finding `Status` to a `cns.gate` outcome through a
-  table. With CNS absent it returns `authority=advisory_only` and no digest.
+  table. With CNS absent it returns `authority=advisory_only`, no digest and no outcome
+  (`cns_outcome` is None, never `pass`).
 - `FindingGate` is a `cns.gate.Gate` at the **alpha** end. It answers Ghost's own
   question, "is this finding established well enough to act on, before anything
   is drafted for it", and nothing about what a run's result means (that is the

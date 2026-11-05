@@ -109,7 +109,7 @@ def test_the_existing_adapter_still_answers_with_cns_blocked():
         assert cns_adapter.cns_available().ok is False
         r = cns_adapter.translate_status(Status.CONFIRMED, {"path": "a.py"})
         assert r.translation.authority == "advisory_only" and r.gate_result is None
-        assert r.translation.cns_outcome == "pass"
+        assert r.translation.cns_outcome is None
         print('ok')
         """
     )
