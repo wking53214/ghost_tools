@@ -24,7 +24,7 @@ MAX_MANIFEST_BYTES = 1_000_000
 
 COMMIT, TAG, BRANCH, NONE = "commit", "tag", "branch", "none"
 _COMMIT_RE = re.compile(r"^[0-9a-f]{7,40}$")
-_TAG_RE = re.compile(r"^v?\d+(\.\d+)*([.+-][0-9A-Za-z.]+)*$")
+_TAG_RE = re.compile(r"^[vV]?\d+(\.\d+)*([.+-][0-9A-Za-z.]+)*$")
 _REF_END = r"""[^\s"'#,;)\]]+"""
 
 

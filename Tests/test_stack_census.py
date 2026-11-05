@@ -64,7 +64,8 @@ def snapshot(root: Path) -> dict:
 
 @pytest.mark.parametrize("ref,kind", [
     ("", "none"), (SHA_A, "commit"), ("3b465db", "commit"), ("v1.4.0", "tag"),
-    ("1.4.0", "tag"), ("main", "branch"), ("feature/x", "branch"),
+    ("1.4.0", "tag"), ("V1.9.1", "tag"), ("V0.1.0", "tag"),
+    ("main", "branch"), ("feature/x", "branch"),
 ])
 def test_a_ref_is_classified_by_what_it_names(ref, kind):
     assert pins.classify_ref(ref) == kind
