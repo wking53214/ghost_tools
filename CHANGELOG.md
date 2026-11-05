@@ -6,6 +6,9 @@ accepted by the publish workflow.
 
 ## Unreleased
 
+### Changed
+- The `--version` banner backronym reads "FFF: Founders' Favorite Fumbles" (owner decision, 2026-11-05); known defect 1 in the README is closed. No behaviour other than that text changes, and the circuit's pinned ghost_tools commit is unchanged until the next repin.
+
 ### Fixed
 - `translate_status` with CNS absent reported the mapped outcome (`pass` for a confirmed or suppressed finding) beside `authority=advisory_only`. Nothing was judged, so `TranslationRecord.cns_outcome` is now `None` in that case. With CNS present nothing changes.
 
