@@ -18,7 +18,7 @@ from pathlib import Path
 #: The backronym. ghost_tools catalogues the mistakes that founders make
 #: often enough to be worth automating away, so this is less a joke than an
 #: accurate table of contents.
-BACKRONYM = "FFF: Founders' Favorite Fuckups"
+BACKRONYM = "FFF: Founders' Favorite Fumbles"
 
 _DISTRIBUTION = "ghost-tools"
 
