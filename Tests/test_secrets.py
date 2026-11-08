@@ -18,6 +18,7 @@ import pytest
 from ghost_buster.cli import main
 from ghost_buster.schema import Category, Severity, Status
 from ghost_buster.secrets import render_report, scan
+from empty_baseline import empty_baseline
 
 pytestmark = pytest.mark.skipif(
     shutil.which("gitleaks") is None,
@@ -26,6 +27,22 @@ pytestmark = pytest.mark.skipif(
 )
 
 AWS_KEY = "AKIAABCDEFGHIJKLMNOP"  # gitleaks:allow -- fixture, not a real key
+
+#: A fake GitHub token, and it has to LOOK fake to a human and RANDOM to
+#: gitleaks, which are different requirements.
+#:
+#: The first version of this fixture was `ghp_` followed by
+#: 1234567890abcdefghijklmnopqrstuvwxyz. gitleaks 8.21.2 matched it.
+#: gitleaks 8.28.0 does not: the github-pat rule gained an entropy floor,
+#: and a visible sequence scores below it -- which is a good change, aimed
+#: at exactly the placeholder tokens people paste into documentation.
+#:
+#: Measured 2026-09-17 under 8.28.0: the sequence scored below the floor
+#: and was not reported; the value below scores 5.22 and is. So the test
+#: that asserts two rules fire on one commit was asserting something about
+#: one pinned gitleaks release rather than about this tool, and it failed
+#: the moment anybody installed a current one.
+GH_TOKEN = "ghp_A7xQ2mZk9LpR4vNw8TbG1cYh6JdE3sUf0iOa"  # gitleaks:allow -- fixture
 
 
 def _git(repo: Path, *args: str) -> None:
@@ -211,7 +228,7 @@ def test_timeout_does_not_read_as_a_clean_scan(tmp_path):
 def test_cli_secrets_flag_runs_the_scan_and_reports(tmp_path, capsys):
     repo = _init_repo(tmp_path / "repo")
     _commit(repo, "config.py", f"AWS_KEY = '{AWS_KEY}'\n", "add key")
-    rc = main([str(repo), "--secrets", "--json", "--baseline", str(tmp_path / "b.json")])
+    rc = main([str(repo), "--secrets", "--json", "--baseline", empty_baseline(tmp_path)])
     out, err = capsys.readouterr()
     assert rc == 1
     assert "ghost_buster: secrets scan" in err
@@ -232,7 +249,7 @@ def test_cli_finds_a_committed_secret_with_no_flag_at_all(tmp_path, capsys):
     repo = _init_repo(tmp_path / "repo")
     _commit(repo, "config.py", f"AWS_KEY = '{AWS_KEY}'\n", "add key")
     (repo / "module.py").write_text("x = 1\n")
-    rc = main([str(repo), "--json", "--baseline", str(tmp_path / "b.json")])
+    rc = main([str(repo), "--json", "--baseline", empty_baseline(tmp_path)])
     out, err = capsys.readouterr()
     assert rc == 1, "a committed credential is a CRITICAL finding, so the run fails"
     assert '"detector": "committed_secret"' in out
@@ -244,7 +261,7 @@ def test_cli_no_secrets_skips_the_scan_and_leaves_a_receipt(tmp_path, capsys):
     repo = _init_repo(tmp_path / "repo")
     _commit(repo, "config.py", f"AWS_KEY = '{AWS_KEY}'\n", "add key")
     (repo / "module.py").write_text("x = 1\n")
-    rc = main([str(repo), "--json", "--no-secrets", "--baseline", str(tmp_path / "b.json")])
+    rc = main([str(repo), "--json", "--no-secrets", "--baseline", empty_baseline(tmp_path)])
     out, err = capsys.readouterr()
     assert rc == 0
     assert "committed_secret" not in out
@@ -255,7 +272,7 @@ def test_multiple_rules_or_lines_in_one_commit_are_distinct_findings(tmp_path):
     repo = _init_repo(tmp_path / "repo")
     _commit(
         repo, "config.py",
-        f"AWS_KEY = '{AWS_KEY}'\nGH_TOKEN = 'ghp_1234567890abcdefghijklmnopqrstuvwxyz'\n",  # gitleaks:allow
+        f"AWS_KEY = '{AWS_KEY}'\nGH_TOKEN = '{GH_TOKEN}'\n",
         "add two secrets",
     )
 

@@ -1,5 +1,6 @@
-"""README.md makes two mechanical claims about itself, and both are checked
-here rather than promised:
+"""The documentation makes mechanical claims about the tool, and they are
+checked here rather than promised. Since the 2026-09-28 README rewrite the
+inventory lives in docs/REFERENCE.md, linked from the README:
 
   * the table under "What it checks" lists every registered detector, by
     name, and nothing that is not one;
@@ -20,11 +21,12 @@ from ghost_buster.mechanical import registered_detectors
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 README = (ROOT / "README.md").read_text()
+REFERENCE = (ROOT / "docs" / "REFERENCE.md").read_text()
 
 
 def _section(title: str, until: str) -> str:
-    start = README.index(f"## {title}")
-    return README[start:README.index(f"## {until}", start)]
+    start = REFERENCE.index(f"## {title}")
+    return REFERENCE[start:REFERENCE.index(f"## {until}", start)]
 
 
 def test_the_inventory_table_names_every_registered_detector_and_no_other():
@@ -71,8 +73,12 @@ _FOREIGN = {
 }
 
 
+def test_the_readme_links_the_reference():
+    assert "docs/REFERENCE.md" in README, "README no longer points at the checked inventory"
+
+
 def test_every_flag_the_ghost_buster_section_mentions_exists():
-    section = README[: README.index("## ghost_writer")]
+    section = README + REFERENCE
     mentioned = set(re.findall(r"`(--[a-z][a-z0-9-]*)", section))
     unknown = mentioned - _cli_flags() - _FOREIGN
     assert not unknown, f"README mentions flags the CLI does not have: {sorted(unknown)}"
@@ -85,3 +91,33 @@ def test_the_defaults_table_agrees_with_the_parser():
     declines = set(re.findall(r"\| on \| `(--no-[a-z-]+)` \|", table))
     assert declines, "the defaults table lost its shape"
     assert declines <= _cli_flags(), sorted(declines - _cli_flags())
+
+
+_WORDS = {"twenty-five": 25, "twenty-six": 26, "twenty-seven": 27, "twenty-eight": 28, "twenty-nine": 29,
+          "thirty": 30, "thirty-one": 31, "thirty-two": 32}
+
+
+def test_the_defaults_table_states_the_registered_detector_count():
+    """'the twenty-seven registered detectors' was prose, and prose does not
+    notice an added detector."""
+    said = re.search(r"\| the ([a-z-]+) registered detectors \|", REFERENCE)
+    assert said, "the defaults table no longer states how many detectors run"
+    assert _WORDS[said.group(1)] == len(registered_detectors())
+
+
+def test_the_defaults_table_agrees_with_the_parser_about_what_is_opt_in():
+    """The ledger row said 'on, --no-ledger' while the parser (and the README)
+    made it opt-in. A row marked off must not be turned on by default."""
+    table = _section("What runs by default", "What it checks")
+    from ghost_buster import cli
+    parser = cli._build_parser()
+    ledger_default = next(a.default for a in parser._actions if "--ledger" in a.option_strings)
+    assert ledger_default is None            # None means: only when asked for
+    row = next(line for line in table.splitlines() if line.startswith("| ledger"))
+    assert "**off**" in row and "--ledger" in row
+
+
+def test_the_new_flags_are_documented_where_a_reader_looks():
+    for flag in ("--create-ledger-dir", "--verbose", "--ledger-path"):
+        assert flag in README, f"README does not mention {flag}"
+    assert "GHOST_TOOLS_LOG" in README

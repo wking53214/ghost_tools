@@ -165,6 +165,24 @@ def test_the_split_functions_clear_the_threshold_that_named_them():
     assert flagged == {"_build_parser"}, f"unexpectedly long: {sorted(flagged)}"
 
 
+def test_main_hands_the_presentation_to_present():
+    """Presentation lives in _present(); main() decides and delegates.
+
+    The line count used to hold this seam by accident. main() was 76 lines,
+    so pasting the report back into it crossed long_function's 80 and the
+    threshold test above failed. The #73 split took main() to 55, the same
+    paste lands near 65, and the mutant 'main takes the presentation back'
+    survived. Asked directly instead: main() calls _present() and never
+    calls the report printer itself."""
+    tree = ast.parse((ROOT / "ghost_buster" / "cli.py").read_text())
+    main = next(node for node in tree.body
+                if isinstance(node, ast.FunctionDef) and node.name == "_main")
+    called = {node.func.id for node in ast.walk(main)
+              if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)}
+    assert "_present" in called
+    assert "_print_report" not in called
+
+
 def test_the_gathering_is_four_named_stages():
     """gather() reads as the order the checks run in. Each stage is a
     function with a name, so the order is still one readable sequence."""
@@ -184,7 +202,14 @@ def test_no_stage_reports_without_the_receipt_channel():
         if not isinstance(node, ast.FunctionDef):
             continue
         if node.name in ("to_stderr", "_resolve_join_mode", "_state",
-                         "_collect_files", "_head_commit"):
+                         "_collect_files", "_collect", "_head_commit",
+                         # collection and size helpers: pure, print nothing
+                         "_collect_detail", "_walk_candidates", "_one_per_real_file",
+                         "_is_candidate", "_count_candidates", "render_skipped_dirs",
+                         "_max_file_bytes", "parse_size", "_withhold_oversize",
+                         "_unassessable", "_run_detectors",
+                         # pure: records a reason in a dict, prints nothing
+                         "_note_if_not_run"):
             continue
         names = [a.arg for a in node.args.args]
         assert "say" in names, f"{node.name} has no receipt channel"

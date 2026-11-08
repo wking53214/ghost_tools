@@ -2,8 +2,16 @@ name: tests
 
 on:
   push:
-    branches: [main]
+    # claude/** is the horsemen branch pattern: without it a push to a working
+    # branch ran no CI at all (the workflow fired on main and on pull requests
+    # only), so a branch could be green here only by hand.
+    branches: [main, "claude/**"]
   pull_request:
+
+# Least privilege for every job below: they read the repository and write
+# nothing (no job pushes, comments or publishes). publish.yml declares its own.
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -11,10 +19,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12"]
+        python-version: ["3.11", "3.12", "3.13"]
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install
@@ -22,43 +30,55 @@ jobs:
           python -m pip install --upgrade pip
           # pytest-xdist is not optional: pyproject sets `addopts = "-n auto"`,
           # so pytest exits with `unrecognized arguments: -n` without it. It also
-          # cuts this job from ~16 minutes to a few, because the suite is 625
+          # cuts this job from ~16 minutes to a few, because the suite is 659
           # mutants each running a whole test file in a fresh interpreter.
-          python -m pip install pytest pytest-xdist ruff==0.15.22
+          python -m pip install pytest pytest-xdist ruff==0.15.22 mypy==2.4.0
+          # The cns extra of pyproject.toml, same pin. Installed by name rather than
+          # as ".[cns]" because this job runs from source and never builds the
+          # package. Without it Tests/test_cns_*.py skip themselves. A test
+          # holds this line equal to the extra. The pin is the tag spelling, the same
+          # in every circuit repository (pip treats a tag URL and a commit URL
+          # as two different sources); the trailing comment names the commit
+          # the tag peels to. To bump: resolve the new tag to its commit (git
+          # ls-remote https://github.com/wking53214/CNS.git
+          # 'refs/tags/vX.Y.Z^{}') and change the tag here, in pyproject.toml
+          # and in Tests/test_cns_independence.py together.
+          python -m pip install "cns @ git+https://github.com/wking53214/CNS.git@v2.3.0"  # v2.3.0 = 41592fb7b6735abe140f745353c09ba3eed8e7a2
       - name: Install gitleaks
         # Pinned exact version, same as ruff above. Tests/test_secrets*.py
         # skip themselves if this binary is absent; installed here so CI
         # actually exercises the real thing instead of skipping forever.
-        run: |
-          curl -sSL -o /tmp/gitleaks.tar.gz \
-            https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz
-          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
-          sudo mv /tmp/gitleaks /usr/local/bin/gitleaks
-          gitleaks version
+        # The download is checked against the sha256 written below (the
+        # digest published in the release's gitleaks_8.28.0_checksums.txt);
+        # a mismatch fails the job before anything is extracted. To bump,
+        # see .github/scripts/install-gitleaks.sh and change both jobs.
+        run: .github/scripts/install-gitleaks.sh 8.28.0 a65b5253807a68ac0cafa4414031fd740aeb55f54fb7e55f386acb52e6a840eb
       - name: Test
         run: python -m pytest -q
       - name: Lint (hard gate)
-        run: ruff check .
+        run: python -m ruff check .  # the pinned install, never a ruff that happens to be on PATH
+      - name: Types (hard gate)
+        # Configuration and the list of module-level exclusions, each with its
+        # reason, are in [tool.mypy] of pyproject.toml.
+        run: python -m mypy
 
   self-scan:
     # The tool that argues silence is the defect scans itself on every push.
-    # The baseline holds three MAJOR findings, each with its reason in the
-    # case file beside it; everything MINOR is reported on every run and
-    # gates nothing. A new MAJOR or CRITICAL fails this job (exit 1).
+    # The baseline holds one MAJOR finding (a test holds this sentence to the
+    # file), with its reason in the case file beside it; everything MINOR is
+    # reported on every run and gates nothing. A new MAJOR or CRITICAL fails
+    # this job (exit 1).
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           fetch-depth: 0   # the secrets scan reads history
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
         with:
           python-version: "3.12"
       - name: Install gitleaks
-        run: |
-          curl -sSL -o /tmp/gitleaks.tar.gz \
-            https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz
-          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
-          sudo mv /tmp/gitleaks /usr/local/bin/gitleaks
+        # Same pin and the same sha256 check as the test job.
+        run: .github/scripts/install-gitleaks.sh 8.28.0 a65b5253807a68ac0cafa4414031fd740aeb55f54fb7e55f386acb52e6a840eb
       - name: ghost-buster on ghost_tools
         # --no-tests: the test job above runs the suite; --no-branches: a
         # PR checkout has no base to compare; --no-ledger: nothing is
@@ -66,4 +86,140 @@ jobs:
         # run long. Each is a declined check and says so in the output.
         run: |
           python -m ghost_buster.cli . --no-tests --no-branches --single-repo --no-ledger \
-            --casefile .ghost_casefile.json
+            --casefile .ghost_casefile.json --baseline .ghost_baseline.json
+
+  swizzle-gate:
+    # SWIZZLE replays its archived regression cases and its seed catalogue
+    # against the base of this change and against the change itself.
+    # `swizzle diff` exits 1 when a case that passed now fails (regressed) or
+    # a failing case fails worse (worsened). Escapes already present on the
+    # base are SWIZZLE's findings, not this job's failures: only a change
+    # that makes ghost_buster worse at something it used to get right turns
+    # this red. Measured locally: ~130s for both buckets, and disabling the
+    # writability check in operate.py is caught
+    # (claim_rewritten_while_the_suite_runs, NONE -> HIGH).
+    #
+    # A case that cannot be measured on either side fails the job
+    # (--fail-on-unmeasured, SWIZZLE 18f1afc or later): a candidate that
+    # cannot run at all must not pass as "unchanged".
+    #
+    # SWIZZLE and ASSAY are both public (Apache-2.0, Oct 2026), so the
+    # gate needs no secret and always runs. It used to read SWIZZLE with
+    # LIBRARY_READ_TOKEN and quietly skip itself with a warning when the
+    # secret was absent; that skip is gone with the need for it.
+    #
+    # The ASSAY step scores both revisions against ASSAY's
+    # published answer key (real damage, correct answers written down in
+    # MANIFEST.md) and fails if any specimen's outcome got worse. It also
+    # fails (exit 2) if the answer key cannot be proven by ASSAY's own
+    # verify_manifest.py, so a drifted corpus cannot pass as "unchanged".
+    #
+    # REPRODUCIBILITY. The two siblings are pinned to full commit SHAs, so a
+    # push to either one's default branch cannot turn this job red or green on
+    # its own. The pinned leg is the blocking gate. The `latest` leg checks
+    # out each sibling's default branch instead, is named "non-blocking", and
+    # runs with continue-on-error: it tells us early that a sibling moved in a
+    # way that needs a pin bump, and gates nothing.
+    #
+    # TO BUMP A PIN: read the new HEAD of the sibling
+    #   git ls-remote https://github.com/wking53214/SWIZZLE.git HEAD
+    #   git ls-remote https://github.com/wking53214/ASSAY.git HEAD
+    # run this job against it, and change the SHA and the version comment in
+    # the matrix below in the same commit (README, "Bumping the CI pins").
+    # Tests/test_workflow_pins.py holds both to 40 hex characters.
+    #
+    # The pins are this repository's "tested set": the last SWIZZLE and ASSAY
+    # commits this repository's CI tested on its own. They are not claimed to be
+    # the head of anyone's main. Whether the landing set of all the repositories
+    # works together is checked by the `stack` job in the CNS repository, not
+    # here. One or more commits behind a sibling's branch head is expected, not
+    # drift; the non-blocking leg reports real drift.
+    name: swizzle-gate (${{ matrix.label }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: ${{ !matrix.blocking }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: pinned siblings
+            blocking: true
+            swizzle_ref: 522658415b026ac3211d3fc130ba7da7c77cc400  # SWIZZLE 0.8.5 (pyproject), tested set: the last one this repository's CI tested on its own
+            assay_ref: a1732f2bf3748235661f65b96e590a6d44ace71c  # ASSAY 0.11.3 (_version.py), tested set: the last one this repository's CI tested on its own
+          - label: latest siblings, non-blocking
+            blocking: false
+            swizzle_ref: ""   # empty ref: the default branch
+            assay_ref: ""
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          path: ghost_tools
+          fetch-depth: 0   # the baseline revision is checked out from history
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          repository: wking53214/SWIZZLE
+          ref: ${{ matrix.swizzle_ref }}
+          path: swizzle
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          repository: wking53214/ASSAY
+          ref: ${{ matrix.assay_ref }}
+          path: assay
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
+        with:
+          python-version: "3.11"
+      - name: Give git an identity
+        # ghost_buster --operate commits each cut. A hosted runner has no git
+        # user, so without this every such commit is refused, both sides of
+        # the diff break alike, and nothing can be seen to regress.
+        run: |
+          git config --global user.name swizzle-gate
+          git config --global user.email swizzle-gate@invalid
+      - name: Install SWIZZLE
+        # pytest is not optional. SWIZZLE runs ghost_buster with its own
+        # interpreter, and --operate runs each case's suite with pytest.
+        # Without it both sides fail the suite-dependent cases identically,
+        # nothing can regress, and the gate passes whatever changed: measured,
+        # the disabled writability check above went through as "unchanged".
+        run: python -m pip install ./swizzle pytest
+      - name: Install numpy and matplotlib for ASSAY's verifier
+        # `swizzle assay` runs ASSAY's verify_manifest.py with the interpreter
+        # that runs swizzle, so these go into that interpreter. Since ASSAY
+        # 0.11.1 a claim that needs numpy or matplotlib and cannot run is a
+        # skipped claim, and a skipped claim exits 1 ("not proven"): without
+        # them the gate would fail, not pass. numpy 2.5.4 needs Python 3.12 or
+        # newer; on 3.11 the newest numpy is 2.4.6. The branch is on the
+        # interpreter actually in use, so changing python-version above
+        # cannot leave a version that cannot be installed.
+        run: |
+          if python -c 'import sys; sys.exit(0 if sys.version_info >= (3, 12) else 1)'; then
+            numpy=2.5.4
+          else
+            numpy=2.4.6
+          fi
+          python -m pip install "numpy==$numpy" matplotlib==3.11.2
+      - name: Regression gate
+        # SWIZZLE resolves `corpus/` from its working directory.
+        working-directory: swizzle
+        env:
+          GHOST_TOOLS: ${{ github.workspace }}/ghost_tools
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          # The base revision is resolved by a script with three outcomes (see
+          # it, and Tests/test_swizzle_base.py): a base (run the gate), the
+          # repository's very first commit (the one explicit, announced skip),
+          # or a failure. A missing base on a pull request or on a push to a
+          # repository with history FAILS the job; it used to warn and pass.
+          rc=0
+          BASE=$("$GHOST_TOOLS/.github/scripts/resolve-swizzle-base.sh" "$GHOST_TOOLS") || rc=$?
+          if [ "$rc" -eq 3 ]; then
+            echo "swizzle-gate: first commit of the repository, nothing to compare against (skipped on purpose, see the warning above)"
+            exit 0
+          elif [ "$rc" -ne 0 ]; then
+            exit "$rc"
+          fi
+          python -m swizzle diff --ghost "$BASE" --ghost "$GHOST_TOOLS" --fail-on-unmeasured
+          python -m swizzle diff --ghost "$BASE" --ghost "$GHOST_TOOLS" --seeds --fail-on-unmeasured
+          python -m swizzle assay --assay "$GITHUB_WORKSPACE/assay" \
+            --ghost "$BASE" --ghost "$GHOST_TOOLS"

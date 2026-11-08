@@ -16,9 +16,10 @@ import pytest
 from ghost_buster.cli import main
 from ghost_buster.ledger import (
     BLIND_SPOT_AFTER, COULD_NOT_RUN, DECLINED, FLAPPING_AFTER, Ledger, LedgerError,
-    MAX_RUNS_KEPT, NOT_RUN, PERSISTENT_AFTER, RAN, SCHEMA_VERSION,
+    MAX_RUNS_KEPT, NOT_APPLICABLE, NOT_RUN, PERSISTENT_AFTER, RAN, SCHEMA_VERSION,
 )
 from ghost_buster.schema import Category, Evidence, Finding, Layer, Severity, Status
+from empty_baseline import empty_baseline
 
 ALL_RAN = {"structural": RAN, "branches": RAN, "tests": RAN, "secrets": RAN}
 
@@ -198,6 +199,42 @@ def test_blind_spot_severity_follows_the_reason_nobody_looked(tmp_path, state, s
     assert spot.severity == severity
 
 
+def test_a_check_with_nothing_to_examine_is_never_a_blind_spot(tmp_path):
+    """NOT_APPLICABLE is not a skip. A repository that reaches across no
+    boundary has no cross-boundary seam to leave unchecked, so counting it
+    would put a finding nobody can ever clear in every single-repository
+    ledger -- the failure _BLIND_SPOT_SEVERITY reasons about, one severity
+    quieter. Measured on ATS: 7 consecutive runs of exactly that."""
+    led = _ledger(tmp_path)
+    checks = dict(ALL_RAN, boundary=NOT_APPLICABLE)
+    for _ in range(BLIND_SPOT_AFTER * 2):
+        derived = _run(led, [_f()], checks=checks)
+    assert not any(d.attributes.get("check") == "boundary" for d in derived)
+
+
+def test_a_check_nobody_ran_is_still_a_blind_spot_beside_one_that_did_not_apply(tmp_path):
+    """The other half: adding the state must not have muffled the states it
+    sits beside, and the two are told apart in the same run."""
+    led = _ledger(tmp_path)
+    checks = dict(ALL_RAN, boundary=NOT_APPLICABLE, tests=DECLINED)
+    for _ in range(BLIND_SPOT_AFTER):
+        derived = _run(led, [_f()], checks=checks)
+    spots = {d.attributes.get("check") for d in derived if d.attributes.get("check")}
+    assert spots == {"tests"}
+
+
+def test_an_inapplicable_run_breaks_a_streak_the_way_a_run_does(tmp_path):
+    """A check that had nothing to look at this time ends the streak: the
+    question stopped being unanswered, it stopped being asked."""
+    led = _ledger(tmp_path)
+    declined = dict(ALL_RAN, boundary=DECLINED)
+    for _ in range(BLIND_SPOT_AFTER - 1):
+        _run(led, [_f()], checks=declined)
+    _run(led, [_f()], checks=dict(ALL_RAN, boundary=NOT_APPLICABLE))
+    derived = _run(led, [_f()], checks=declined)
+    assert not any(d.attributes.get("check") == "boundary" for d in derived)
+
+
 def test_a_check_that_ran_recently_is_not_a_blind_spot(tmp_path):
     led = _ledger(tmp_path)
     checks_off = dict(ALL_RAN, tests=DECLINED)
@@ -248,8 +285,8 @@ def test_accepting_into_the_baseline_does_not_erase_memory(tmp_path, capsys):
     proj = tmp_path / "proj"
     proj.mkdir()
     (proj / "m.py").write_text("def used():\n    return used\n\ndef dead():\n    return 2\n")
-    base = ["--no-tests", "--no-secrets", "--no-branches",
-            "--baseline", str(tmp_path / "b.json")]
+    base = ["--ledger", "--no-tests", "--no-secrets", "--no-branches",
+            "--baseline", empty_baseline(tmp_path)]
     main([str(proj), *base])
     main([str(proj), "--accept", *base])
     capsys.readouterr()
@@ -266,8 +303,8 @@ def test_history_is_reported_alongside_the_findings_not_instead_of_them(tmp_path
     make the memory a filter, which is the one thing it must never be."""
     proj = tmp_path / "proj"
     proj.mkdir()
-    base = ["--json", "--no-tests", "--no-secrets", "--no-branches",
-            "--baseline", str(tmp_path / "b.json")]
+    base = ["--ledger", "--json", "--no-tests", "--no-secrets", "--no-branches",
+            "--baseline", empty_baseline(tmp_path)]
     live = "def used():\n    return used\n"
     dead = live + "\ndef gone():\n    return 2\n"
 
@@ -287,12 +324,17 @@ def test_history_is_reported_alongside_the_findings_not_instead_of_them(tmp_path
     assert "dead_code" in detectors, "the defect it is about must ALSO still be reported"
 
 
-def test_ledger_is_on_by_default_and_writes_a_file(tmp_path, capsys):
+def test_ledger_is_opt_in_and_writes_a_file_when_asked(tmp_path, capsys):
+    """A default scan writes nothing into the folder it scans (see
+    test_default_scan_writes_nothing.py); --ledger is the request."""
     proj = tmp_path / "proj"
     proj.mkdir()
     (proj / "m.py").write_text("x = 1\n")
-    main([str(proj), "--no-tests", "--no-secrets", "--no-branches",
-          "--baseline", str(tmp_path / "b.json")])
+    common = ["--no-tests", "--no-secrets", "--no-branches", "--baseline", empty_baseline(tmp_path)]
+    main([str(proj), *common])
+    capsys.readouterr()
+    assert not (proj / ".ghost_ledger.json").exists()
+    main([str(proj), "--ledger", *common])
     capsys.readouterr()
     assert (proj / ".ghost_ledger.json").exists()
 
@@ -302,7 +344,7 @@ def test_no_ledger_writes_nothing_and_leaves_a_receipt(tmp_path, capsys):
     proj.mkdir()
     (proj / "m.py").write_text("x = 1\n")
     main([str(proj), "--no-ledger", "--no-tests", "--no-secrets", "--no-branches",
-          "--baseline", str(tmp_path / "b.json")])
+          "--baseline", empty_baseline(tmp_path)])
     err = capsys.readouterr().err
     assert not (proj / ".ghost_ledger.json").exists()
     assert "ledger SKIPPED at your request (--no-ledger)" in err
@@ -313,7 +355,7 @@ def test_a_corrupt_ledger_fails_the_run_rather_than_starting_over(tmp_path, caps
     proj.mkdir()
     (proj / "m.py").write_text("x = 1\n")
     (proj / ".ghost_ledger.json").write_text("{not json", encoding="utf-8")
-    rc = main([str(proj), "--no-tests", "--no-secrets", "--no-branches",
-               "--baseline", str(tmp_path / "b.json")])
+    rc = main([str(proj), "--ledger", "--no-tests", "--no-secrets", "--no-branches",
+               "--baseline", empty_baseline(tmp_path)])
     assert rc == 2
     assert "error: ledger" in capsys.readouterr().err

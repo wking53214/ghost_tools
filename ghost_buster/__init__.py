@@ -18,7 +18,7 @@ from pathlib import Path
 #: The backronym. ghost_tools catalogues the mistakes that founders make
 #: often enough to be worth automating away, so this is less a joke than an
 #: accurate table of contents.
-BACKRONYM = "FFF: Founders' Favorite Fuckups"
+BACKRONYM = "FFF: Founders' Favorite Fumbles"
 
 _DISTRIBUTION = "ghost-tools"
 
@@ -64,3 +64,10 @@ __version__ = _read_version()
 def version_string() -> str:
     """What `ghost_buster --version` prints."""
     return f"ghost_buster {__version__} ({BACKRONYM})"
+
+
+def add_version_argument(parser) -> None:
+    """The `--version` flag, with the one text `ghost_buster --version` prints, for every console script.
+
+    argparse acts on it while parsing, so it works without the command's required positional."""
+    parser.add_argument("--version", action="version", version=version_string(), help="print the version and exit")

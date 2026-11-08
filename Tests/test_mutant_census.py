@@ -27,7 +27,7 @@ CLAIM_SITES = {
     "Tests/mutant_harness.py": re.compile(r"every one of the (\d+) mutants"),
     ".github/workflows/tests.yml": re.compile(r"because the suite is (\d+)"),
 }
-FILE_COUNT_SITE = (ROOT / "README.md", re.compile(r"the (\d+) `Tests/\*_mutants\.py` files"))
+FILE_COUNT_SITE = (ROOT / "docs" / "REFERENCE.md", re.compile(r"the (\d+) `Tests/\*_mutants\.py` files"))
 
 
 def _mutant_files():
@@ -74,7 +74,7 @@ def test_the_stated_number_of_mutant_files_is_the_actual_one():
     files, _ = census()
     path, pattern = FILE_COUNT_SITE
     found = pattern.search(path.read_text())
-    assert found, "README.md: the mutant-file-count claim this test guards is gone"
+    assert found, "docs/REFERENCE.md: the mutant-file-count claim this test guards is gone"
     assert int(found.group(1)) == files, (
-        f"there are {files} Tests/*_mutants.py files; README.md says {found.group(1)}"
+        f"there are {files} Tests/*_mutants.py files; docs/REFERENCE.md says {found.group(1)}"
     )

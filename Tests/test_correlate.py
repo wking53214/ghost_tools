@@ -21,6 +21,7 @@ from ghost_buster.correlate import (
     run_connectors,
 )
 from ghost_buster.schema import Category, Evidence, Finding, Layer, Severity, Status
+from empty_baseline import empty_baseline
 
 
 def _finding(detector, file, *, summary="s", severity=Severity.MAJOR,
@@ -82,8 +83,12 @@ def _drift(file="README.md", documented="353", static="429", context="The suite 
 
 
 class _Report:
-    def __init__(self, ran=True, collected=429, passed=387):
+    def __init__(self, ran=True, collected=429, passed=387, errored=0,
+                 blocked=0):
         self.ran, self.collected, self.passed = ran, collected, passed
+        # What produced no result either way. Defaulting to zero keeps every
+        # existing test describing the same run it always described.
+        self.errored, self.blocked = errored, blocked
 
 
 # --- registry / plumbing ---------------------------------------------------
@@ -330,6 +335,73 @@ def test_a_fully_green_suite_keeps_the_doc_finding_minor():
     assert "do not" not in out[0].summary
 
 
+# --- what never ran is in neither number (v1.7.3) --------------------------
+#
+# A module that cannot be imported contributes nothing to `collected` and
+# nothing to `passed`, so `collected - passed` is zero and the suite reads
+# as green. It is not green: a whole file of it did not execute, and nobody
+# knows what is in there.
+#
+# The tool already reported the blocked module, in the same run, naming the
+# missing import. That knowledge never reached the finding's attributes, so
+# the remedy wrote "N tests, all passing" into a README over a suite with a
+# file that could not be collected.
+
+def test_a_suite_with_a_file_that_never_ran_is_not_green():
+    out = run_connectors([_drift()],
+                         test_report=_Report(collected=30, passed=30, errored=1,
+                                             blocked=1))
+    assert len(out) == 1
+    finding = out[0]
+    assert finding.severity == Severity.MAJOR, (
+        "collected == passed, and the suite still did not run")
+    assert finding.attributes["unexamined"] == "1"
+
+
+def test_the_summary_says_a_file_did_not_run_at_all():
+    out = run_connectors([_drift()],
+                         test_report=_Report(collected=30, passed=30, blocked=1))
+    assert "did not run at all" in out[0].summary
+
+
+def test_the_detail_explains_why_subtracting_says_green():
+    """A reader who sees MAJOR on a suite where collected equals passed has
+    to be able to find out why without reading this source."""
+    out = run_connectors([_drift()],
+                         test_report=_Report(collected=30, passed=30, blocked=1))
+    assert "absent from the collected count" in out[0].detail
+
+
+def test_errored_and_blocked_are_not_added_together():
+    """One file that fails to import is usually counted both ways: once as
+    a collection error and once as blocked by a dependency. Summing them
+    would report two unexamined files where there is one, and a number a
+    remedy prints to a human has to be the number of files."""
+    out = run_connectors([_drift()],
+                         test_report=_Report(collected=30, passed=30, errored=1,
+                                             blocked=1))
+    assert out[0].attributes["unexamined"] == "1"
+
+
+def test_a_suite_with_nothing_unexamined_is_unchanged():
+    """The control. The fix must be invisible to a suite that fully ran."""
+    out = run_connectors([_drift()], test_report=_Report(collected=429, passed=429))
+    assert out[0].severity == Severity.MINOR
+    assert out[0].attributes["unexamined"] == "0"
+    assert "did not run at all" not in out[0].summary
+
+
+def test_a_report_that_never_heard_of_unexamined_still_works():
+    """An older report object has no `errored` or `blocked`. It must read as
+    zero rather than raising, because a connector that crashes on an
+    unfamiliar report takes the whole correlation down with it."""
+    class Ancient:
+        ran, collected, passed = True, 429, 429
+    out = run_connectors([_drift()], test_report=Ancient())
+    assert len(out) == 1
+    assert out[0].attributes["unexamined"] == "0"
+
+
 def test_doc_count_connector_is_silent_without_a_tests_run():
     assert run_connectors([_drift()]) == []
     assert run_connectors([_drift()], test_report=_Report(ran=False)) == []
@@ -437,13 +509,13 @@ def test_cli_reports_correlation_and_a_bad_correlate_with_is_a_usage_error(tmp_p
     proj.mkdir()
     (proj / "m.py").write_text("x = 1\n")
 
-    rc = main([str(proj), "--json", "--baseline", str(tmp_path / "b.json")])
+    rc = main([str(proj), "--json", "--baseline", empty_baseline(tmp_path)])
     out, err = capsys.readouterr()
     assert rc == 0
     assert "correlation found nothing to connect" in err
 
     rc = main([str(proj), "--correlate-with", str(tmp_path / "missing.json"),
-               "--baseline", str(tmp_path / "b.json")])
+               "--baseline", empty_baseline(tmp_path)])
     out, err = capsys.readouterr()
     assert rc == 2
     assert "--correlate-with" in err
@@ -454,7 +526,7 @@ def test_cli_no_correlate_skips_the_pass(tmp_path, capsys):
     proj = tmp_path / "proj"
     proj.mkdir()
     (proj / "m.py").write_text("x = 1\n")
-    rc = main([str(proj), "--no-correlate", "--baseline", str(tmp_path / "b.json")])
+    rc = main([str(proj), "--no-correlate", "--baseline", empty_baseline(tmp_path)])
     out, err = capsys.readouterr()
     assert rc == 0
     # v0.11.0: a skipped pass is no longer silent. What must be absent is the

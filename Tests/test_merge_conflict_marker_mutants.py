@@ -57,8 +57,13 @@ MUTANTS = [
     ("scan does not resume after a found triplet (double-counts a nested marker)", _M,
      '            i = theirs_line + 1\n    return findings\n',
      '            i = ours_line + 1\n    return findings\n'),
+    # Anchored on the preceding line as well. A bare
+    # '                severity=Severity.CRITICAL,' is a SUBSTRING of the
+    # more deeply indented one that unreachable_declared_state grew in 1.7.8,
+    # so the harness's exactly-once check started matching twice.
     ("severity hardcoded to MINOR instead of CRITICAL", _M,
-     '                severity=Severity.CRITICAL,\n', '                severity=Severity.MINOR,\n'),
+     '                layer=Layer.MECHANICAL,\n                severity=Severity.CRITICAL,\n',
+     '                layer=Layer.MECHANICAL,\n                severity=Severity.MINOR,\n'),
     ("category hardcoded wrong", _M,
      '                category=Category.MERGE_CONFLICT_MARKER,\n', '                category=Category.OTHER,\n'),
     ("line numbers off by one (0-indexed instead of 1-indexed)", _M,

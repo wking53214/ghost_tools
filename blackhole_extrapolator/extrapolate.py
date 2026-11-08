@@ -225,7 +225,7 @@ def infer_usage_invariants(source: str, target: str) -> list[str]:
                 if (isinstance(tgt, ast.Attribute) and isinstance(tgt.value, ast.Name)
                         and tgt.value.id == target):
                     bound = node.value.args[0] if node.value.args else None
-                    if isinstance(bound, ast.Constant):
+                    if isinstance(bound, ast.Constant) and isinstance(bound.value, (int, float)):
                         word = "floor" if node.value.func.id == "max" else "ceiling"
                         note(f"`{tgt.attr}` is writable and numeric; callers "
                              f"hold it to a {word} of {bound.value}")
@@ -364,7 +364,7 @@ def group_by_target(evidence: Sequence[NegativeEvidence]) -> dict[str, list[Nega
         found = re.search(r"`([A-Za-z_][A-Za-z0-9_.]*)`", item.detail)
         grouped[found.group(1) if found else item.file].append(item)
     # A name the callers reach for that a destroyed file's debris defines is
-    # that file's void, not a second one. Measured on TOUCHSTONE: three
+    # that file's void, not a second one. Measured on ASSAY: three
     # superseded specimens reached for `QuorumConsensusEngine`, reported as
     # never built beside the flattened file whose headers still declared it.
     defined_in: dict[str, str] = {}

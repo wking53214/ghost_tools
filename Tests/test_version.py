@@ -59,3 +59,45 @@ def test_unknown_version_never_raises(monkeypatch):
         lambda *a, **k: (_ for _ in ()).throw(OSError("gone")),
     )
     assert ghost_buster._read_version() == "unknown"
+
+
+# --------------------------------------------------------------------------
+# Every console script answers --version, with the same text.
+
+def _console_scripts():
+    with PYPROJECT.open("rb") as fh:
+        return tomllib.load(fh)["project"]["scripts"]
+
+
+def _resolve(target):
+    import importlib
+    module, _, attr = target.partition(":")
+    return getattr(importlib.import_module(module), attr)
+
+
+def test_there_are_six_console_scripts():
+    assert sorted(_console_scripts()) == [
+        "blackhole-extrapolator", "ghost-buster", "ghost-rank", "ghost-triage", "ghost-writer", "stack-census"]
+
+
+@pytest.mark.parametrize("script", sorted(_console_scripts()))
+def test_every_console_script_prints_the_version_and_exits_zero(script, capsys):
+    """Run through the entry point the wheel installs, with no other argument."""
+    entry = _resolve(_console_scripts()[script])
+    with pytest.raises(SystemExit) as exc:
+        entry(["--version"])
+    assert exc.value.code == 0
+    captured = capsys.readouterr()
+    assert captured.out.strip() == version_string()
+    assert _declared_version() in captured.out
+
+
+@pytest.mark.parametrize("module", ["ghost_writer.cli", "ghost_writer.triage", "blackhole_extrapolator.cli",
+                                    "stack_census.cli", "ghost_buster.consequence", "ghost_buster.cli"])
+def test_python_dash_m_prints_the_version_too(module):
+    import subprocess
+    import sys
+    result = subprocess.run([sys.executable, "-m", module, "--version"], capture_output=True, text=True,
+                            cwd=PYPROJECT.parent)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == version_string()

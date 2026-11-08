@@ -20,6 +20,7 @@ from ghost_buster.cli import main
 from ghost_buster.schema import Category, Severity, Status
 from ghost_buster.testsuite import (_index_local_modules, classify_dependency, flaky_tests,
                                     render_report, rerun_summary, scan)
+from empty_baseline import empty_baseline
 
 STALE_ENV = "GHOST_STALE_ENV_PROBE"
 ABSENT_ENV = "GHOST_ABSENT_ENV_PROBE"
@@ -487,7 +488,12 @@ def test_scan_writes_nothing_into_the_project(tmp_path, monkeypatch):
     # the nested mutation harness inherited it, and the mutant that deletes
     # testsuite.py's own export survived -- the test had been passing on the
     # environment's behaviour rather than the code's.
+    # PYTHONPYCACHEPREFIX is the same hole from the other side: Warden runs a
+    # target's suite with bytecode redirected out of the tree, so under Warden
+    # the mutant that deletes the export survived again (found when the circuit
+    # ran on ghost_tools itself).
     monkeypatch.delenv("PYTHONDONTWRITEBYTECODE", raising=False)
+    monkeypatch.delenv("PYTHONPYCACHEPREFIX", raising=False)
     proj = _project(tmp_path, {"test_ok.py": "def test_ok():\n    assert True\n"})
     findings, report = scan(proj)
     assert findings == []
@@ -537,7 +543,7 @@ def test_cli_tests_flag_runs_the_suite_and_reports(tmp_path, capsys, monkeypatch
     proj = _project(tmp_path, {"test_bad.py": "def test_bad():\n    assert False\n"})
     (proj / "module.py").write_text("x = 1\n")
     rc = main([str(proj), "--trust", "--tests", "--tests-reruns", "1", "--json",
-               "--baseline", str(tmp_path / "b.json")])
+               "--baseline", empty_baseline(tmp_path)])
     out, err = capsys.readouterr()
     assert rc == 1
     assert "ghost_buster: test scan ran 1 collected, 0 passed, 1 failed (1 rerun(s))" in err
@@ -561,7 +567,7 @@ def test_cli_reports_a_failing_test_with_no_flag_at_all(tmp_path, capsys, monkey
     proj = _project(tmp_path, {"test_bad.py": "def test_bad():\n    assert False\n"})
     (proj / "module.py").write_text("x = 1\n")
     trust.grant(proj)
-    rc = main([str(proj), "--json", "--baseline", str(tmp_path / "b.json")])
+    rc = main([str(proj), "--json", "--baseline", empty_baseline(tmp_path)])
     out, err = capsys.readouterr()
     assert rc == 1, "a failing test is MAJOR, so the run fails"
     assert "test scan" in err
@@ -572,7 +578,7 @@ def test_cli_no_tests_skips_the_suite_and_leaves_a_receipt(tmp_path, capsys):
     """Opting out is allowed. Opting out quietly is not."""
     proj = _project(tmp_path, {"test_bad.py": "def test_bad():\n    assert False\n"})
     (proj / "module.py").write_text("x = 1\n")
-    rc = main([str(proj), "--json", "--no-tests", "--baseline", str(tmp_path / "b.json")])
+    rc = main([str(proj), "--json", "--no-tests", "--baseline", empty_baseline(tmp_path)])
     out, err = capsys.readouterr()
     assert rc == 0
     assert "test_status" not in out

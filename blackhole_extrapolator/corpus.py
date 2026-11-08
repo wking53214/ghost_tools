@@ -52,7 +52,7 @@ ARCHIVE_DIRS = frozenset({
 PROVENANCE_FILES = ("PROVENANCE.md", "TRANSCRIPT.md", "MANIFEST.md")
 
 # Directories holding code kept as a FIXTURE rather than run. `specimens/`
-# is TOUCHSTONE's; the rest are the names the same idea usually takes.
+# is ASSAY's; the rest are the names the same idea usually takes.
 SPECIMEN_DIRS = frozenset({"specimens", "fixtures", "testdata", "corpus"})
 
 # Phrases a repository uses, in its own README, to say it is a corpus and
@@ -182,7 +182,7 @@ def classify_root(root: Path, sources: Sequence[Path] | None = None) -> RootClas
     total = len(sources)
 
     # A repository that states what it is gets believed, when it states it
-    # where a declaration belongs. Measured 2026-09-10: TOUCHSTONE opens
+    # where a declaration belongs. Measured 2026-09-10: ASSAY opens
     # "A specimen corpus. Not a system." and VANGUARD opens
     # "# VANGUARD (archived) ... folded into GSA-GATEWAY", and the six
     # highest-confidence voids in the whole library came from those two.

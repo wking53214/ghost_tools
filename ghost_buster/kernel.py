@@ -174,7 +174,8 @@ def check_kernel(files: Sequence[Path], kernels: Sequence[Path]) -> Tuple[List[F
             if shape == k.shape:
                 report.shadows += 1
                 findings.append(_finding(KERNEL_SHADOW, Category.DUPLICATION, path, node, k,
-                    f"class `{node.name}` is the kernel's `{node.name}` ({k.path.name}), structurally identical: import it instead",
+                    f"class `{node.name}` is the kernel's `{node.name}` ({k.path.name}), "
+                    "structurally identical: import it instead",
                     "Every definition in this class matches the kernel's, docstrings aside. Two copies of one "
                     "contract means the next fix lands in one of them. Replace the class with an import from "
                     "the kernel; if this copy is deliberate (a frozen fork), record that decision."))

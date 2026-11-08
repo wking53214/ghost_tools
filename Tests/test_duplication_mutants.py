@@ -81,12 +81,12 @@ MUTANTS = [
      "    files: List[Path], min_statements: int = 3, min_complexity: int = 20\n",
      "    files: List[Path], min_statements: int = 3, min_complexity: int = 25\n"),
     ("symlinked directories scanned twice again", _P,
-     "        real = p.resolve()\n        if real in seen_real:\n            continue\n        seen_real.add(real)\n",
+     "        real = p.resolve()\n        already = seen_real.get(real)\n        if already is not None:\n            if out[already].is_symlink() and not p.is_symlink():\n                out[already] = p\n            continue\n",
      "        real = p\n        if real in seen_real:\n            continue\n        seen_real.add(real)\n"),
     ("build/ and dist/ no longer excluded", _P,
      '    "build", "dist",\n', ""),
     ("egg-info directories no longer excluded", _P,
-     '        if any(part.endswith(".egg-info") for part in p.parts[:-1]):\n            continue\n', ""),
+     '            elif d.endswith(".egg-info"):\n                dirnames.remove(d)\n                note_skipped("*.egg-info", 1, _count_candidates(str(full)))\n', ""),
 ]
 
 

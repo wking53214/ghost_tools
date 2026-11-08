@@ -8,6 +8,7 @@ from pathlib import Path
 from ghost_buster.kernel import (
     DRIFTED_CONTRACT, KERNEL_SHADOW, check_kernel, load_kernel, render_report,
 )
+from empty_baseline import empty_baseline
 
 KERNEL = '''
 class Node:
@@ -187,7 +188,7 @@ def test_the_cli_runs_it_only_when_asked(tmp_path, capsys):
                 return self.name
     '''})
     quiet = ["--no-branches", "--no-tests", "--no-secrets", "--no-project", "--no-correlate",
-             "--no-ledger", "--single-repo", "--json", "--baseline", str(tmp_path / "b.json")]
+             "--no-ledger", "--single-repo", "--json", "--baseline", empty_baseline(tmp_path)]
     main([str(tmp_path / "repo"), *quiet])
     out, err = capsys.readouterr()
     assert "kernel check NOT RUN (opt-in: --kernel PATH)" in err

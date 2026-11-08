@@ -14,10 +14,13 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from collections import Counter
 from pathlib import Path
-from typing import List
+from typing import List, Optional
+
+from ghost_buster import add_version_argument
+from ghost_buster.delivery import delivers
+from ghost_buster.diagnostics import add_verbose_argument, configure, get_logger
 
 from .detect import _declared_dependencies, false_absence_hints, scan
 from .corpus import RootKind, classify_root
@@ -27,6 +30,9 @@ from .recover import (
 )
 from .extrapolate import extrapolate, group_by_target
 from .schema import NON_SEEDING_KINDS, EvidenceKind, VoidKind
+from .skips import SkipLog
+
+log = get_logger(__name__)
 
 _SKIP_DIRS = {".git", "__pycache__", "site-packages", ".venv", "venv",
               "node_modules", ".pytest_cache", ".ruff_cache", ".mypy_cache"}
@@ -49,7 +55,8 @@ def _kind_for(evidence) -> VoidKind:
     return VoidKind.NEVER_BUILT
 
 
-def main(argv: List[str] = None) -> int:
+@delivers("blackhole_extrapolator")
+def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         prog="blackhole_extrapolator",
         description="Infer the shape of missing code from what surrounds it.",
@@ -93,15 +100,17 @@ def main(argv: List[str] = None) -> int:
                              "constrains no shape")
     parser.add_argument("--show-wiring", action="store_true",
                         help="also list imports that are provided elsewhere")
+    add_version_argument(parser)
+    add_verbose_argument(parser)
     args = parser.parse_args(argv)
+    configure(verbose=args.verbose)
     if not args.path.is_dir():
-        print(f"not a directory: {args.path}", file=sys.stderr)
+        log.error("not a directory: %s", args.path)
         return 2
 
     if bool(args.recover_from) != bool(args.recover_into):
-        print("--recover-from and --recover-into are used together: one names "
-              "the corpus to search, the other where the recovered originals go",
-              file=sys.stderr)
+        log.error("--recover-from and --recover-into are used together: one names "
+                  "the corpus to search, the other where the recovered originals go")
         return 2
 
     if args.recover_from:
@@ -113,11 +122,10 @@ def main(argv: List[str] = None) -> int:
     if args.ecosystem:
         repos = sorted(p for p in args.path.iterdir() if p.is_dir() and (p / ".git").exists())
         if not repos:
-            print(f"no checkouts (directories with .git) under {args.path}", file=sys.stderr)
+            log.error("no checkouts (directories with .git) under %s", args.path)
             return 2
         if args.json:
-            print(json.dumps({repo.name: _payload(*_analyse(repo, [r for r in repos if r != repo], args)[:3], args)
-                              for repo in repos}, indent=2))
+            print(json.dumps({repo.name: _payload_of(repo, repos, args) for repo in repos}, indent=2))
             return 0
         for repo in repos:
             print(f"=== {repo.name}")
@@ -131,6 +139,12 @@ def _payload(voids, wiring, evidence, args):
     if args.show_wiring:
         return {"voids": [v.as_dict() for v in voids], "wiring": [w.as_dict() for w in wiring]}
     return [v.as_dict() for v in voids]
+
+
+def _payload_of(repo: Path, repos: List[Path], args):
+    """The JSON payload of one checkout, with every other checkout as its siblings."""
+    voids, wiring, evidence, _classification = _analyse(repo, [r for r in repos if r != repo], args)
+    return _payload(voids, wiring, evidence, args)
 
 
 def _analyse(root: Path, siblings: List[Path], args):
@@ -231,16 +245,19 @@ def _recover_flattened(root: Path, corpora: List[Path], into: Path) -> int:
         print(f"No flattened files under {root}; nothing to recover.")
         return 0
 
-    sources = harvest(corpora)
+    skips = SkipLog()
+    sources = harvest(corpora, skips)
     if not sources:
-        print(f"No candidate originals under {', '.join(str(c) for c in corpora)}. "
-              "A corpus is any export or transcript tree holding the code with "
-              "its line breaks still in it.", file=sys.stderr)
+        log.error("No candidate originals under %s. "
+                  "A corpus is any export or transcript tree holding the code with "
+                  "its line breaks still in it.", ", ".join(str(c) for c in corpora))
         return 2
 
     corpus = Corpus(sources)
-    print(f"{len(corpus)} candidate original(s) harvested; "
-          f"matching {len(flattened)} flattened file(s)", file=sys.stderr)
+    log.info("%d candidate original(s) harvested; matching %d flattened file(s)", len(corpus), len(flattened))
+    if skips:
+        log.info("note: %d input(s) could not be read and are not in the corpus: %s",
+                 len(skips), skips.counts())
     results = recover(flattened, corpus)
 
     written, refused = [], []
@@ -248,7 +265,8 @@ def _recover_flattened(root: Path, corpora: List[Path], into: Path) -> int:
         if not result.is_recovered:
             continue
         try:
-            written.append((result, write_recovery(result, into, root)))  # ghost_buster: name-disagreement -- `result` is `recovery` in the signature
+            # ghost_buster: name-disagreement -- `result` is `recovery` in the signature
+            written.append((result, write_recovery(result, into, root)))
         except (FileExistsError, ValueError) as e:
             refused.append((result, str(e)))
 
@@ -427,7 +445,7 @@ def _print_unresolved(unresolved, missing_imports, root: Path) -> None:
         print(f"\n{len(missing_imports)} missing import(s) -- a name the language "
               f"provides, used without importing it: {', '.join(names)}")
     if unresolved:
-        by_module = {}
+        by_module: dict[str, set[str]] = {}
         for item in unresolved:
             name = item.detail.split("`")[1] if "`" in item.detail else item.detail
             by_module.setdefault(name, set()).add(Path(item.file).name)
@@ -452,7 +470,7 @@ def _print_unresolved(unresolved, missing_imports, root: Path) -> None:
 
 
 def _print_wiring(wiring) -> None:
-    by_provider = {}
+    by_provider: dict[str, set[str]] = {}
     for item in wiring:
         provider = item.detail.split("provided by ", 1)[-1]
         by_provider.setdefault(provider, set()).add(

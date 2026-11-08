@@ -301,6 +301,9 @@ def test_the_finding_is_minor_and_says_why(tmp_path):
     '''})
     f = detect_pitstops(files)[0]
     assert f.detector == LIST_IN_LOOP
+    # The facts a fixer needs, so it never re-reads the summary sentence: the container's
+    # name, whether the literal is a list or a tuple, and the line its assignment starts on.
+    assert f.attributes == {"kind": LIST_IN_LOOP, "name": "BLOCKED", "container": "list", "defined_at": "1"}
     assert f.category is Category.COMPLEXITY
     assert f.layer is Layer.MECHANICAL
     assert f.status is Status.CONFIRMED

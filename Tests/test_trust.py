@@ -14,6 +14,7 @@ import pytest
 
 from ghost_buster import trust
 from ghost_buster.cli import main
+from empty_baseline import empty_baseline
 
 
 def _git_repo(path, remote=None):
@@ -94,7 +95,7 @@ QUIET = ["--no-branches", "--no-secrets", "--no-project", "--no-correlate", "--n
 
 def test_an_untrusted_repository_does_not_have_its_tests_run(store, tmp_path, capsys):
     proj = _project(tmp_path)
-    rc = main([str(proj), *QUIET, "--json", "--baseline", str(tmp_path / "b.json")])
+    rc = main([str(proj), *QUIET, "--json", "--baseline", empty_baseline(tmp_path)])
     out, err = capsys.readouterr()
     assert "test status scan DECLINED" in err
     assert "--trust records consent once" in err
@@ -104,13 +105,13 @@ def test_an_untrusted_repository_does_not_have_its_tests_run(store, tmp_path, ca
 
 def test_trust_records_consent_and_runs_the_suite(store, tmp_path, capsys):
     proj = _project(tmp_path)
-    rc = main([str(proj), *QUIET, "--trust", "--json", "--baseline", str(tmp_path / "b.json")])
+    rc = main([str(proj), *QUIET, "--trust", "--json", "--baseline", empty_baseline(tmp_path)])
     out, err = capsys.readouterr()
     assert "ghost_buster: trust:" in err and "consent recorded now" in err
     assert "test scan ran 1 collected" in err
     assert '"detector": "test_status"' in out and rc == 1
     # and it sticks: the next run needs no flag
-    main([str(proj), *QUIET, "--json", "--baseline", str(tmp_path / "b.json")])
+    main([str(proj), *QUIET, "--json", "--baseline", empty_baseline(tmp_path)])
     _, err2 = capsys.readouterr()
     assert "test scan ran 1 collected" in err2 and "DECLINED" not in err2
 
@@ -119,7 +120,7 @@ def test_an_untrusted_repository_does_not_have_its_mutants_run(store, tmp_path, 
     proj = _project(tmp_path)
     (proj / "mod.py").write_text("def ok(x):\n    return x > 0\n")
     (proj / "test_weak.py").write_text("from mod import ok\n\ndef test_weak():\n    assert ok(5) is not None\n")
-    main([str(proj), *QUIET, "--no-tests", "--mutate", "--json", "--baseline", str(tmp_path / "b.json")])
+    main([str(proj), *QUIET, "--no-tests", "--mutate", "--json", "--baseline", empty_baseline(tmp_path)])
     out, err = capsys.readouterr()
     assert "mutation analysis DECLINED" in err
     assert "vacuous_check" not in out
@@ -127,7 +128,7 @@ def test_an_untrusted_repository_does_not_have_its_mutants_run(store, tmp_path, 
 
 def test_no_tests_still_declines_on_purpose_with_its_own_receipt(store, tmp_path, capsys):
     proj = _project(tmp_path)
-    main([str(proj), *QUIET, "--no-tests", "--json", "--baseline", str(tmp_path / "b.json")])
+    main([str(proj), *QUIET, "--no-tests", "--json", "--baseline", empty_baseline(tmp_path)])
     _, err = capsys.readouterr()
     assert "test status scan SKIPPED at your request (--no-tests)" in err
     assert "DECLINED" not in err

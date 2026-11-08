@@ -158,7 +158,18 @@ def _generic_vocabulary() -> Set[str]:
     fail, and it is why this is not the only signal.
     """
     here = Path(__file__).resolve().parent
-    return set(_vocabulary(sorted(here.glob("*.py"))))
+    return set(_vocabulary(sorted(p for p in here.glob("*.py")
+                                  if p.name not in FOREIGN_VOCABULARY)))
+
+
+#: Modules whose identifiers are another system's vocabulary by contract,
+#: not ghost_buster's. cns_adapter.py must spell CNS's names exactly
+#: (`subject`, `subject_digest`, `GateResult`): CNS is the single source of
+#: truth for them. Counting them as "just Python" put `subject` into the
+#: reference corpus on 2026-10-06, which hid it from the cassette rule and
+#: let a naming mutant survive. Excluding the module keeps CNS's words out
+#: of this tool's idea of generic Python without renaming anything CNS owns.
+FOREIGN_VOCABULARY = frozenset({"cns_adapter.py"})
 
 
 def find_cassettes(files: Sequence[Path]) -> Tuple[List[Path], Path | None]:
@@ -195,7 +206,7 @@ def domain_vocabularies(cassettes: Sequence[Path], contract: Path | None) -> Dic
     contract_words = set(_vocabulary([contract])) if contract else set()
     generic = _generic_vocabulary()
 
-    seen_in = Counter()
+    seen_in: Counter[str] = Counter()
     for words in per_cassette.values():
         seen_in.update(set(words))
 
@@ -517,7 +528,7 @@ def detect_name_disagreements(files: Sequence[Path]) -> List[Finding]:
     Reports; does not rename. A cross-repository rename touches call sites
     and tests in trees this scan was never asked to write to.
     `--annotate-names` is the one path that writes into a scanned tree, it is
-    opt-in, and it writes comments and a README table rather than code. That
+    opt-in, and it writes comments rather than code. It never writes a README. That
     it is the ONLY one is checked, not asserted: see
     Tests/test_tree_immutability.py.
     """

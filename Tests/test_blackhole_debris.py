@@ -1,6 +1,6 @@
 """Debris archaeology: a flattened file keeps its interface in token order.
 
-Measured on 2026-09-08 against TOUCHSTONE's `quorum_state_governance_source.py`
+Measured on 2026-09-08 against ASSAY's `quorum_state_governance_source.py`
 (14,162 bytes, zero newlines): the tool classified it DESTROYED, listed the
 seven class names correctly, and then wrote "the evidence constrains no
 shape". Every `class` and `def` header, with its parameter list and return
@@ -117,7 +117,7 @@ COMMENT_FLATTENED = "# " + " ".join(ORIGINAL.split("\n"))
 
 
 def test_a_file_that_parses_as_one_comment_is_destroyed_and_still_yields_its_interface(tmp_path):
-    """TOUCHSTONE's silent-pass specimen: one line beginning with `#`, so the
+    """ASSAY's silent-pass specimen: one line beginning with `#`, so the
     parser accepts it and it defines nothing. The residue detector already
     caught it; the structure detector returned early on the parse."""
     flat = tmp_path / "quiet_source.py"

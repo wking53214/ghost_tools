@@ -1,5 +1,1515 @@
 # Changelog
 
+All notable changes, newest first. Versions follow Semantic Versioning; the version is declared once, in
+`pyproject.toml`. Release tags are `vX.Y.Z` (lowercase); the one earlier uppercase tag `V1.9.1` is also
+accepted by the publish workflow.
+
+## Unreleased
+
+### Changed
+- The `--version` banner backronym reads "FFF: Founders' Favorite Fumbles" (owner decision, 2026-11-05); known defect 1 in the README is closed. No behaviour other than that text changes, and the circuit's pinned ghost_tools commit is unchanged until the next repin.
+
+### Fixed
+- `translate_status` with CNS absent reported the mapped outcome (`pass` for a confirmed or suppressed finding) beside `authority=advisory_only`. Nothing was judged, so `TranslationRecord.cns_outcome` is now `None` in that case. With CNS present nothing changes.
+
+## 1.10.14 (2026-10-30)
+
+Not tagged. **A `--join` that names nothing readable is a usage error. Documentation corrections.**
+
+Fixed:
+
+- `ghost-buster DIR --join PATH` with an absent path or a plain file exited 0 and printed "boundary scan joined 2 repositories" with no unmeasured row, so a typo read as a checked seam. It is now exit 2 with a message naming the path (the `--json` error envelope under `--json`), for every `--join` and for a path typed at the interactive join prompt. Tests: five in `Tests/test_boundary.py` (absent path, plain file, one bad among good, JSON envelope, the prompt).
+
+Changed:
+
+- README: the non-goals line no longer lists Drafter and Burnish as if they were circuit members (they are released from the circuit and work on their own), and the quickstart sentence "run as written ... on 2026-10-22" is labelled as a dated record for 1.10.8. `docs/FAILURE_MODES.md` no longer says "seven repositories of the circuit": it names the five of the circuit and says Drafter and Burnish are released from it, and its Drafter sentences say a Drafter is optional. No code change, no test change.
+
+## 1.10.13 (2026-10-30)
+
+Not tagged. **Documentation only: the circuit is five repositories since the owner ruling of 2026-10-29. No code change.**
+
+Changed:
+
+- `STACK.md` now says five repositories (ASSAY, ghost_tools, SWIZZLE, Warden, Judge), that any actor's real change enters through Warden's claim seat, that DRAFTER, BURNISH and WATCHER_MCU are released from the circuit, that a bare `--stack` still requires all six checkouts, and that every run declines eight Ghost checks (the count is eight because ghost_tools 1.10.11 lists the ledger as declined under `--no-ledger`, not because Warden declined a new check). A new test, `Tests/test_docs_claims.py::test_stack_doc_names_the_five_circuit_repositories_and_not_the_old_seven`, holds it. No existing test needed an edit.
+- README section 7 no longer says `warden tagteam PATH --stack FOLDER` seats all seven. The README no longer cites the 1.10.7 run as the most recent: the run for any head is on the Actions page and the last checked runs are listed in the CNS repository's `docs/STATUS.md`. The self-hosting paragraph says the circuit it describes is the one before the ruling. The dated 7-declined-checks record is unchanged.
+
+## 1.10.12 (2026-10-30)
+
+Not tagged. **The CNS pin moves from the tag v2.1.0 to the tag v2.2.0. No other change.**
+
+Changed:
+
+- **The `cns` extra, the CI install line, `CNS_PIN` in `Tests/test_cns_independence.py` and the `CnsNotInstalled` hint**
+  now read `cns @ git+https://github.com/wking53214/CNS.git@v2.2.0`, with the comment `v2.2.0 =
+  ce6bd05578a7a3e3cafa0cfa1e9a2cca8a5f171f`. v2.2.0 is a lightweight tag, so the tag is that commit. The `cns` package at
+  v2.2.0 equals v2.1.0 except its version string; the release adds a composition layer beside it that ghost_tools does not
+  import. `swizzle_ref` and `assay_ref` are unchanged.
+- Tests that asserted the old pin text now assert the new one and nothing else about them changed: `Tests/test_workflow_pins.py`
+  (the docstring and three assertions), `Tests/test_install_hints.py` (the docstring and one input string) and the
+  `CNS_PIN` constant in `Tests/test_cns_independence.py`.
+- The Warden runs that pin this ghost_tools decline eight checks (mutate, kernel, structure, tests, project, secrets,
+  correlate, ledger), not seven. The count is eight because 1.10.11 lists the ledger as declined under `--no-ledger`, not
+  because Warden declined a new check. This entry changes no count in this repository's own text.
+
+## 1.10.11 (2026-10-30)
+
+Not tagged. **Merge of `main` (1.10.9 plus the unmeasured-ledger change of PR #112, `f0eeaf7`) into the branch that carries 1.10.10 (the CNS pin at v2.1.0). One merge, no other change.**
+
+Changed:
+
+- **The two lines of work are both kept.** `main`'s change (below, formerly under Unreleased on `main`) and the branch's
+  1.10.10 work (the CNS pin at the tag v2.1.0, entry kept unchanged under 1.10.10) touch different files except this
+  CHANGELOG, the only textual conflict. The version is one patch above both, 1.10.11 (`pyproject.toml` and the README
+  version line). The CNS pin, `swizzle_ref` and `assay_ref` are unchanged from 1.10.10.
+
+Fixed (from `main`, PR #112):
+
+- **A ledger that was not written is listed in `--json` `unmeasured` like every other check that did not
+  run.** `_record_in_ledger` only printed a stderr line (`ledger SKIPPED at your request (--no-ledger)` or `ledger
+  NOT UPDATED (opt-in: ...)`) and never set `checks["ledger"]`, so a run with the ledger off, which is the default and
+  what the CI self-scan and `tools/self_baseline.py` do, had no machine-readable record that custody was off. It now
+  records `declined` under `--no-ledger` and `not_run` when the ledger was simply not requested, both `by_request`, so
+  `status` stays `ok`. The two stderr lines are unchanged. `Tests/test_honest_unmeasured.py` holds both cases.
+  Two pre-existing mutant sites named the exact lines this change touches and were re-aimed at the new lines, nothing
+  else about them changed: `declining the ledger leaves no receipt` in `Tests/test_ledger_mutants.py` and `the
+  ledger stage loses its receipt channel` in `Tests/test_pipeline_boundary_mutants.py`.
+- **The provenance test no longer needs pytest-xdist.** The subprocess run in
+  `test_the_two_tests_above_pass_in_a_tree_that_has_been_built` (`Tests/test_version_provenance.py`) passes
+  `-o addopts=` instead of `-n0`.
+
+## 1.10.10 (2026-10-29)
+
+Not tagged. **The CNS pin moves to the tag v2.1.0. One change, nothing else.**
+
+Changed:
+
+- **Pin21 step 1: the CNS pin is `cns @ git+https://github.com/wking53214/CNS.git@v2.1.0`** (was the tag `v2.0.0`), with
+  the comment `# v2.1.0 = fde931ffa89aebec95647742256ad53033bd3d02` (the commit the annotated tag peels to; the tag
+  object is `0cc90472f7edc46c3bf40079e69fb03a06718e29`) on the `cns` extra and on the CI install line. `CNS_PIN` in
+  `Tests/test_cns_independence.py`, the install hint in `ghost_buster/cns_adapter.py` and the README follow, and the
+  README migration note names the move. `swizzle_ref` and `assay_ref` are unchanged. The suite, ruff and mypy were run
+  against the package installed from that tag on Python 3.13.
+- **Pin21 step 2: version 1.10.10** (`pyproject.toml` and the README version line) and this entry.
+
+Pre-existing tests edited (rule 5), each with the step that caused it: `Tests/test_workflow_pins.py` (step 1: the module
+docstring and the three assertions in `test_cns_is_installed_from_the_tag_in_the_workflow_and_the_extra` say `v2.1.0`,
+nothing else changed); `Tests/test_install_hints.py` (step 1: its docstring and the one input string in
+`test_the_checker_accepts_the_commands_that_work` quote the new pin; the assertion is unchanged); the `CNS_PIN` constant
+in `Tests/test_cns_independence.py` (step 1).
+
+## 1.10.9 (2026-10-24)
+
+**Wave F: a baseline path that does not exist is refused, false sentences about the pins and self-hosting are corrected, and suffixed finding ids no longer depend on the folder. Three changes, nothing else.**
+
+Fixed:
+
+- **Step 1: a `--baseline FILE` that does not exist is a usage error.** It was read as an empty baseline (exit 0,
+  `baseline.path` null, no unmeasured row), although the README's exit table says an unreadable baseline is exit 2.
+  Found by the round-6 audit and reproduced first. It is now refused before the scan: exit 2, one plain line, the
+  usual error envelope under `--json`. A folder or an unreadable file is refused the same way. `--accept` may still
+  create the file it names, an existing empty baseline still works, and a missing default baseline in the scanned
+  folder is unchanged. Six tests in `Tests/test_baseline_integrity.py`, three of which fail on the old code.
+
+- **Step 3: a suffixed finding id does not depend on the folder the scan ran in.** Findings that share detector, file
+  and summary get a suffix hashed from their place, and the place included the detail, which can name the file by its
+  absolute path. The same checkout scanned from two folders gave different suffixed ids, so a committed baseline entry
+  carrying one was stale in every other folder, including every throwaway clone. Reproduced (two copies of this
+  repository: both suffixed ids differed), then the scan folder is cut out of the detail before hashing. A baseline
+  written from the same folder under the old suffix still matches (kept among the previous ids); one written in
+  another folder never could. This repository's committed baseline holds no suffixed entry, so none of its ids
+  changed. Three tests in `Tests/test_finding_identity.py`, two of which fail on the old code.
+
+Changed:
+
+- **Step 2: false and stale sentences.** The README and the comments in `tests.yml` no longer call the SWIZZLE pin the
+  head of SWIZZLE's `main` or say ASSAY's `main` added only `recovered-originals/`; the pins are described as the last
+  set this repository's CI tested on its own, and the whole-stack check is named as the CNS `stack` job. The README
+  states no CI time per Python version. Its self-hosting paragraph now cites the CNS record
+  `docs/evidence/SELFHOSTING_2026-10-23.md` (ACCEPT_UNVERIFIED at 1.10.8, 7 declined checks, 10 gaps, 132 findings
+  standing), and known defect 7 names the Judge consequence of the baseline that hides one finding. The README ledger
+  gains the 1.10.9 entries. Two new tests: `test_no_pin_is_called_the_head_of_a_siblings_main` in
+  `Tests/test_workflow_pins.py` and `test_the_readme_self_hosting_paragraph_states_what_the_record_says` in
+  `Tests/test_docs_claims.py`.
+
+Pre-existing tests edited (rule 5), with the step that caused each: step 1 changes what a `--baseline` path that does
+not exist means, and 34 call sites in 12 test files (`test_archive`, `test_boundary`, `test_correlate`,
+`test_defaults`, `test_kernel`, `test_ledger`, `test_project`, `test_readiness`, `test_secrets`, `test_structure`,
+`test_testsuite`, `test_trust`) passed such a path without creating it, only to keep the scan from reading a baseline
+in the scanned folder. Each now passes `empty_baseline(tmp_path)` from the new `Tests/empty_baseline.py`, an existing
+file that holds `[]`, written beside the test's folder. Nothing else about those tests changed. The README's Python
+file count is 222 for the new helper. The CNS pin text (`@v2.0.0`) and the `swizzle_ref` and `assay_ref` pins are
+unchanged.
+
+## 1.10.8 (2026-10-22)
+
+**The CNS pin is the tag v2.0.0, and the README says what works, what does not and what broke. Two changes, nothing else.**
+
+Changed:
+
+- **Step 1: the CNS pin is `cns @ git+https://github.com/wking53214/CNS.git@v2.0.0`** (was the tag `v1.9.0`), with the
+  comment `# v2.0.0 = b13e5d2f9e0e4291725f82794b89117c3d840ac1` (the commit the annotated tag peels to) on the `cns`
+  extra and on the CI install line. `CNS_PIN` in `Tests/test_cns_independence.py`, the install hint in
+  `ghost_buster/cns_adapter.py` and the README follow. The CNS adapter, finding gate, report check and independence
+  tests, `Tests/test_workflow_pins.py` and `Tests/test_install_hints.py` were run against the package installed from
+  that tag on Python 3.11, 3.12 and 3.13. `swizzle_ref` and `assay_ref` are unchanged.
+- **Step 2: the README.** Sections 1b and 4 to 4e are new or rewritten (sections 1, 2, 2b, 3, 5 and 6 are edited in
+  places, and 2b gains the CNS migration note): how to install and run, what works and the
+  test, CI job or command that shows it, what does not work or is not proven, the open known defects, what broke and
+  how it was fixed (checked against this CHANGELOG, `git log` and the tests; entries the ledger offered that could not
+  be checked were dropped or corrected), self-hosting, and the ceilings code cannot fix. The sentences calling it a product
+  candidate and citing a commercial audit, and the words "each from a real defect" after the seven rules, were removed
+  because nothing in the repository backs them. The README no longer says which releases are tagged. The
+  `ghost-buster --version` banner text is untouched and is listed under the known defects as the owner's decision.
+  Four tests in `Tests/test_docs_claims.py` are new: the required README sections exist, none of a list of marketing
+  words is used, every test the README names exists, and the versions and dates in its ledger match this CHANGELOG.
+
+Pre-existing tests edited (rule 5), each with the step that caused it: `Tests/test_workflow_pins.py` (step 1: the
+module docstring and the three assertions in `test_cns_is_installed_from_the_tag_in_the_workflow_and_the_extra` say
+`v2.0.0`, nothing else changed); `Tests/test_install_hints.py` (step 1: its docstring and the one input string in
+`test_the_checker_accepts_the_commands_that_work` quote the new pin; the assertion is unchanged); the `CNS_PIN`
+constant in `Tests/test_cns_independence.py` (step 1); `test_the_readme_and_changelog_say_truthfully_what_is_tagged` in
+`Tests/test_docs_claims.py` (step 2: the README no longer lists tags, so the tag sentences are asserted of the CHANGELOG
+only, and the README is asserted not to say "not tagged yet"; the CHANGELOG assertions are unchanged).
+
+## 1.10.7 (2026-10-22)
+
+**Report delivery, workflow permissions, install hints and the tested set. Four changes, nothing else.**
+
+Fixed:
+
+- **Step 1: a report that cannot be delivered is one plain line, not a traceback.** `ghost-buster DIR --no-tests
+  --no-branches --single-repo | head -c0` printed a `BrokenPipeError` traceback from `_print_report`, then "internal
+  error, the scan did not complete", and exited 3, while `| head -3` exited 0. The other five report-printing commands
+  (`ghost-writer`, `ghost-triage`, `blackhole-extrapolator`, `stack-census`, `ghost-rank`) ended in a raw traceback and
+  Python's exit 1, the number for "findings", and a closed standard output vanished without a word and exited 0. All
+  six now go through `ghost_buster/delivery.py`. A reader that left (broken pipe) gives one plain stderr line and the
+  exit code the run earned, as JUDGE 0.4.8 does. Standard output closed before the command started, full
+  (`/dev/full`) or failing in any other way gives one plain stderr line and turns an exit of 0 into the new exit code 4;
+  a non-zero code (1, 2, 3, 130) is kept, so a crashed scan never looks clean. `--version` and `--help` follow the same
+  rule. The README exit-code table documents code 4 and the rule, and its Python file count is 221.
+  `Tests/test_report_delivery.py` runs all six commands against a pipe nobody reads, a closed file descriptor 1 and
+  `/dev/full` (as a child's standard output only), and fails on the old code.
+
+Changed:
+
+- **Step 2: `.github/workflows/tests.yml` declares `permissions: contents: read`** at the top, as `publish.yml` already
+  declares its own. Every action stays pinned to a full commit SHA. Two tests in `Tests/test_workflow_pins.py` hold it.
+- **Step 3: install hints name commands that work.** `pip install 'ghost-tools[cns]'` resolves on PyPI to the older
+  ghost-tools 1.6.0, which has no `cns` extra, and installs the wrong thing. `ghost_buster/cns_adapter.py` and three
+  README passages now say `pip install -e '.[cns]'` from a checkout, or for CNS alone
+  `pip install "cns @ git+https://github.com/wking53214/CNS.git@v1.9.0"`. `Tests/test_install_hints.py` fails on any
+  `pip install` of a bare circuit distribution in a file a user reads.
+- **Step 4: the tested set.** `swizzle_ref` is 522658415b026ac3211d3fc130ba7da7c77cc400 (SWIZZLE 0.8.5, head of its
+  `main`) and `assay_ref` is a1732f2bf3748235661f65b96e590a6d44ace71c (ASSAY 0.11.3, a commit on its `main`; ASSAY's
+  `main` has since added only a `recovered-originals/` folder outside `specimens/`, and the comment and the README say
+  so rather than calling it the head). The CNS pin stays the tag `v1.9.0`. The `ghost-buster --version` banner text is
+  untouched.
+
+Pre-existing tests edited (rule 5), each with the step that caused it: `test_each_cns_backed_function_says_what_is_missing_when_cns_is_blocked`
+in `Tests/test_cns_independence.py` (step 3: asserts the new hint text) and
+`test_the_blocking_gate_pins_the_recorded_tested_set_with_true_version_comments` in `Tests/test_workflow_pins.py`
+(step 4: the new SHAs and versions). No other pre-existing test changed.
+
+## 1.10.6 (2026-10-21)
+
+**The SWIZZLE ref and two test names, nothing else.**
+
+Changed:
+
+- **`swizzle_ref` in the `swizzle-gate` matrix is 6bd88f3a6e9de1f83e64f401e13cbcb5233499fc** (SWIZZLE 0.8.4, head of
+  its `main`; was ec7543cb, SWIZZLE 0.8.2). The old comment called that commit the head of SWIZZLE's
+  `claude/horsemen-production-status-5wsndb` branch, which was no longer true. The comment, the README line that named
+  the old version and the assertion in `Tests/test_workflow_pins.py` now say SWIZZLE 0.8.4. `assay_ref` stays
+  54248beb5a36600f69de7c816cb2271dda20a879 and the CNS pin stays the tag `v1.9.0`.
+- **Two names that still said "full commit" now say tag.** `Tests/test_workflow_pins.py` renames
+  `test_cns_is_installed_from_a_full_commit_in_the_workflow_and_the_extra` to
+  `test_cns_is_installed_from_the_tag_in_the_workflow_and_the_extra` and rewords its module docstring. Every
+  assertion is unchanged.
+
+Pre-existing tests edited (rule 5): `test_the_blocking_gate_pins_the_recorded_tested_set_with_true_version_comments`
+(new SWIZZLE SHA and version, step 1) and the rename and docstring above (step 2). The `ghost-buster --version`
+banner text is untouched.
+
+## 1.10.5 (2026-10-21)
+
+**Pin spelling and the ASSAY ref, nothing else.**
+
+Changed:
+
+- **The CNS pin is spelled as the tag.** The `cns` extra, the CI install line and `CNS_PIN` in
+  `Tests/test_cns_independence.py` are all `cns @ git+https://github.com/wking53214/CNS.git@v1.9.0`, with the commit
+  the tag peels to (da18e411743d4e3b0e783105394d845fb1c16746) in a trailing comment. `Tests/test_workflow_pins.py`
+  now asserts the tag spelling where it asserted the SHA spelling (the only edit to that assertion).
+- **`assay_ref` in the `swizzle-gate` matrix is 54248beb5a36600f69de7c816cb2271dda20a879** (ASSAY 0.11.2, head of its
+  `main`; was 01c713a3). The README names it and `Tests/test_workflow_pins.py` holds it. `swizzle_ref` is unchanged.
+
+## 1.10.4 (2026-10-21)
+
+**CI, pins and one test fixture: the tested set follows ASSAY's merge to `main` and ghost_tools moves to CNS 1.9.0, as a full SHA.**
+No tag is created by this change. The older `v0.10.0` tag matches no current version; releases of 1.10.x are not
+tagged yet, and tagging is the owner's decision.
+
+Changed:
+
+- **The `swizzle-gate` pinned leg follows ASSAY's merge to `main`.** ASSAY's branch was squash-merged into its `main`
+  as b6b1ccf1 (0.11.2, tree byte-identical to the branch head 023589f), so the old pin 4c415567 (0.11.1) pointed off
+  `main`. `assay_ref` is now 01c713a316dc0513d30e566fffe4d94536888e81, the head of ASSAY's `main` (0.11.2; one commit
+  after the squash merge, which only moves ASSAY's own `cns` extra to CNS 1.9.0). `swizzle_ref` is
+  ec7543cb10f9b78926e38e819c906721520dc052 (SWIZZLE 0.8.2, was 8166c47f 0.8.1). The README names the tested set and
+  `Tests/test_workflow_pins.py` holds the two SHAs and their version comments.
+- **CNS moves from v1.8.0 to v1.9.0 (merge of main, #111), kept as a full commit SHA.** The `cns` extra, the CI install
+  line and `CNS_PIN` in `Tests/test_cns_independence.py` are all
+  `cns @ git+https://github.com/wking53214/CNS.git@da18e411743d4e3b0e783105394d845fb1c16746  # v1.9.0` (the commit
+  the tag `v1.9.0` peels to). The tag form that #111 wrote is not used, because pip treats a tag URL and a SHA URL as
+  two different sources. `Tests/test_workflow_pins.py` now expects the `# v1.9.0` comment (the only edit to that
+  assertion).
+
+Fixed:
+
+- **`Tests/test_stack_census.py::test_the_census_changes_nothing_on_disk` was flaky on a newer git.** The fixture's
+  `git commit` makes git start a detached `git maintenance run --auto`, which creates `.git/objects/maintenance.lock`
+  while the test snapshots the tree; CI saw that one lock file in only one of the two snapshots (one failure in the
+  first run of 68834a3, none in the second run of the same commit). The fixture now commits with
+  `maintenance.auto=false` and `gc.auto=0`. The assertion is unchanged.
+
+## 1.10.3 (2026-10-21)
+
+**Round-3 audit fixes: a findings file or baseline of the wrong shape is a usage error, and the gate refuses shallow
+checkouts.** No tag is created by this change. Older tags exist and do not describe this version: `v0.10.0` is left
+over from earlier numbering and matches no current version, `v1.6.0` and `V1.9.1` are those releases. Releases of
+1.10.x are not tagged yet; tagging is the owner's decision.
+
+Fixed:
+
+- **`ghost-writer` and `ghost-triage` on a garbage findings file** printed a raw traceback and exited 1 (an empty file
+  or text that is not JSON: `JSONDecodeError`; `[1]`: `TypeError`). They now exit 2 with one line on stderr naming the
+  file. `FindingSet.from_json` accepts exactly a list of findings or an object whose `findings` member is a list, and
+  raises the new `FindingSetError` (a `ValueError`) for anything else, including a finding with a missing member or an
+  unknown severity. These two commands have no `--json` option, so there is no error envelope for them; `ghost-buster
+  --json` keeps its envelope.
+- **`{}` is not a findings payload.** `ghost-writer` and `ghost-triage --list` accepted it and reported an empty result
+  with exit 0. It now exits 2; `{"findings": []}` stays valid and means an empty result.
+- **`ghost-buster --baseline` on valid JSON of the wrong shape** (`[1,2]`) crashed with exit 3 ("internal error"); it is
+  now exit 2 with the usual message and, under `--json`, the error envelope, as the README's exit table says. A baseline
+  file that is `{}` is refused the same way (an empty baseline is `[]`). Tests: `Tests/test_findings_file_errors.py`.
+- **`.github/scripts/resolve-swizzle-base.sh` read a shallow clone's root as the repository's first commit** and
+  skipped the gate with exit 3, although 1.10.1 says a shallow checkout fails. A shallow repository is now an explicit
+  failure (exit 1, a message naming `fetch-depth: 0`) before the root-commit logic. Tested with a real `--depth 1` clone.
+- **The hand-mutant suites' fixed 120 s per-mutant timeout** failed four tests under load (load average 12 to 20) that
+  pass alone. `GHOST_MUTANT_TIMEOUT` (seconds) now sets the base, a load average above the CPU count scales it by
+  load/CPUs (at most 4x), and nothing exceeds 900 s, so a hung mutant cannot hang CI. Documented in the README and the
+  harness; tested in `Tests/test_mutant_harness_timeout.py`.
+
+## 1.10.2 (2026-10-21)
+
+**CI: real runs on this branch, the newer siblings, and the main merge.** No tag is created by this change. Older tags
+exist and do not describe this version: `v0.10.0` is left over from earlier numbering and matches no current version,
+`v1.6.0` and `V1.9.1` are those releases. Releases of 1.10.x are not tagged yet; tagging is the owner's decision.
+
+Changed:
+
+- **Merged `main` (6d588a7, "README: composition-engine is retired, folded into CNS", #110)** into the branch with a
+  merge commit; nothing of the owner's commit or of the branch was dropped. The README keeps both its integration
+  line for `composition-engine` and the branch's file count and the public `CNS` wording.
+- **CI triggers.** `tests.yml` ran only on pushes to `main` and on pull requests, so a push to this branch started no
+  CI at all and the branch had never had a real run. Pushes to `claude/**` (the horsemen branch pattern) now run it
+  too; `main` and `pull_request` are kept.
+- **The blocking `swizzle-gate` matrix moves to the newer tested set:** SWIZZLE 8166c47f (0.8.1, was 04b72b19 0.8.0)
+  and ASSAY 4c415567 (0.11.1, was 5aafbf3b 0.11.0), each comment naming the version of the commit it pins.
+- **numpy and matplotlib in the gate.** ASSAY 0.11.1 exits 1 on a skipped claim, and the claims that need numpy or
+  matplotlib skip without them. The gate job now installs them into the interpreter that runs `swizzle assay`
+  (numpy 2.5.4 on Python 3.12 or newer, numpy 2.4.6 on 3.11, matplotlib 3.11.2); the choice follows the interpreter in
+  use. `Tests/test_workflow_pins.py` holds the trigger and the install.
+
+## 1.10.1 (2026-10-17)
+
+**Audit fixes: a clean error for a bad case file, `--version` everywhere, and a CI that cannot pass by accident.**
+No tag is created by this change. Older tags exist and do not describe this version: `v0.10.0` is left over from
+earlier numbering and matches no current version, `v1.6.0` and `V1.9.1` are those releases. Releases of 1.10.x are
+not tagged yet; tagging is the owner's decision.
+
+Fixed:
+
+- **`--casefile` pointing at malformed JSON** printed a raw traceback after the scan and exited 3 ("internal error").
+  It is now a usage error before the scan starts: exit 2, one line on stderr naming the file, and the JSON error
+  envelope under `--json`, the same as a bad `--baseline`. `--priors` and `ghost_triage --casefile` refuse it too
+  (`ghost_triage` reads the case file before it writes the findings file, so a refusal leaves both untouched).
+  `Casefile` raises the new `CasefileError` (a `ValueError`) for JSON that is truncated, not an object, or not the
+  case shape.
+- **`--version` on every console script.** Only `ghost-buster` had it; `ghost-writer`, `ghost-triage`,
+  `blackhole-extrapolator`, `stack-census` and `ghost-rank` exited 2 on it. All six now print the same text
+  (`ghost_buster.version_string()`, unchanged) and exit 0. A test runs each entry point from `pyproject.toml`.
+- **CI: gitleaks is verified before it runs.** The workflow downloaded the release tarball and ran it unchecked. Both
+  jobs now call `.github/scripts/install-gitleaks.sh VERSION SHA256`, which fails the job on a mismatch before
+  anything is extracted. The digest in the workflow was checked against the release's published
+  `gitleaks_8.28.0_checksums.txt`.
+- **CI: the SWIZZLE/ASSAY gate no longer passes when it has no base revision.** It used to print a warning and exit 0
+  after a force-push, a first push or a shallow checkout. The base is now resolved by
+  `.github/scripts/resolve-swizzle-base.sh`: a pull request or a push to a repository with history that has no
+  reachable base FAILS the gate; only the repository's very first commit is skipped, loudly, as a documented outcome.
+  The script's three outcomes are tested.
+- **CI pins.** `actions/checkout` was pinned to a SHA that is `v4.4.0` under a comment saying `v4`; it is now
+  `v4.2.2` (11bd7190), `actions/setup-python` is `v5.6.0` and `pypa/gh-action-pypi-publish` is `v1.14.2`, each comment
+  naming the real release. The `swizzle-gate` siblings are pinned to the circuit's tested set (SWIZZLE 04b72b19,
+  ASSAY 5aafbf3b), described in the workflow and the README ("Bumping the CI pins") as expected to be behind the
+  siblings' branch heads. A test requires every action comment to be a full `vX.Y.Z`.
+
+Removed:
+
+- **The Python 3.10 fallback in `ghost_buster/references.py`.** `requires-python` is `>=3.11`, so `tomllib` is always
+  there; the `try/except ImportError`, its `# type: ignore` and the README sentence about Python 3.10 are gone. A
+  `pyproject.toml` that cannot be parsed is still reported in `reference_scan_notes`.
+
+## 1.10.0 (2026-10-17)
+
+**Release housekeeping and a production-readiness pass.** 1.9.1 was declared by `pyproject.toml`, the README and
+the `V1.9.1` tag while about 290 lines of changes (ghost-rank, stable ids under code motion, the CNS finding gate,
+three detectors) sat under "Unreleased", so two different programs were both called 1.9.1. Everything that was
+under "Unreleased" is now released as 1.10.0, below the entries of this pass. No tag is created by this change.
+
+Changed:
+
+- **Version.** `pyproject.toml` is still the single source; `ghost_buster.__version__` and `--version` read it. The
+  README's version line is held to it by `Tests/test_docs_claims.py`, which also fails if the newest dated CHANGELOG
+  heading is not the declared version.
+- **Publishing.** `.github/workflows/publish.yml` fires on `v*` and on `V*` (tag filters are case sensitive, and the
+  repository carries one uppercase release tag), and compares the part after the prefix with `pyproject.toml`.
+- **Static gates.** ruff now selects `E`, `F`, `W` and `B` (it ran only its defaults), at the line length the code is
+  written to (120, not the 100 that was configured and never held; `Tests/*_mutants.py` are exempt from E501 because
+  they hold exact source text as data). mypy is configured (`[tool.mypy]`, Python 3.11, `warn_unused_ignores`) and is a
+  hard CI gate beside ruff. The CI matrix gains Python 3.13, and the classifier with it.
+- **CI reproducibility.** `swizzle-gate` checks SWIZZLE and ASSAY out at pinned full commit SHAs (9eb2a10e, 4da3919f)
+  with instructions to bump them in the job. A second, clearly named "latest siblings, non-blocking" leg follows their
+  default branches with `continue-on-error`. The CNS install and the `cns` extra name the full commit of `v1.8.0`
+  instead of the tag. `Tests/test_workflow_pins.py` holds all of it.
+- **Diagnostics use `logging`.** Everything written to stderr goes through the `ghost_tools` logger (new
+  `ghost_buster/diagnostics.py`). The default output is byte for byte what it was; `--verbose`/`-v` (every command) or
+  `GHOST_TOOLS_LOG=DEBUG|INFO|WARNING|ERROR` adds or hides records. stdout, `--json` and exit codes are unchanged.
+- **`--ledger-path` fails closed.** It used to create every missing parent folder silently (a probe made
+  `/nonexistent/dir`). Now a missing parent is a usage error before the scan (exit 2, the JSON error envelope under
+  `--json`, nothing created); `--create-ledger-dir` opts in. A ledger path that is a folder, or whose parent is a file,
+  is refused. `Ledger.save()` no longer creates folders unless `create_dirs=True`.
+- **Docs.** The README's file count is checked by a test instead of hard-coded prose (it said 199; the tree had more).
+  CNS is public and the README and STACK.md no longer call it private. The CI comment that said the baseline holds
+  "three MAJOR findings" now says one, and a test holds it to `.ghost_baseline.json`. `docs/REFERENCE.md` listed the
+  ledger as on by default; it is opt-in, and the table is now checked against the parser. Work-log notes
+  (`PHASE_1_SUMMARY.md`, `SERUM_ENHANCEMENTS.md`, `OPTIMIZATION_NOTES.md`) moved from the repository root to
+  `docs/archive/` with an index. A test checks that every relative Markdown link resolves.
+
+- **Mutant suite for the new behaviour.** `Tests/test_ledger_path_mutants.py` (13 mutants) breaks the ledger-path check, the
+  opt-in, `Ledger.save` and the diagnostics levels one at a time and requires the new tests to fail. The six existing
+  mutants whose source lines moved (renamed variables, `strict=True`, `log.info`) were re-aimed at the new text and
+  still die; the mutant harness no longer copies build output (`*.egg-info`, `build/`) into its scratch trees.
+
+Removed:
+
+- **`ghost_buster/production/`** (214 lines). It was missing from `packages=`, so no wheel contained it; nothing
+  imported it (not the package, not the tests, not the other repositories of the circuit, not any document);
+  `signing.py` carried a hardcoded development signing key as a default. Deleted rather than shipped: with no user and
+  no tests, the safest key handling is none. `Tests/test_packaging.py` now also fails when a package folder exists in
+  the tree but is not listed in `packages`.
+
+Fixed:
+
+- **Tests no longer depend on whether the tree has been built.** `test_the_running_source_wins_over_installed_metadata`
+  and `test_the_ledger_records_the_version_of_the_code_that_ran` failed after `pip install .` from the source tree,
+  because the `ghost_tools.egg-info` it leaves answered `importlib.metadata` before the test's fake distribution. They
+  import a clean copy of the package, and two new tests plant an `*.egg-info` and `build/` and prove it.
+- **Real defects mypy found** (103 errors in 24 files at the start, 0 now): `blackhole_extrapolator` `--ecosystem
+  --json` passed an argument count `_payload` does not take; `_portable_path` was handed `Path` objects and could
+  return one; an invariant-failure path in `mutation._restated_literals` dereferenced `.attr` on a call whose function
+  was not an attribute; `references` dereferenced a `None` root; ledger, structure and speed re-used one variable for
+  two types. The rest were annotations. Where a fix is impractical there are four narrow, commented `type: ignore`
+  lines (the profiler in `speed.py` swaps stdlib functions in place; the `tomllib` fallback in `references.py`); the
+  optional `anthropic` and `cns` imports are the only module-level exceptions, listed in `[tool.mypy]` with reasons.
+
+
+**`ghost-rank`: does it matter here.** Ghost's severity is the detector's opinion of the code alone. The new
+`ghost_buster/consequence.py` adds an independent reading taken from the other repositories of a stack:
+whether the file is production code and whether another repository's production code imports its package.
+It ranks findings into FIX FIRST, FIX, DEFER, WATCH and BACKLOG (a rejected or suppressed finding is SET
+ASIDE; a `reasoned` one is marked VERIFY) and reads findings without changing them. The rule and its limits
+are in the module docstring and are printed with every ranking.
+
+Run on the 328 real findings of twelve repositories (every one `confirmed`): 4 FIX FIRST, 13 FIX, 25 DEFER,
+55 WATCH, 231 BACKLOG. Of the 42 findings Ghost rates major, 25 sit off the production path and 4 sit in a
+package other repositories import; 55 of the 286 it rates minor or informational sit in such a package.
+Imports show dependence, not execution: reachability from a deployed entry point is the stronger signal
+(`sentinel_os/tools/wiring_verify`) but needs entry points declared per repository.
+
+**A finding that only moved is the same finding.** Five detectors put a line number or a line count in their
+summary, and the id is a hash of the summary, so adding a line above a finding (or one line inside a long
+function) gave it a new id. Measured with this version's predecessor on two real releases of the same
+repository (WARDEN v0.10.0 to v0.11.5, CNS v1.4.0 to v1.8.0): 13 of 22 and 6 of 12 findings that read as
+"fixed" had reappeared in the same file under the same detector with a new id.
+
+`long_function`, `near_duplicate_function`, `intra_function_duplicate_block`, `swallowed_exception` and the
+two loop pitstops (`loop_invariant_call`, `list_in_loop`) now state an `identity_key` without the measurement.
+The new `Finding.previous_key` (opt-in) keeps the id the summary used to produce as a previous id, so a
+baseline, ledger or case file written before this change still matches. Re-measured on the same four
+releases: the candidates for "fixed but actually moved" fell from 13 to 9 and from 6 to 3.
+
+Checked against the committed baselines of 14 repositories (copies of each repository at HEAD, the previous
+version of this tool against this one): the committed baselines suppress exactly as many findings as before
+(594 and 594), and a baseline written fresh and then applied to code shifted down one line keeps 83% of its
+entries instead of 61% (1294 of 1552, against 940). The first version of this change lost 22 to 20 percent of
+the committed entries in six repositories, because findings the new identity merges are separated by a place
+suffix and that suffix was also put on their previous ids; those are now rebuilt from their own old grouping.
+
+What is left is the documented limit, not a new one: findings that share an identity in one file (twelve
+`Path(...)` calls in a loop, several repeats inside one function) are separated by where each one is, so a
+twin that moves still changes id. Some of the rest are real changes (a cluster of three functions that became
+two is a different finding).
+
+**Three detectors for the "looks done, isn't" failures.** From this project's own history (tests whose
+assertions sat behind guards that were never true; a README claiming "RL Ready" for things that had not
+shipped) and the research on how AI-assisted workflows fail: the common thread is trusting that something is
+verified when it is not.
+
+- `assertless_test` (`ghost_buster/testshape.py`): a `test_*` function (or a `test*` method of a test class)
+  whose body is only `pass` or `...` is MAJOR, because it cannot fail and is counted; one that does work but
+  asserts nothing anywhere (no `assert` or `raise`, no assert*/check*/verify*-style call, `raises`, `warns`,
+  `fail`, and no call to an asserting helper defined in the file, in a module beside it, or in `conftest.py`)
+  is MINOR, because it can fail only by raising. `xfail` and `skip` tests are left alone.
+- `mock_only_test` (same module): a test whose every assertion is a Mock assertion (`assert_called...`,
+  `assert_awaited...`). It proves the code called the mock, nothing about the real collaborator.
+- `unverified_status_claim` (`ghost_buster/statusclaim.py`): a status label in a `.md` file that a reader will
+  take as a verdict ("production ready", "enterprise grade", "battle-tested", "fully tested", "100% coverage",
+  a Title-Case "Something Ready"), outside code, not negated, quoted or attributed, and not in a changelog.
+  CONFIRMED that the phrase is there; the detail says how many test files the scan saw and hands the label
+  over for independent re-verification. It does not decide whether the claim is true.
+
+All three carry an `identity_key` that names the test or the label, not its line, so an edit above it is
+not a new finding; and a status phrase that a critic is discussing (`'Production-ready': claim not backed by
+any measurement`, which is what Burnish writes into a README) is a report, not a claim. Both were found by
+running the whole circuit: the first draft made every Burnish finish introduce two "new" findings and get
+put back.
+
+Calibrated on the seven circuit repositories (2,733 test functions): 14 assertless smoke tests, 0 stubs, 0
+mock-only, 0 status claims; records in `calibration.json`. Two mutant suites (`Tests/test_testshape_mutants.py`,
+`Tests/test_statusclaim_mutants.py`) prove the tests can fail, which, for a detector about tests that cannot,
+seemed only right. 27 detectors; 646 mutants in 47 files.
+
+**The bytecode test no longer passes on the environment's behaviour under Warden.**
+`test_scan_writes_nothing_into_the_project` now also clears `PYTHONPYCACHEPREFIX`; Warden runs a target's suite
+with bytecode redirected out of the tree, so under Warden the mutant that deletes the scanner's own
+`PYTHONDONTWRITEBYTECODE` export survived. Found when the circuit ran on ghost_tools itself: Warden reported
+the suite red (1 of 2001) and wrote nothing.
+
+**Red team of the three new detectors.** Three ways past them were found by attacking them and are closed:
+an assertion that cannot fail (`assert True`, `assert 1`, `assert x == x`) no longer counts as an assertion,
+so a test that does work and then asserts a tautology is `assertless_test` again; two test classes with a
+method of the same name are two findings with two ids (the identity key now carries the class name); and a
+status label dressed up for a scanner (a soft hyphen or zero-width space inside the word, a non-breaking
+space or hyphen between the words, `**bold**` markers, full-width letters) is read the way a person reads it
+(NFKC, invisible characters and emphasis stripped) before the phrases are matched. Tests and mutants for each.
+
+**`list_membership_in_loop` findings carry the facts a fixer needs.** The finding's `attributes` now hold
+`name` (the container), `container` (`list` or `tuple`, from the literal Ghost saw) and `defined_at` (the line
+its module-level assignment starts on), beside the existing `kind`. The Drafter's set-literal fixer reads these
+instead of the summary sentence. `loop_invariant_call` findings are unchanged. `Tests/test_speed.py` checks the
+attributes.
+
+**Ghost Tools installs from git again.** #89 deleted `ghost_writer/polish` but left it in `pyproject.toml`'s
+package list, so every `pip install` from git failed with `package directory 'ghost_writer/polish' does not
+exist` (URE's CI installs this way). The entry is gone, `calibration.json` now ships beside the module that reads
+it, and `Tests/test_packaging.py` checks that every listed package, data file and console script exists, because
+the suite runs from source and never builds the package.
+
+**New: `stack-census`, a read-only census of a folder of clones.** Package `stack_census`; tests in
+`Tests/test_stack_census.py`; notes in `docs/STACK_CENSUS.md`. For each repo it reports last commit, 30-day and
+total commits, checked-out branch, license, CI and README status line; reads which repo pins which other repo
+from manifests (`pyproject.toml`, `requirements*.txt`, `setup.*`, `Dockerfile`, workflows); and reads the
+Graveyard to mark wholly retired repos and to flag a live pin to one. Output is a table, `--json`, or a draft
+`CENSUS.md` entry (`--entry`) whose decision line is left blank. It assigns no tier and writes nothing: hints
+are starting points, and what git cannot say is `?`, never zero.
+
+**CI is green again on main.** Three unused imports (two in `Tests/test_ids_ignore_how_the_path_was_typed.py`,
+one in `ghost_buster/cli.py`) failed the lint gate. The self-scan flagged the repeated "declined at your
+request" and "did not run" branches in `_run_repository_checks` as two new MAJOR findings, so they are now two
+small helpers with the same messages and the same `--json` reasons. The mutants that deleted the old call lines
+are retargeted to the new ones, and one mutant covers the helper itself (625 in all).
+
+**Red team round: dead_code false positives, silent baselines, git hardening, poison files.** Tests:
+`Tests/test_dead_code_uses.py`, `Tests/test_baseline_reported.py`, `Tests/test_scan_hardening.py`,
+`Tests/test_trusted_scan_writes.py`.
+
+- `dead_code` counts as USES: `from x import y` (re-exports in `__init__.py`, `TYPE_CHECKING`
+  imports), `from m import *`, `__all__` in every form (`+=`, annotated, `.extend`, `a + b`),
+  names in string annotations and forward references, and names in sibling `.pyi` stubs.
+  Computed lookups through `globals()`, `vars()`, `locals()`, `__dict__`, `sys.modules` and
+  `getattr` set `dynamic_lookup_possible: yes` with a count, and a literal prefix
+  (`"_cmd_" + x`) flags every name that starts with it.
+- `--json` gains `baseline: {path, suppressed}`. A baseline found in the scanned folder that hides
+  findings, and was not named with `--baseline`, is an `unmeasured` row and `status: "incomplete"`.
+  A human run warns on stderr. CI's self-scan now passes `--baseline` explicitly.
+- Every git command is hardened (`ghost_buster/gitsafe.py`): a target's `diff.external`,
+  `core.fsmonitor`, hooks and textconv drivers no longer run, and git no longer refreshes
+  `.git/index`. Also applied to gitleaks. The `origin`-forging limit of the trust record is
+  documented, not closed (README, `trust.py`).
+- A file the parser cannot survive (`RecursionError`, `MemoryError`) is listed as unassessable and
+  the scan continues. New `--max-file-size` (default 5 MB): bigger files are not read.
+- Skipped directories are named with counts in the output (capped at 20 listed); symlinked
+  directories are never followed and are listed with the files behind them. A scan that analysed
+  no Python file is `incomplete`, not `ok`.
+- `--json` is always one valid JSON document: Ctrl-C exits 130 with an error envelope,
+  `--verify-chain --json` uses the envelope (and scans nothing), and stray prints go to stderr.
+  `--priors --json` stays a bare list, documented.
+- Finding ids hash the path in NFC. Ids of non-ASCII paths in decomposed form change once; the old
+  spelling still matches baselines, ledgers and case files.
+- A trusted scan no longer creates `.benchmarks/` or rewrites `.git/index` in the target.
+
+**Honest exit codes, honest "not measured", a quiet default, stable ids.** Four problems from a red
+team, one change. Tests: `Tests/test_honest_exit_codes.py`, `Tests/test_honest_unmeasured.py`,
+`Tests/test_default_scan_writes_nothing.py`, `Tests/test_ids_ignore_how_the_path_was_typed.py`. 1849 passed, 39 skipped.
+
+- A crash used to exit 1, the same as "findings found". Now: 0 clean, 1 findings, 2 did not start,
+  3 crashed. A plain reason goes to stderr; under `--json` stdout is still valid JSON with
+  `status: "error"`. Table in the README.
+- **Breaking for readers of `--json`:** the output is now an object with `findings`, `scan`
+  (files scanned, skipped, unparsable), `unmeasured` (every check that did not run, with a reason
+  and whether you asked for that) and `status`. It used to be the bare list. A detector that
+  raises no longer kills the run; it is listed under `unmeasured`.
+- **Breaking:** the ledger is opt-in (`--ledger`, or `--ledger-path FILE`). A default scan used to
+  write `.ghost_ledger.json` into the scanned folder. An existing ledger is left untouched and the
+  run says so.
+- Finding ids now hash the path relative to the scanned folder, so `./x`, `x/`, an absolute path
+  or a symlink give the same id. Ids can change once for repositories with no `.git` or
+  `pyproject.toml` at the scan root (the old id kept the last two path pieces) or with a nested
+  `pyproject.toml`. Baselines, ledger history and retired case-file decisions written under the
+  old id still match; `--accept` rewrites the new one. Case-file decisions are matched for
+  readiness only; `ghost-triage` records keep their old ids.
+
+**A finding's file is now always shown relative to the folder that was scanned.** A red team found
+that a root-level `m.py` in a folder named `tgt` was reported as `tgt/m.py`: with no `.git` or
+`pyproject.toml` the path was cut to its last two pieces, so a tool that joined the path onto the
+scan folder looked for `tgt/tgt/m.py` and silently fixed nothing. It also meant a file three
+folders deep lost its first folder. Paths in the JSON now use forward slashes and are relative to
+the scan folder in every case. Finding ids, the ledger and every other field are unchanged (the
+rewrite happens last, after the ledger). Tests in `Tests/test_report_paths.py`.
+
+**dead_code now says what reaches a name from outside the Python call graph.** A red team showed
+Warden commenting out a console script, a plugin, a function named in settings.yaml and a getattr
+target. Findings now carry `referenced_by` and set `framework_hook` to `yes` for entry points
+(pyproject.toml, setup.cfg, setup.py) and string references (getattr, string collections, config
+files), and carry `dynamic_lookup_possible` and `dynamic_lookup_count` for computed lookups that
+cannot be resolved. Read-only. New module `ghost_buster/references.py`; tests in
+`Tests/test_dead_code_references.py`. 1817 passed, 39 skipped.
+
+**A setup.py that cannot be parsed is now recorded.** The packaging comparison used to treat it
+the same as a missing file, so no disagreement was checked and nothing said so. The structural
+model now leaves a note in `unresolved` saying the comparison did not run.
+
+**Ghost Tools now only reports.** Elegant is the only thing that applies changes.
+
+- Removed `--operate` (the surgeon), `--operate-branch`, `--operate-dry-run`,
+  `--serum-budget`, `--annotate-names`, and the modules `operate.py`,
+  `annotate.py` and `production/operate_lifecycle.py`.
+- Removed `ghost_writer/correct.py` and `ghost_writer/polish/`, with their tests
+  and mutants. Proposing fixes is Proposer's job. The LLM-backed doc-correction
+  proposal is not ported yet; it is in git history.
+- Mutant census is now 624 mutants in 45 files.
+- `Tests/test_tree_immutability.py` now asserts the writing flags are refused.
+
+**ghost_buster no longer writes into READMEs.** Only Streamline writes READMEs now.
+
+- Removed the name-disagreement README table (`update_readme`, `render_section`,
+  the `ghost_buster:name-disagreements` markers and `--annotate-readme`).
+  `--annotate-names` still writes the inline comments, AST-verified, and
+  `annotate()` now returns `(disagreements, changed)`.
+- Removed the `doc_counts` and `count_block` remedies from `--operate`, with
+  their tests and mutants. `annotate` is the only remedy left.
+- Kept: detection of README lies (`doc_count_contradicted_by_run` and the
+  writability judgement). ghost_buster still says a README is wrong; it no
+  longer edits one.
+- Streamline owns README standards and README writing.
+
+**The structural model records numbers set in code, and a cryptography
+boundary.**
+
+- `ModuleFacts.settings`: every top-level name bound to a number, and every
+  number given as a parameter default on a module-level function or a method
+  of a module-level class, with its value and line
+  (`ResubmissionGuard.__init__(max_unchanged=3) (line 112)`). Booleans,
+  strings and nested functions are left out. `render_model` lists them under
+  NUMBERS SET IN CODE. A number is not called a threshold or a limit; the name
+  is the author's claim and is reported as written.
+- A `cryptography` boundary for `hmac`, `cryptography`, `nacl`, `Crypto` and
+  `Cryptodome` imports. `hashlib` is excluded on purpose: 253 of 2,026 Python
+  files across the library import it, nearly all to fingerprint content, the
+  same reason `pathlib` is not filesystem evidence.
+
+Both come from innovation_os's fingerprint extractor
+(`tools/fingerprint/extract_signature.py`), which is being retired. It found
+tunables by matching names (threshold, limit, max, window, decay); this
+records the numbers instead. Five new mutants in `test_structure_mutants`
+cover them.
+
+**Three detectors for TOUCHSTONE failure modes ghost_buster used to miss.**
+
+`swizzle touchstone` scores ghost_buster against TOUCHSTONE's MANIFEST, real
+damage with the correct answers written down. On 2026-10-07 it named 0 of 5
+failure modes. Three were visible to a syntax-tree scanner and now have a
+detector each; with them it names 3 of 5, and still accepts 7 of 7 working
+reference implementations.
+
+- `commented_out_module` (MAJOR): a file that parses and defines nothing
+  because every def/class is inside a comment. TOUCHSTONE 3.1, the silent
+  pass: it imports cleanly, so `unassessable_file` never fired.
+- `undefined_self_method` (MAJOR): `self.name()` where the class, its
+  same-file bases and its `self.X =` assignments have no `name`. Abstains on
+  any class it cannot see whole (outside base, metaclass, decorator,
+  `__getattr__`, setattr/`__dict__`). TOUCHSTONE 3.2, the overclaim.
+- `flattened_copy` (MAJOR): an unparseable file whose tokens, ignoring
+  whitespace, match a readable file at 90% or more. Names the readable twin.
+  TOUCHSTONE 3.3, the flattening duplicate.
+
+Measured on 42 public repositories of this library (1,765 .py files), pinned
+in each calibration record: 1, 1 and 5 findings, all read and confirmed true.
+`undefined_self_method` judged 1,499 of 3,875 classes and abstained on the
+rest. The ghost_tools self-scan, SWIZZLE's seed and regression diffs, and the
+warp catalogue are unchanged.
+
+Not attempted, and why: TOUCHSTONE 3.4 (a branch unreachable because of how
+two computed scores relate numerically) and 3.5 (one formula written two
+different ways) need value-range or semantic reasoning, not a syntax tree.
+SWIZZLE now labels those two escapes "beyond syntax" rather than counting
+them as a missing detector.
+
+**Earlier in this release:**
+
+**The SWIZZLE integration layer, removed; a SWIZZLE regression gate, added.**
+
+Arrived together on 2026-09-18, removed together:
+
+- `ghost_tools/integration/` (17 modules). Copies of `swizzle/integration/`
+  in SWIZZLE: 12 byte-identical, 5 differing only in import style. SWIZZLE
+  keeps them and their tests.
+- Four tests (`test_cicd_integration`, `test_continuous_loop`,
+  `test_integration_decisions`, `test_ml_predictor`). Byte-identical to
+  SWIZZLE's own copies, which remain there.
+- `ghost_tools_integration/consumer.py`, `run_self_analysis.py` and
+  `run_arbiter_analysis.py`. These are **not** copies: they existed only here
+  and have no counterpart in SWIZZLE. They are recoverable from `0073c49`.
+  consumer.py was the only reader of the bundle SWIZZLE's
+  `publish_ghost_integration_bundle` writes, so that bundle now has no reader.
+- `docs/continuous-improvement-loop.md` and the README section that pointed
+  to it. They described the arbiter and loop above as features of this
+  toolkit.
+
+Nothing in ghost_buster, ghost_writer or blackhole_extrapolator imported any
+of it, and `[tool.setuptools] packages` never shipped it. The four tests
+imported `swizzle.integration`, so without SWIZZLE installed they errored at
+collection: four of the five problems in the `tests` job on main. The fifth,
+a surviving mutant in `test_pipeline_boundary_mutants` introduced with the
+`cli.py` refactor in #73, is killed by a new test in `test_pipeline_boundary`
+that asks the seam directly: `main()` calls `_present()` and never prints the
+report itself. Only line count had killed it, and #73 shortened `main()`
+below the threshold. The removal also clears all 62 errors
+`ruff check .` reported on main, and the self-scan's two MAJOR
+`intra_function_duplicate_block` findings in `evaluate_test_gate`.
+
+A new `swizzle-gate` CI job runs `swizzle diff` between the base of each
+change and the change itself, over SWIZZLE's regression cases and its seed
+catalogue. It fails when a case regresses or worsens, or cannot be measured
+on either side; escapes already present on the base do not fail it. SWIZZLE
+is private, so the job needs the `LIBRARY_READ_TOKEN` secret, and it is
+skipped for pull requests from forks, which get no secrets.
+
+## 1.9.1 (2026-09-17)
+
+**A corpus that could not demonstrate what it documented.**
+
+`Tests/fixtures/wizzle` was added in the 1.7.1-1.7.8 merge as a forensics
+edge-case repository: an enum member produced in library code, removed, and
+still named by a test, to show where a git-history-based provenance model
+produces findings that are technically correct and semantically
+misleading.
+
+It was a standalone repository copied into this tree as static files, and
+the scenarios it documented were defined by commits from its own history --
+`16e9923`, `3e2ddc3`, `ce544ad`, `a1a1356` -- none of which exist here. The
+forensics layer grades a removed member by what git says happened to it.
+This corpus had no git to say anything, so it could not produce a single
+one of the findings it was written to illustrate.
+
+Meanwhile it was doing three jobs nobody asked for:
+
+- `testpaths = ["Tests"]` reaches the whole tree, so pytest collected
+  `Tests/fixtures/wizzle/Tests/test_status.py` as a real test and errored
+  on `from enums import Status`. A green suite exited non-zero, which is
+  how an exit code stops being read.
+- The self-scan reported `unresolvable dependency: 'enums'` at MAJOR,
+  permanently, against this repository.
+- Three MINOR `dead_code` findings for functions in a fake library.
+
+Nothing referenced it. No test, no tool, no line of the README or this
+changelog. Deleted, and the self-scan drops from 89 findings to 85 -- the
+four above, and nothing else changed.
+
+**The argument survived; the files did not.** `docs/forensics-limits.md`
+carries the durable half: a security fix, a deliberate refactor and a
+regression leave the same trace in git history, the detector escalates
+anyway because the one that matters is indistinguishable from the one that
+does not, and the case file rather than a suppression is what stops the
+second reader re-deriving a decision the first already made. The invented
+commit SHAs, the `/tmp/wizzle` run instructions and the "future versions
+could" roadmap did not survive, the last of those because a list of
+unmeasured improvements is the kind of claim this project spends its time
+finding in other people's repositories. What is left names the two ideas
+that are not signal (commit-message prefixes, changelog absence) and the
+one that might be, and says it is unmeasured.
+
+The README's `unreachable_declared_state` paragraph now points at it.
+
+**The lint gate was red on main.** Checked out d1fd094 -- the merge of #64 --
+in a clean worktree and ran the pinned ruff 0.15.22: nine errors, every one
+in a test file. Four unused `import pytest`, one unused `pathlib.Path`, two
+semicolon-joined statements, and a module-level import of
+`_remedy_doc_counts` that a function-local import inside the same file
+already shadowed. `ruff check .` is a step that workflow calls a hard gate,
+so it had been failing on every push since that merge.
+
+Fixed: seven by `ruff check . --fix`, the two semicolons by hand, and the
+blank lines the removed imports left behind. No behaviour changed and no
+assertion moved -- the 63 hand mutants over those four test files still
+die, which is the check that the imports really were unused rather than
+merely unreferenced by ruff's reading.
+
+**Two of 1.8.0's own tests were environment-dependent**, and the CI matrix
+caught what no local run could. They asserted on the emitted
+`undeclared dependency` finding, which needs to map an import name to a
+distribution through installed metadata. Python 3.12 stopped putting
+setuptools in new virtualenvs, so on 3.12 there was nothing to map to, the
+scan correctly recorded the import as undecidable rather than undeclared,
+and the test that expected a finding got none while the test that expected
+silence got it for the wrong reason. Both now assert on the build-time
+exemption itself, which is a pure function of pyproject.toml and the file
+list. The 39 hand mutants over that module still die, including the two
+that invert the exemption, so the new assertions are strictly stronger than
+what they replaced.
+
+## 1.9.0 (2026-09-17)
+
+**The serum was a profile of the surgeon.**
+
+Run against fortress-kernel, a patient that met all six health criteria,
+the entire enhancement pass was this:
+
+    serum (measured, not applied):
+      measured redundancy (same input, done again):
+        read        17 calls, 4 distinct, 13 repeated  0.00s (0% of the run)
+        ast.parse    4 calls, 4 distinct,  0 repeated  0.01s (6% of the run)
+        subprocess   1 calls, 1 distinct,  0 repeated  0.00s (2% of the run)
+
+`speed.Profile` wraps `ast.parse`, `Path.read_*` and `subprocess.run`.
+Every call it counts is one ghost_buster makes. So the thirteen repeated
+reads are the scanner re-reading the patient, they cost 0.00s, and they
+were printed under the patient's name as the reward for passing the
+readiness gate. Those counters earned their place exactly once, when this
+toolkit was the patient and the run showed 9.5 parses per file.
+
+The static half was better aimed and barely there: a count of pitstop
+findings, appended ONLY when there were some. A sweep that ran and found
+nothing printed nothing, in the flagship feature of a project whose first
+principle is that silence is the defect.
+
+**The serum now has three parts and each says whose facts it reports.**
+
+*The surface* is every enhancement site in the patient, always reported,
+with a count when it is zero.
+
+*The dose* is the new thing, and it is the ladder the README had promised
+and never built. The check for an enhancement is the patient's own test
+suite; candidacy established that the suite passes and then nothing used
+that fact. A passing suite is not a suite that would notice. So each site
+is now graded by this toolkit's own standard for whether a test means
+anything: empty the function that holds the site, run the patient's suite,
+and see whether anything fails. The suite fails, the site can be verified.
+The suite passes, it cannot, and no dose is offered there. The run does not
+finish, it is unknown, which counts against the patient like every other
+criterion this tool could not assess.
+
+*The scan's own work* is the old profiler output, kept, labelled as
+ghost_buster's rather than the patient's, and printed only when something
+was repeated enough to act on. On fortress-kernel it now collapses to one
+line saying so.
+
+It costs one whole-suite run per site plus a baseline, so `--serum-budget
+SECONDS` bounds it (default 120). A site the budget did not reach is
+reported as not assessed, never dropped. A baseline that is not green in
+the scratch copy retires every verdict below it rather than producing
+verdicts nobody should believe.
+
+**What is still not rewritten, and the one that looks safe.**
+
+`x in [1, 2, 3]` inside a loop is O(n) per pass where `x in {1, 2, 3}` is
+O(1), every element is a hashable constant, and it looks like the obvious
+first automatic dose. It is not safe:
+
+    >>> [1] in [1, 2, 3]
+    False
+    >>> [1] in {1, 2, 3}
+    TypeError: unhashable type: 'list'
+
+List membership compares; set membership hashes the left operand first. The
+rewrite turns a `False` into a TypeError for every unhashable value that
+reaches it, nothing in the tree says what reaches it, and a suite that
+never passes an unhashable value goes green either way. It gets the same
+answer as the invariant-call hoist: reported, ranked, never rewritten. "The
+suite is green" is not a verification for a rewrite whose failure mode the
+suite does not exercise. The analysis is in `serum.py` rather than in a
+commit message, because the next person to look at that rewrite will read
+the module.
+
+**Two decisions became named functions so they could be tested directly.**
+`over_budget` and `verdict_for` were branches inside a loop that only fired
+on a timing or on a crashed subprocess; three hand mutants survived against
+them, which is the mutation suite doing its job on the module that exists
+to grade other people's suites. Extracted, tested, and the mutants re-aimed
+at the functions: 19 new mutants, all killed.
+
+## 1.8.0 (2026-09-17)
+
+**Three defects this toolkit walked past on a repository it was scanning.**
+
+Pointed at fortress-kernel, ghost_buster reported one MAJOR finding and two
+MINOR ones. The MAJOR one was wrong, and two real defects sitting in plain
+sight in the same two files went unmentioned. All three are fixed here, and
+the reason they are one release rather than three is that they are the same
+mistake: the scan read `[project]` and stopped.
+
+**`undeclared dependency` now reads `[build-system].requires`.**
+
+`setup.py` imports `setuptools`. fortress-kernel declares it in
+`[build-system].requires`, which is the only correct place: a PEP 517
+frontend installs that list into an isolated environment before `setup.py`
+is ever imported, and putting it in `[project].dependencies` would install
+a build tool alongside the package at runtime. The scan read only
+`[project].dependencies`, `[project].optional-dependencies` and
+`requirements.txt`, so it reported the one right answer as a MAJOR
+works-on-my-machine failure.
+
+A build-time file's imports are now satisfied by `[build-system].requires`.
+The exemption is for build-time files only -- currently `setup.py` at the
+repository root. A runtime module importing the same package is still
+undeclared, because consent to install something before the build is not a
+promise that it will be importable after it, and treating it as one would
+hide a real ImportError.
+
+**`parallel packaging metadata`: two files declaring one package.**
+
+fortress-kernel ships both `setup.py` and `pyproject.toml`, and both
+declare the name, the version, the description, the Python floor and the
+dependencies. The descriptions had already drifted: `pyproject.toml` said
+"Minimal, composable governance kernel...", `setup.py` said "FORTRESS
+Unified Governance Kernel - Multi-controller safety orchestration". Which
+one a user gets depends on how they installed it.
+
+This is the packaging case of `drifted_copy`, and it is graded the same
+way. Disagreeing is MAJOR: one of the two answers is already wrong.
+Agreeing is MINOR -- nothing is broken today, and the defect is that
+keeping it that way is an obligation nobody agreed to and nothing checks.
+
+Only literal values are compared. `version=read_version()` is not a
+declaration this scan can read, so it is counted on neither side, and a
+name is compared the way an index compares it (PEP 503) so that
+`Fortress_Kernel` and `fortress-kernel` are not reported as drift.
+
+**`test_config_collects_nothing`: a runner pointed at nothing.**
+
+fortress-kernel set `testpaths = ["tests"]` and has no `tests/` directory.
+Its 48 tests sit at the repository root. pytest does not fail on this: it
+warns once and falls back to searching the working directory, or -- version
+and invocation depending -- collects nothing and exits 0.
+
+The second outcome is what this is for. A CI job whose whole purpose is to
+run the suite passes in seconds having run none of it, and a green check
+for zero tests is indistinguishable from a green check for all of them. The
+fallback is not a safety net either: it fires where somebody is watching
+(a local run) and not where nobody is.
+
+`no_ci_configuration` already said "you wrote tests and nothing runs them".
+This says the worse thing: somebody configured a runner and it does not.
+Read from the first of `pytest.ini`, `pyproject.toml`, `tox.ini`,
+`setup.cfg` that declares `testpaths`, which is pytest's own order. It is
+static -- it never runs pytest -- so unlike `--tests` it holds for an
+untrusted repository, which is exactly where nobody is going to notice by
+watching the output.
+
+It stays quiet in the two places where quiet is right. A repository with no
+test files at all is not reported, because `testpaths` naming a directory
+nobody has created yet is a plan. A path that exists is not reported,
+whatever is or is not under it. One missing entry of several is MINOR, not
+MAJOR: the suite still runs, and what is reported is that a configuration
+has started naming things that are not there.
+
+The check is also not suppressed by CI being configured, which is the
+opposite of how `no_ci_configuration` behaves and is deliberate. CI is what
+turns "collected nothing" into a green badge, so the finding matters more
+there, not less.
+
+**Measured 2026-09-17** on three repositories in this ecosystem, pinned by
+commit in `ghost_buster/calibration.json`: one finding each, both on
+fortress-kernel, and none on the two that are configured correctly. That is
+a small corpus and the record says so.
+
+**The project scan now prints a test-configuration line on every run**,
+including the runs where it found nothing -- a configuration that was
+checked and is fine must not print identically to one nobody looked at.
+
+## 1.7.8 (2026-09-12)
+
+**Evidence that costs nothing to fake does not get to lower a severity.**
+
+1.7.7 discounted a test-only state to INFORMATIONAL, reasoning that somebody
+constructing a state deliberately is weak evidence it was meant to be
+unreachable. That reasoning was wrong, and wrong in a way worth writing down
+because it is the general mistake.
+
+A test file is the cheapest artifact anyone can add to a repository. Grading
+it does not measure intent; it measures willingness to type. The attack that
+1.7.7 was written to close -- one test naming the state -- therefore still
+worked, at a cost of one severity notch instead of total suppression, and a
+comment next to the discount explained exactly where the lever was. The
+harness that attacks this tool exists to find cheap edits that change its
+verdict, and 1.7.7 handed it one.
+
+The discount is gone. Three things replace it, ranked by what it costs to
+fake the evidence.
+
+**Structural: a member built from a runtime value is reachable.** `Status.X`
+is an attribute access and is what the detector looked for. `Status(row["s"])`
+is not, and is how most members of most enums actually come into existence
+in a program that reads its own output back. Subscript and `getattr` count
+too; a LITERAL argument accounts only for the member it names.
+
+This retired two FALSE POSITIVES in this repository. `Status.CONFIRMED_BY_REVIEW`
+and `Status.REJECTED` were reported at the top severity this detector emitted
+while `Finding.from_dict` built either of them from a stored record at
+`schema.py:347`. They had been hand-confirmed as true findings. They were not.
+
+Faking this evidence means writing a real deserialiser, at which point it is
+not fake -- but only in LIBRARY code, so that is the only place it counts. A
+`Phase(record["x"])` sitting in a test file is barely more typing than naming
+the member, and counting it would have restored the free lever in a stronger
+form: clearing the finding outright rather than merely discounting it.
+
+Reachable-from-data is not the same as fine, and is only silent when the
+enum SAYS so. A data path nobody documents stays MINOR, because the member
+then arrives from outside into code that never produces it: every branch
+handling it was written by somebody who never made one and is untested by
+construction, and if there is no branch the dispatch quietly does nothing.
+That is the mechanism of the defect this detector was built for. Pointed at
+SWIZZLE, `Phase.BETWEEN_RUNS` and `DocumentKind.CHANGELOG` land here --
+`genome.py` rebuilds both from a stored record, so a saved genome really can
+carry a phase the world builder never carries out.
+
+**Declared: prose is checked, never believed.** A docstring saying a member
+arrives from stored data suppresses nothing on its own -- the data path has
+to be there. The same claim with no data path is CRITICAL, which is this
+repository's own definition ("actively misleading or dangerous if acted on")
+applied rather than stretched: an undocumented gap is a gap, and a
+documented one is a gap plus an assurance that stops the next reader
+looking.
+
+The asymmetry is the design. A claim cannot buy a lower severity and can buy
+a higher one. Claims are free to write, so they are only ever held against
+the writer.
+
+**Historical: the timeline separates an oversight from an act.** New module
+`ghost_buster/forensics.py` walks git history to answer why a member is
+unproduced. Never wired up is MINOR. Library code produced it and a commit
+removed the production while leaving the declaration standing is MAJOR: that
+is a regression wearing an oversight's clothes.
+
+And the case the module was built for -- the last production MOVED out of
+library code and into a test in one commit. The state became no more
+reachable; the evidence that it is unreachable became quieter. That is the
+shape of quieting this detector rather than answering it.
+
+Note the inversion. "Only a test produces it" read as a snapshot is weak
+evidence of nothing much, which is what 1.7.7 tried and failed to act on.
+Read against history it is the strongest signal here, because the question
+was never whether a test produces the member but whether library code
+stopped. The same observation escalates instead of excusing, purely because
+the timeline is available.
+
+**Not knowing is said out loud.** No repository, no git, a shallow clone, a
+walk that exceeds its budget: all yield UNKNOWN, which grades at the weight
+of what was actually observed and never escalates. Collapsing UNKNOWN into
+"never produced" would report the end of the search as the end of the
+history, which is the exact failure this tool exists to find in other
+people's code.
+
+History is only asked about declarations that live in the repository being
+read. A scan can be handed files from more than one place -- `--join` reads
+two repositories at once -- and asking this repository about a member
+declared in another one returns a confident NEVER_PRODUCED off a search of
+the wrong history, which is the most misleading answer available.
+
+Relocation is recognised within a single commit, so splitting the move
+across two commits reports REMOVED_FROM_LIBRARY instead. That carries the
+same severity, which is the point: the evasion loses the label and gains
+nothing. It is asserted as a property, because a later version escalating
+only relocation would create the incentive that today does not exist.
+
+`history=False` makes the detector a pure function of the files on disk
+again, for callers that need one.
+
+**A claim this module made about itself, corrected.** `mechanical.py` opened
+by saying every detector here is "a pure function of the files on disk".
+One of them now reads a commit graph. The sentence was true when written and
+quietly stopped being true; it says what it does instead.
+
+On this repository the detector now reports 5, all `never_produced`, all
+confirmed by hand: four `EvidenceKind` members and `VoidKind.UNREALISED`,
+all in `blackhole_extrapolator`. The two `Status` findings are correctly
+silent.
+
+706 mutants across 53 files, including a new `test_forensics_mutants.py`
+whose mutants are mostly collapses -- every question the history layer asks
+can be answered "never produced", and a layer that degraded to its most
+common answer whenever it could not read the history would pass a suite that
+only checked the common case.
+1994 passed, 38 skipped.
+
+## 1.7.7 (2026-09-12)
+
+**A state only a test can create is still a state nothing reaches.**
+
+The third blind spot of the same shape in `unreachable_declared_state`, and
+the worst of the three. It counted a production in a TEST as a production.
+
+A test constructs a state artificially to prove it is *handled*. That is not
+something producing it. And the consequence is not a refinement: the harness
+defect this detector was built for -- a phase declared and never carried out
+-- would have gone completely unreported if one test had named the phase,
+which is the most likely thing in the world for a test to do.
+
+Library and test corpora are separated now, using the same path predicate
+the rest of this module already uses for "is this a test".
+
+**Weaker evidence, weaker claim.** A member nothing produces at all stays
+MINOR. A member only tests produce is INFORMATIONAL, because "deliberately
+not produced" and "accidentally not produced" look identical from here.
+
+Measured: the distinction added four true findings across the two
+repositories and not one was actionable. Every one was a state reached from
+stored data, or held unreachable on purpose -- among them SWIZZLE's
+`Phase.BETWEEN_RUNS`, which is now deliberately not carried out, and its
+`DocumentKind.CHANGELOG`. Reporting those at the same weight as a real gap
+is how a usable detector becomes a noisy one.
+
+Two more true findings surfaced here at INFORMATIONAL:
+`EvidenceKind.SHAPE_COMPLEMENTARITY` and `VoidKind.UNREALISED`, both in
+`blackhole_extrapolator`, both produced only by their tests.
+
+Also checked, and correct: three kinds that ARE produced have no entry in
+the confidence-weight table, so `_KIND_WEIGHT.get(k, 0.0)` gives them zero.
+Those three are exactly the kinds the enum documents as "never grouped into
+a void". The default is load-bearing and the omission is deliberate.
+
+676 mutants. 1932 passed, 38 skipped.
+
+## 1.7.6 (2026-09-12)
+
+**A lookup table is a comparison in disguise.**
+
+1.7.5's `unreachable_declared_state` had a blind spot the shape of its own
+subject. It counted a member named inside a constant set as produced:
+
+    AUTHORITATIVE = frozenset({Status.CONFIRMED, Status.CONFIRMED_BY_REVIEW,
+                               Status.SUPPRESSED})
+
+That set names three members and produces none of them. It exists to be
+tested against, exactly like the `in` it is written for, which is the same
+category error as counting a comparison.
+
+So on its own repository the detector reported `Status.REJECTED` and stayed
+quiet about `Status.CONFIRMED_BY_REVIEW`, which is never assigned either. A
+detector that misses a state of precisely the shape it was built to find is
+worth saying out loud.
+
+Members named only inside a module-level upper-case constant holding a
+COLLECTION are no longer counted as produced. A constant holding a single
+member -- `DEFAULT_PHASE = Phase.BUILD` -- still is, because something reads
+that name and uses the value.
+
+Findings on this repository went 1 to 5, all five confirmed by hand:
+
+- `Status.REJECTED` and `Status.CONFIRMED_BY_REVIEW`, superseded by
+  `disposition`;
+- three `EvidenceKind` members in `blackhole_extrapolator` that appear only
+  as keys in a confidence-weight table, so the table assigns confidence to
+  evidence nothing can produce.
+
+**And the Status declaration is now true.** Three of its five members are
+produced here; two only ever arrive from data. They are not dead and must
+not be deleted: `Finding.from_dict` reconstructs any member from a stored
+record, so a baseline, a casefile, a hand-edited FindingSet or another
+tool's output can carry them, and removing them would turn reading such a
+file into a crash.
+
+They are also not how a human triages. That is `disposition` -- "fix",
+"suppress", "document" -- in `ghost_writer/triage.py`, which closed the loop
+the README had drawn for a long time and nothing had walked. `REJECTED` is
+an older vocabulary for the same decision, kept readable rather than kept
+alive. `AUTHORITATIVE` handles both correctly when they do arrive, which is
+the point: a state this tool does not produce still has to be read, and read
+correctly, when somebody else produces it.
+
+The detector still reports both, and should. The finding is true. What
+changed is that the declaration no longer implies a state the code can reach
+on its own.
+
+The three `EvidenceKind` findings are reported and not repaired. Producing
+them, handling their arrival, or removing them and their weights are all
+defensible, and that is a decision about what that component is for.
+
+671 mutants. 1923 passed, 38 skipped.
+
+## 1.7.5 (2026-09-12)
+
+The alignment reversed: the harness that had been attacking this tool became
+the patient, and this tool was pointed at it. Two findings came out of the
+first scan and neither was about the harness's Python.
+
+**A decorator is a reference.** `@register("audit")` hands a function to
+something that keeps it; the name is reached through that registry and never
+appears as an identifier again, so `dead_code` called it dead.
+
+This was DISCLOSED, not hidden. The detector's docstring has named it, and
+named this tool's own `@register` as the example, since 0.1.1. Disclosure is
+enough for a report a human reads, and stops being enough the moment autonomy
+is contemplated: measured on the patient, **51 of 85 findings were this class,
+and every one was a live CLI command.** A remedy authorised to delete dead code
+would have removed every command that tool has.
+
+Decorated definitions count as referenced now. The cost is false negatives on
+genuinely dead decorated code, which is the direction this detector already
+chose everywhere else it had to choose. The calibration record moves the entry
+out of `disclosed`, because a disclosure that has been fixed and left standing
+tells a reader to distrust a result that is now sound.
+
+**A new detector: `unreachable_declared_state`.** An enum is a vocabulary of
+states, and a member nothing ever produces is a distinction the vocabulary
+claims and the behaviour does not have. Every branch written to handle it is
+unreachable, anything dispatching on the enum silently does nothing for it,
+and a reader believes the system can be in a state it cannot deliberately
+enter.
+
+Reported only when SOME members of the same enum are produced and others are
+not. An enum reconstructed entirely from data -- an HTTP status, a wire
+protocol -- is not a defect, and without that rule it would be the whole
+output.
+
+It found one on each repository, on the first run, both confirmed by hand:
+
+- on the patient, a phase declared among four of which the world builder
+  carries out three. A case declaring it built a world WITHOUT its mutation,
+  recorded an empty construction history, and was still judged by a check that
+  adjusted its verdict because the phase was declared. The experiment stopped
+  asking its question and produced an answer anyway.
+- here, `Status.REJECTED` -- "a human looked and said no" -- which nothing
+  produces, whose `triage.py` does not exist, and about which a test asserts a
+  property.
+
+Neither is repaired autonomously. The right fix for a state nothing produces
+is to produce it, to handle its arrival, or to remove it, and which of those
+is correct is not something an AST can decide.
+
+Two of its guards turned out to be unkillable by any test and were deleted
+rather than kept looking proven: one was subsumed by an empty set difference,
+the other by case-sensitive string comparison.
+
+666 mutants. 1914 passed, 38 skipped.
+
+## 1.7.4 (2026-09-12)
+
+**A document that says what it is, in its own words.**
+
+Writability was decided from two things, and neither can carry what a file
+says about itself: the NAME (`readme.md` is a current-state document,
+`STATUS_REPORT.md` is not) and the sentence beside the claim.
+
+Two worlds got through, both ordinary:
+
+    a README opening `<!-- generated: do not edit by hand -->`
+    a README opening "Recorded 2026-01-14. This document is a record of a
+      moment and is not updated afterwards."
+
+The first is what documentation tooling produces every day; whatever
+generates the file will overwrite the edit, so the edit is either pointless
+or a lie until it is overwritten. The second is what happens to a project
+nobody archived properly. Both had their claim rewritten.
+
+The second is instructive about why the existing checks could not do this
+job. `_DATED_SENTENCE` reads the seventy characters before the claim with
+no full stop in them; that declaration is a paragraph away with two full
+stops in between. It was never going to see it. And the existing historical
+test put the declaration in `STATUS_REPORT.md`, where the filename gate
+refuses it without the document ever being read -- so the case passed and
+the class stayed open, which is the same shape of miss as 1.7.1's.
+
+The document's own head is now read, bounded to `_HEAD` characters. A file
+that says what it is says so at the top; searching the whole document would
+let a phrase deep inside a long README, about some other file most likely,
+silence a real claim. Both directions have tests and mutants, because
+refusing too much is a real cost and an evaluator that cannot see
+over-caution cannot tell a safe tool from a blind one. Measured after the
+change: over-caution unchanged at one case in twenty-three.
+
+659 mutants. 1886 passed, 38 skipped.
+
+## 1.7.3 (2026-09-12)
+
+Three defects, on two surfaces nothing had ever tested: what the tool
+CERTIFIES, and how it decides that two findings are the same finding.
+
+**A suite that never finished running was certified as passing.** The
+green gate is `passed == collected`, and a module that cannot be imported
+contributes to neither side, so the subtraction says green. It is not
+green. A whole file of the suite did not execute and nobody knows what is
+in it.
+
+The tool knew. The same run reported the blocked module as a finding of
+its own, naming the missing import, and then its count remedy wrote "The
+test suite has 30 tests, all passing." into the README. That is the one
+failure a reader cannot catch by looking at the diff: every byte is in a
+permitted place and the document is now false. The mechanism is ordinary
+-- an optional dependency that is not installed in somebody's
+environment.
+
+The measurement now carries what it could not examine, the finding is
+MAJOR rather than MINOR when anything went unexamined, and the remedy
+declines and says which file did not run.
+
+**A repository that commits the ledger could never be operated on.** The
+workup writes `.ghost_ledger.json` into the repository it is scanning,
+that dirties the tracked file, and the door check refuses. Every time,
+forever. This module's own documentation recommends committing the record,
+on the grounds that a governance record nobody keeps is worth nothing.
+
+1.6.1 fixed this for an UNTRACKED ledger and wrote down the reasoning that
+reinstated it one level down: "a tracked note that changed is somebody's
+real edit". That was the wrong test. The distinction was never tracked
+versus untracked, it is whose edit it is. The notes are now digested on
+arrival, before the workup touches anything, so a note that was clean when
+we arrived and differs now differs because of us. A note that was ALREADY
+modified still refuses, which is the behaviour worth keeping: the workup
+would otherwise overwrite somebody's uncommitted edit to a committed
+record.
+
+**A measurement is not an identity.** A finding's id is a content hash of
+detector + path + summary, and several summaries carry a number the run
+just measured. Adding three tests to a suite, with the documented claim
+untouched at 12, gave three findings three new identities:
+
+    no_ci_configuration            "1 test file(s)" -> "2 test file(s)"
+    doc_count_contradicted_by_run  "collects 30"    -> "collects 33"
+    doc_test_count_drift           "at least 30"    -> "at least 33"
+
+A baseline suppresses by id, so accepting any of these silently meant
+accepting it until the next commit that changed a count. For these
+detectors the baseline was permanently inert.
+
+Stripping digits from every summary is not the fix: `'core_0' is defined
+but never referenced` and `'core_1' ...` differ only in a digit, and
+collapsing those means accepting one suppresses the other, which is the
+same failure in the worse direction. So a detector may now state what
+identifies its finding, because only the detector knows which part of its
+own sentence is the defect and which part is this morning's arithmetic.
+Detectors that say nothing are unchanged.
+
+One-time effect: existing baseline entries for those three detectors will
+not match and will be reported once as new.
+
+**A file that moved is not a defect that was fixed.** The same identity
+problem, through the path rather than the summary: a module renamed byte
+for byte produced one finding that vanished and one that was brand new. To
+the ledger that read as a defect resolved and a different defect opened,
+so the streak broke and the next sighting at the new path would have been
+counted as a RETURN.
+
+There is no content-derived identity that is both stable under a rename
+and distinct across files -- an id that ignored the path would give two
+identical defects in two files one identity, which is the worse direction
+and is now held by a test. So identity keeps the path and the MEMORY
+follows it, which is what the version control system is for: the ledger
+asks git what moved between the run it remembers and this one, and carries
+the history onto the new id, recording where it came from.
+
+Best effort throughout. No git, no previous run, an unreadable history: the
+answer is "no renames known" and the ledger behaves exactly as before. It
+refuses rather than guessing when a history already exists at the new id,
+or when several candidates sit at the destination and nothing tells them
+apart -- two unused functions in one module is the ordinary case, and they
+are told apart by their summaries, which name the symbol rather than the
+file and so survive a rename.
+
+STILL OPEN. A baseline is a set of identities and nothing else, so it
+cannot follow a move however good the ledger's history is. An accepted
+finding starts being reported again after a rename. Closing that means the
+baseline storing more than ids.
+
+All three were found by an adversarial harness aimed at the two empty rows
+of its own coverage matrix. The second was found while chasing what looked
+like a harness artefact, and reproduces in one command from a clean
+checkout with no harness at all.
+
+**The test suite no longer depends on whoever runs it.** Most of this suite
+builds real git repositories, and those `git init` calls inherited the
+global configuration of whatever machine the suite ran on. Measured: sixty
+tests failed at once, across branch scanning and operation recovery, with
+`git commit` exiting 128, because an external commit signer had run out of
+file descriptors. Nothing in the tool had changed.
+
+A test suite whose result depends on a developer's `~/.gitconfig` cannot be
+trusted either way. `Tests/conftest.py` now points `GIT_CONFIG_GLOBAL` at an
+empty file and turns off the system config, so a test repository sees only
+what the test sets on it -- signing, but also hooks, aliases, `diff.renames`,
+`autocrlf` and everything else that could change a result here without
+anybody noticing which.
+
+651 mutants. 1858 passed, 38 skipped.
+
+## 1.7.2 (2026-09-12)
+
+1.7.1 fixed containment in two of the three writers and reported the job
+done. It was not.
+
+The harness that found the original hole was pointed back at the fix and
+asked a different question: not "does this case still reproduce" but "does
+a case one dimension away". The answer was yes. The same world with a
+maintained count block in it walked straight back out of the repository,
+because the block remedy takes its paths from the corpus and writes to
+them, and nothing on that path was checked.
+
+The lesson is in how it was missed. The case that found the first hole had
+no block in it, so the fix was verified against a world that could not
+exercise the writer it left open -- the case passed and the class stayed
+open. `Tests/test_write_containment.py` now runs EVERY writer over ONE
+world for exactly that reason: a guard added to one path and not another
+fails there rather than in six weeks.
+
+There is one containment rule now, in one function, imported rather than
+restated, so "every write into the patient is contained" is a single fact
+instead of three hopeful ones.
+
+635 mutants. 1797 passed, 38 skipped.
+
+## 1.7.1 (2026-09-12)
+
+An adversarial harness was pointed at the operating mode, and the surgeon
+turned out to have three ways of writing somewhere he had not looked. All
+three are the same mistake wearing different clothes: a decision reached
+about one thing and applied to another.
+
+None of them were reachable by a scan. They are all in the write path,
+which is the half a scanner cannot exercise on itself, and every one was
+found by constructing a repository state rather than by reading the code.
+
+### A write could land outside the patient
+
+`--operate` composes `root / "README.md"` and writes to it. A README that
+is a symlink to a file outside the repository is an ordinary thing for a
+repository to contain, and the write followed it -- outside the branch the
+operation opened, so outside anything the operation can revert, and
+outside the commit it then tries to make, which fails with nothing to
+commit and reports a symptom after the damage.
+
+Every other write in the tool resolved its target and checked containment
+first. This one did not, because it takes its paths by construction rather
+than from a finding, and "by construction" was doing work it could not do.
+`annotate.refuses` now answers the question at the write, where both
+callers reach it, rather than at each caller, where a guard on one of them
+is a guard on neither.
+
+### A maintained block replaced a paragraph somebody wrote
+
+The markers hand over a COUNT. The remedy replaced the whole region
+between them, so a repository that had written a sentence inside the block
+lost it on the next operation.
+
+The verification could not fail for this. It checked that every byte
+OUTSIDE the block was unchanged, which was true, and which was answering a
+different question from the one the invariant needed. That distinction --
+a verification that is sound and does not establish the property it exists
+for -- is the most useful thing this release learned.
+
+The number is now rewritten in place and every other byte in the block is
+the author's. A block with nothing but whitespace in it is a repository
+asking for the sentence and gets it; a block holding something that is not
+a count is left alone and said so; a block with two counts is left alone,
+because there is no single span to name. The verification is now that
+everything except the digits is unchanged, byte for byte.
+
+The same remedy also applied itself to any markdown file with the markers
+in it, with no document check at all, while the prose remedy one function
+away refuses a dated or versioned document by name. One repository could
+get two different answers to "may a machine update this number", decided
+by which mechanism happened to reach it. It refuses dated documents now.
+
+### A writability verdict was trusted after the world moved
+
+`writable: yes` is decided during the workup. Two things can have changed
+by the time a remedy acts on it.
+
+The text: the tool runs the repository's own test suite as part of the
+workup, so a test that rewrites a document executes inside the window
+between the reading and the writing. A live sentence replaced mid-run by a
+dated one still carried a verdict reached about the sentence that was
+there before. Re-running `claim_shape` was not enough -- that answers the
+REPORTING question, and a dated sentence passes it.
+
+The path: `_resolve` follows symlinks, correctly, because the question is
+which file the bytes land in. But `why_not_writable` opens by asking
+whether the FILENAME is a current-state document, and the name it had been
+given was the one the scan walked. Judge `README.md`, write through the
+link, and a file whose own name the same rule would have refused gets
+rewritten.
+
+The verdict is now re-derived at the write, from the resolved file's real
+name and its text as it stands.
+
+### A finding named the link instead of the file
+
+The corpus lists each real file once, which is right, and kept whichever
+of two names sorted first, which is arbitrary. When a symlink sorted
+first, every finding in that file named the link -- so a reader who
+followed the reported path and looked at its history saw a symlink that
+had never changed, and concluded nothing had happened. The bytes were in
+the other file, which no finding mentioned. The file wins now, never the
+link to it.
+
+### The name-disagreement section is no longer written uninvited
+
+The block remedy states the principle and declines to write its own
+markers for it: a scanner that inserts its own markup into somebody's
+README uninvited has decided something that was not its to decide. The
+annotation writer was doing exactly that on every operation, including
+when it had nothing to report, appending a section whose table read
+`_none_`. A section recording nothing is no longer created. An existing
+block is still maintained, because a repository carrying one opted in.
+
+### What this cost, and one guard that went
+
+634 mutants, up from 625, with a new suite for the containment guards:
+each of the three fixes above has a mutant that deletes it and a test that
+notices.
+
+Two of the existing mutants survived the fixes and both were the same
+lesson twice. The containment check in `_resolve` and the ambiguous-line
+check had each become undetectable, not because they stopped mattering but
+because the new writability re-derivation refused those particular test
+cases first. The tests were rewritten so each guard can be made to fail
+alone -- one of them for the second time, its own docstring having warned
+about this exact failure. A third pair really was redundant: with the
+block body no longer replaced whole, the explicit "already current" check
+and the `meant == text` check could not each be made to fail alone, so one
+of them was decoration and it went.
+
 ## 1.7.0 (2026-09-12)
 
 The surgeon learns to treat something, and learns two things about

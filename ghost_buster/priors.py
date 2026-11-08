@@ -15,8 +15,8 @@ A decision HELD when the world did what the decision expected:
 | decision   | held when                                            | did not hold when |
 |------------|------------------------------------------------------|-------------------|
 | fix        | the finding is gone and has not returned             | still present, or it came back |
-| suppress   | nobody re-decided it                                 | a later decision on the same finding said otherwise |
-| document   | nobody re-decided it                                 | a later decision on the same finding said otherwise |
+| suppress   | nobody re-decided it                                 | a later decision on it said otherwise |
+| document   | nobody re-decided it                                 | a later decision on it said otherwise |
 
 A case that names no finding (recorded before 1.2.0) or whose finding the
 ledger has never seen is UNKNOWN, never counted as held. The view is
@@ -65,7 +65,8 @@ class DetectorPriors:
                 "notes": list(self.notes)}
 
 
-def _verdict(case, later_cases, ledger: Optional[Ledger]) -> str:  # ghost_buster: name-disagreement -- `later_cases` is `later` at every call site
+# ghost_buster: name-disagreement -- `later_cases` is `later` at every call site
+def _verdict(case, later_cases, ledger: Optional[Ledger]) -> str:
     """Did this decision hold? See the module docstring."""
     if not case.finding_id or not case.decision:
         return UNKNOWN
@@ -95,7 +96,8 @@ def build(casefile: Casefile, ledger: Optional[Ledger]) -> List[DetectorPriors]:
         row.outcomes[c.outcome] = row.outcomes.get(c.outcome, 0) + 1
         if c.outcome in ("real", "false"):
             later = [o for o in by_finding.get(c.finding_id, []) if o.when > c.when] if c.finding_id else []
-            v = _verdict(c, later, ledger)  # ghost_buster: name-disagreement -- `later` is `later_cases` in the signature
+            # ghost_buster: name-disagreement -- `later` is `later_cases` in the signature
+            v = _verdict(c, later, ledger)
             row.verdicts[v] = row.verdicts.get(v, 0) + 1
         if c.note:
             row.notes.insert(0, c.note)
@@ -105,7 +107,8 @@ def build(casefile: Casefile, ledger: Optional[Ledger]) -> List[DetectorPriors]:
 
 
 def render(rows: List[DetectorPriors], casefile_path, ledger_path) -> str:
-    out = [f"PRIORS  {casefile_path}" + (f"  with {ledger_path}" if ledger_path else "  (no ledger: fixes cannot be judged)")]
+    ledger_note = f"  with {ledger_path}" if ledger_path else "  (no ledger: fixes cannot be judged)"
+    out = [f"PRIORS  {casefile_path}" + ledger_note]
     if not rows:
         out.append("  no decisions recorded yet: ghost-triage FINDINGS --casefile records them")
         return "\n".join(out)

@@ -39,7 +39,7 @@ import ast
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Set
+from typing import Dict, List, Optional, Sequence, Set, Union
 
 from . import corpus
 from .naming import is_test_path
@@ -84,7 +84,9 @@ def _variant_in(loop: ast.AST) -> Set[str]:
     return out
 
 
-def _iterated(loop: ast.AST) -> List[ast.AST]:
+def _iterated(
+    loop: Union[ast.For, ast.While, ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp],
+) -> List[ast.AST]:
     """The statements or expressions evaluated once per iteration. A
     comprehension has no `.body`; its per-iteration work is the element and
     the filters, and the FIRST iterable is evaluated once, not per pass."""
@@ -104,6 +106,12 @@ class Pitstop:
     line: int
     kind: str
     what: str
+    #: For a list membership: the container's name, whether it is a `list` or `tuple`
+    #: literal, and the line its assignment starts on. A fixer takes these as Ghost's
+    #: facts instead of re-reading the summary sentence. Empty for an invariant call.
+    name: str = ""
+    container: str = ""
+    defined_at: int = 0
 
 
 # A membership test against a constant this small is not a scan worth
@@ -117,12 +125,20 @@ def _list_literals_bound(tree: ast.Module) -> Dict[str, int]:
     """Names bound to a list or tuple literal at module level, with the
     literal's length. The one case where the tree KNOWS the container is a
     list and not something a set would break, and knows how long it is."""
-    out: Dict[str, int] = {}
+    return {name: length for name, (length, _, _) in _literal_facts(tree).items()}
+
+
+def _literal_facts(tree: ast.Module) -> Dict[str, tuple]:
+    """Name -> (length, "list" or "tuple", line of the assignment) for every
+    module-level list or tuple literal. A name bound twice keeps its last
+    binding, which is the one a later membership test sees."""
+    out: Dict[str, tuple] = {}
     for node in tree.body:
         if isinstance(node, ast.Assign) and isinstance(node.value, (ast.List, ast.Tuple)):
+            container = "list" if isinstance(node.value, ast.List) else "tuple"
             for t in node.targets:
                 if isinstance(t, ast.Name):
-                    out[t.id] = len(node.value.elts)
+                    out[t.id] = (len(node.value.elts), container, node.lineno)
     return out
 
 
@@ -218,6 +234,7 @@ def _filled_each_pass(loop_parts: List[ast.AST]) -> Set[int]:
 
 
 def _filled(loop_parts: List[ast.AST], names: Set[str]) -> bool:
+    target: ast.AST
     for part in loop_parts:
         for node in ast.walk(part):
             if isinstance(node, ast.AugAssign):
@@ -257,6 +274,7 @@ def find_pitstops(files: Sequence[Path]) -> List[Pitstop]:
         if tree is None:
             continue
         lists = _list_literals_bound(tree)
+        facts = _literal_facts(tree)
         for loop in ast.walk(tree):
             if not isinstance(loop, _LOOPS):
                 continue
@@ -272,8 +290,11 @@ def find_pitstops(files: Sequence[Path]) -> List[Pitstop]:
                             and isinstance(node.ops[0], (ast.In, ast.NotIn))
                             and isinstance(node.comparators[0], ast.Name)
                             and lists.get(node.comparators[0].id, 0) > _SMALL_LITERAL):
+                        bound = node.comparators[0].id
                         _add(out, seen, Pitstop(path, node.lineno, LIST_IN_LOOP,
-                                                f"`in {node.comparators[0].id}`, a module-level list"))
+                                                f"`in {bound}`, a module-level list",
+                                                name=bound, container=facts[bound][1],
+                                                defined_at=facts[bound][2]))
                     # a call whose arguments cannot change between iterations
                     if (isinstance(node, ast.Call)
                             and isinstance(node.func, ast.Name)
@@ -299,6 +320,9 @@ def detect_pitstops(files: Sequence[Path]) -> List[Finding]:
             severity=Severity.MINOR,
             status=Status.CONFIRMED,
             summary=f"{p.path.name}:{p.line} {p.what} inside a loop",
+            # The line moves with every edit above it: see `Finding.identity_key`.
+            identity_key=f"{p.what} inside a loop",
+            previous_key=f"{p.path.name}:{p.line} {p.what} inside a loop",
             detail=(
                 f"{p.path}:{p.line}\n"
                 + ("Each iteration scans the whole list. A set makes the lookup "
@@ -313,7 +337,10 @@ def detect_pitstops(files: Sequence[Path]) -> List[Finding]:
                   "see `ghost-buster --profile`."
             ),
             evidence=Evidence(file=str(p.path), line_start=p.line),
-            attributes={"kind": p.kind},
+            # A fixer reads the container's name, kind and line from here, as Ghost's facts.
+            attributes={"kind": p.kind} if p.kind != LIST_IN_LOOP else {
+                "kind": p.kind, "name": p.name, "container": p.container,
+                "defined_at": str(p.defined_at)},
         ))
     return findings
 
@@ -367,7 +394,7 @@ class Profile:
             finally:
                 prof.seconds["ast.parse"] += time.perf_counter() - t
                 prof.calls["ast.parse"][hash(key)] += 1
-        ast.parse = parse
+        ast.parse = parse  # type: ignore[assignment]  # the profiler swaps the stdlib function in place; __exit__ restores it
 
         real_read_bytes = Path.read_bytes
         def read_bytes(self_):
@@ -377,7 +404,7 @@ class Profile:
             finally:
                 prof.seconds["read"] += time.perf_counter() - t
                 prof.calls["read"][str(self_)] += 1
-        Path.read_bytes = read_bytes
+        Path.read_bytes = read_bytes  # type: ignore[method-assign]  # same swap, restored in __exit__
 
         real_read_text = Path.read_text
         def read_text(self_, *a, **k):
@@ -387,7 +414,7 @@ class Profile:
             finally:
                 prof.seconds["read"] += time.perf_counter() - t
                 prof.calls["read"][str(self_)] += 1
-        Path.read_text = read_text
+        Path.read_text = read_text  # type: ignore[method-assign,assignment]  # same swap, restored in __exit__
 
         real_run = subprocess.run
         def run(args, *a, **k):

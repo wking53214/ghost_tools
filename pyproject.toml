@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ghost-tools"
-version = "1.7.0"
+version = "1.10.14"
 description = "Codebase integrity toolkit: finds structural ghosts, proves vacuous tests by mutation, outlines missing code, and turns human-triaged findings into accurate docs"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
-authors = [{ name = "William King" }]
+authors = [{ name = "William N. King" }]
 keywords = ["code-quality", "mutation-testing", "dead-code", "documentation-drift", "ai-generated-code", "static-analysis"]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -19,6 +19,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Quality Assurance",
     "Topic :: Software Development :: Testing",
 ]
@@ -33,20 +34,33 @@ ghost-buster = "ghost_buster.cli:main"
 ghost-writer = "ghost_writer.cli:main"
 ghost-triage = "ghost_writer.triage:main"
 blackhole-extrapolator = "blackhole_extrapolator.cli:main"
+stack-census = "stack_census.cli:main"
+ghost-rank = "ghost_buster.consequence:main"
 
 [tool.setuptools]
-packages = ["ghost_buster", "ghost_writer", "ghost_writer.polish", "blackhole_extrapolator"]
+packages = ["ghost_buster", "ghost_writer", "blackhole_extrapolator", "stack_census"]
 
 [tool.setuptools.package-data]
-"ghost_writer.polish" = ["LICENSE"]
+# calibration.py reads this file from beside itself.
+"ghost_buster" = ["calibration.json"]
 
 [project.optional-dependencies]
 semantic = ["anthropic"]
-dev = ["pytest>=8", "pytest-xdist>=3"]
+# ruff and mypy are pinned exactly: a gate that moves under you is not a gate. CI installs the same pins
+# (Tests/test_workflow_pins.py holds the two together).
+dev = ["pytest>=8", "pytest-xdist>=3", "ruff==0.15.22", "mypy==2.4.0"]
+# The CNS gate and row connector in ghost_buster/cns_adapter.py. Optional; ghost_tools runs without it.
+cns = ["cns @ git+https://github.com/wking53214/CNS.git@v2.3.0"]  # v2.3.0 = 41592fb7b6735abe140f745353c09ba3eed8e7a2
 
 [tool.pytest.ini_options]
 testpaths = ["Tests"]
-# 625 mutants, each copying the project to a scratch directory, applying one
+# Tests/fixtures holds repositories verbatim, as data for the tests that
+# scan them -- including a `wizzle` checkout whose own Tests/ directory
+# imports modules that only exist relative to ITS root. Collecting them
+# is collecting data as tests, and it fails at import before a single
+# real test runs. ruff excludes the same tree for the same reason.
+norecursedirs = ["fixtures"]
+# 659 mutants, each copying the project to a scratch directory, applying one
 # exact text substitution and running a whole test file in a fresh
 # interpreter. Measured 2026-09-10: the copy costs 0.03s and the interpreter
 # 0.34s, so about 170 seconds is process overhead before an assertion runs,
@@ -66,8 +80,38 @@ testpaths = ["Tests"]
 addopts = "-n auto"
 
 [tool.ruff]
-line-length = 100
+# The code is written to about 120 columns; 100 was configured but never held.
+line-length = 120
 # Tests/fixtures holds files verbatim, including one recovered original that a
 # test compares against byte for byte. Linting them would be linting data, and
 # fixing them would break the comparison they exist for.
 exclude = ["Tests/fixtures"]
+
+[tool.ruff.lint]
+# E/W: pycodestyle, F: pyflakes, B: bugbear. Ruff's default (E4, E7, E9, F)
+# is a subset of these.
+select = ["E", "F", "W", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# The mutant suites hold the exact source text each mutant replaces, as string
+# data. Wrapping those strings would change what they match.
+"Tests/*_mutants.py" = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["ghost_buster", "ghost_writer", "blackhole_extrapolator", "stack_census", "tools"]
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_unreachable = false
+# Tests/ is not type-checked: it is run, 2,000-odd tests that fail loudly, and
+# Tests/fixtures holds verbatim repositories used as data. Everything that
+# ships (the four packages in `packages =`) plus tools/ is checked.
+exclude = ["^Tests/"]
+
+[[tool.mypy.overrides]]
+# Optional dependencies that are not installed where the type step runs
+# (`anthropic` is the `semantic` extra) or ship no types (`cns`). Every use is
+# behind a lazy import that fails with a named message when the package is
+# absent, which Tests/test_cns_independence.py and Tests/test_semantic.py hold.
+module = ["anthropic", "anthropic.*", "cns", "cns.*"]
+ignore_missing_imports = true

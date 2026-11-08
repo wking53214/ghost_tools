@@ -12,26 +12,59 @@ opts in.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
+import os
 import sys
+import traceback
 from pathlib import Path
-from typing import List, Optional, Dict
+from typing import Dict, List, Optional, TextIO
 
 from . import version_string
+from .delivery import delivers
+from .diagnostics import configure as configure_diagnostics, get_logger
 from . import attest
 from .baseline import Baseline
 from .trust import check as trust_check, grant as trust_grant
 from .archive import marked as archive_marked
 from .priors import build as build_priors, render as render_priors, to_json as priors_json
 from .ledger import (
-    Ledger,
+    Ledger, NOT_APPLICABLE, RAN,
 )
 from . import readiness
-from .casefile import Casefile, Prior
-from .operate import Refused, operate
+from .casefile import Casefile, CasefileError, Prior
 from .mutation import render_run
-from .schema import Finding, FindingSet, Severity
-from .pipeline import Stop, gather
+from .schema import Finding, Severity
+from .pipeline import Stop, gather, parse_size, SKIP_LIST_CAP
+
+#: Where --json output goes. main() sets it to the real stdout before the
+#: run, then points sys.stdout at stderr for the run itself, so nothing
+#: printed by library code can land in the middle of the JSON document.
+_OUT: Dict[str, Optional[TextIO]] = {"stream": None}
+
+log = get_logger(__name__)
+
+
+def _emit(text: str) -> None:
+    stream = _OUT["stream"] or sys.stdout
+    print(text, file=stream)
+    try:
+        stream.flush()
+    except (OSError, ValueError):
+        pass
+
+
+#: Exit codes. A caller must be able to tell "the scan ran and found
+#: something" from "the scan did not happen", so they never share a number.
+EXIT_CLEAN = 0      # scan ran; nothing new at MAJOR or above
+EXIT_FINDINGS = 1   # scan ran; new CRITICAL or MAJOR findings (this is not a failure of the tool)
+EXIT_USAGE = 2      # scan did not start: bad arguments, target missing/unreadable, unreadable baseline/ledger/casefile
+EXIT_CRASH = 3      # scan started and died: an unhandled error inside ghost_buster itself
+EXIT_INTERRUPTED = 130  # Ctrl-C (128 + SIGINT, the shell convention)
+# EXIT_OUTPUT (4, ghost_buster/delivery.py): the scan ran and would have exited 0, but standard output was closed,
+# full or failing, so the report was not delivered. A reader that left (broken pipe) keeps the earned code.
+
+_BY_REQUEST = ("skipped at your request", "opt-in and not requested")
 
 
 # Directory names never descended into. `site-packages` is the load-bearing
@@ -69,7 +102,126 @@ def _print_report(new: List[Finding], known: List[Finding],
         print("  (nothing new)\n")
 
 
-def _add_core_args(parser: argparse.ArgumentParser) -> None:
+class _Parser(argparse.ArgumentParser):
+    """argparse, except that a bad command line under --json still leaves
+    valid JSON on stdout (the reason is on stderr either way)."""
+
+    json_mode = False
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        log.error("%s: error: %s", self.prog, message)
+        if self.json_mode:
+            _emit(_dump(_envelope("error", EXIT_USAGE, [], error=("usage", message))))
+        raise SystemExit(EXIT_USAGE)
+
+
+def _dump(payload) -> str:
+    return json.dumps(payload, indent=2, sort_keys=True)
+
+
+def _envelope(status, exit_code, findings, evidence=None, error=None,
+              baseline=None, extra=None) -> dict:
+    """What `--json` prints. `findings` is the same list of finding records
+    it always printed, now under a key, beside the things a bare list cannot
+    say: whether the scan finished, how much it looked at, and which checks
+    did not run and why. An empty `findings` with status "incomplete" is not
+    a clean result.
+
+    `baseline` is `{"path": <str|null>, "suppressed": <int>}`: which baseline
+    file was in effect and how many findings it hid from `findings`. When it
+    hid some and the user did not name it with --baseline (it was found in
+    the scanned folder, where whoever controls the folder controls it), that
+    is an `unmeasured` row and the status is "incomplete"."""
+    scan = {"files_scanned": 0, "files_skipped": 0, "files_unparsable": 0, "unparsable": [],
+            "skipped_dirs": [], "skipped_dirs_more": 0, "symlinked_dirs": [],
+            "symlinked_dirs_more": 0, "python_files_analysed": 0, "max_file_bytes": None}
+    unmeasured = []
+    if evidence is not None:
+        scan = {
+            "files_scanned": len(evidence.files),
+            "files_skipped": evidence.files_skipped,
+            "files_unparsable": len(evidence.unparsable),
+            "unparsable": [{"file": f, "reason": why} for f, why in evidence.unparsable],
+            **_skip_listing(evidence),
+        }
+        for name, state in evidence.checks.items():
+            if state in (RAN, NOT_APPLICABLE):
+                continue
+            reason = evidence.reasons.get(name) or f"{name} did not run ({state})"
+            row = {"check": name, "state": state, "reason": reason,
+                   "by_request": reason.startswith(_BY_REQUEST)}
+            if name == "structural" and evidence.detector_failures:
+                row["detail"] = [{"detector": n, "error": w} for n, w in evidence.detector_failures]
+            unmeasured.append(row)
+        if evidence.unparsable:
+            unmeasured.append({
+                "check": "parse", "state": "unparsable", "by_request": False,
+                "reason": (f"{len(evidence.unparsable)} file(s) could not be parsed, so the code "
+                           "detectors skipped them"),
+            })
+        py_total = sum(1 for f in evidence.files if f.suffix == ".py")
+        analysed = py_total - sum(1 for f, _ in evidence.unparsable if f.endswith(".py"))
+        scan["python_files_analysed"] = analysed
+        if analysed <= 0:
+            unmeasured.append({
+                "check": "python", "state": "none_analysed", "by_request": False,
+                "reason": ("no Python file was analysed ("
+                           + ("none were found" if py_total == 0
+                              else f"{py_total} found, none could be read or parsed")
+                           + "), so every code check is empty rather than clean"),
+            })
+    if baseline is None:
+        baseline = {"path": None, "suppressed": 0}
+    elif baseline.get("suppressed", 0) > 0 and not baseline.get("explicit", False):
+        unmeasured.append({
+            "check": "baseline", "state": "suppressing", "by_request": False,
+            "reason": (f"{baseline['suppressed']} finding(s) were hidden by the baseline "
+                       f"{baseline['path']}, which was found in the scanned folder and not "
+                       "named with --baseline; whoever controls that folder controls what "
+                       "this report omits. Pass --baseline FILE to take it on purpose."),
+        })
+    baseline = {"path": baseline.get("path"), "suppressed": baseline.get("suppressed", 0)}
+    if status == "ok" and any(not u["by_request"] for u in unmeasured):
+        status = "incomplete"
+    out = {
+        "status": status,
+        "exit_code": exit_code,
+        "error": None if error is None else {"kind": error[0], "message": error[1]},
+        "findings": [f.as_dict() for f in findings],
+        "scan": scan,
+        "baseline": baseline,
+        "unmeasured": unmeasured,
+    }
+    if extra:
+        out.update(extra)
+    return out
+
+
+def _skip_listing(evidence) -> dict:
+    """What the scan left out, by name. Lists are capped; counts are not."""
+    rows = sorted(evidence.skipped_dirs.items(), key=lambda kv: (-kv[1]["files"], kv[0]))
+    links = list(evidence.symlinked_dirs)
+    return {
+        "skipped_dirs": [{"name": n, "dirs": v["dirs"], "files": v["files"]}
+                         for n, v in rows[:SKIP_LIST_CAP]],
+        "skipped_dirs_more": max(0, len(rows) - SKIP_LIST_CAP),
+        "symlinked_dirs": [{"path": n, "files": c} for n, c in links[:SKIP_LIST_CAP]],
+        "symlinked_dirs_more": max(0, len(links) - SKIP_LIST_CAP),
+        "max_file_bytes": evidence.max_file_bytes or None,
+    }
+
+
+def _build_parser() -> "_Parser":
+    """Every flag in one place. Extracted from main() because ghost_buster's
+    own `long_function` detector flagged main() at 194 lines against its
+    threshold of 80 -- the argument table is the bulk of it and has no
+    control flow, so lifting it out is the whole fix.
+    """
+    parser = _Parser(prog="ghost_buster")
+    # Consumed and exited on during parsing, so it works without the
+    # required `path` positional -- which is the only way anyone would
+    # ever type it.
     parser.add_argument(
         "--version", action="version", version=version_string(),
         help="print the version and exit",
@@ -78,6 +230,11 @@ def _add_core_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--baseline", type=Path, default=None,
         help="baseline file for delta reporting (default: <path>/.ghost_baseline.json)",
+    )
+    parser.add_argument(
+        "--max-file-size", type=parse_size, default=None, metavar="SIZE",
+        help="largest file to read, e.g. 5M or 262144 (default 5M, or $GHOST_MAX_FILE_BYTES). "
+             "A bigger file is not read; it is listed as unassessable with the reason.",
     )
     parser.add_argument(
         "--accept", action="store_true",
@@ -94,29 +251,6 @@ def _add_core_args(parser: argparse.ArgumentParser) -> None:
              "another repo. Virtualenvs, site-packages, VCS dirs and tool "
              "caches are always skipped.",
     )
-
-
-def _add_operate_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
-        "--operate", action="store_true",
-        help="OPT-IN. The surgeon operates: on a CLEAN tree, open a branch, apply "
-             "every remedy that carries a verification that can fail, re-examine "
-             "after each cut, commit each cut, record the outcomes in the case "
-             "file, and assess whether the patient is a candidate for enhancement. "
-             "The branch the patient came in on is never written to; that is "
-             "checked. Refuses on a dirty tree. See operate.py.",
-    )
-    parser.add_argument(
-        "--operate-branch", default=None, metavar="NAME",
-        help="the branch to operate on (default: ghost/operate-<timestamp>)",
-    )
-    parser.add_argument(
-        "--operate-dry-run", action="store_true",
-        help="with --operate: diagnose and assess candidacy, write nothing",
-    )
-
-
-def _add_report_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--profile", action="store_true",
         help="instrument the scan and report work done more than once with the "
@@ -138,29 +272,6 @@ def _add_report_args(parser: argparse.ArgumentParser) -> None:
              "learns across the library. (default: <path>/.ghost_casefile.json "
              "if it exists)",
     )
-
-
-def _add_annotate_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
-        "--annotate-names", action="store_true",
-        help="OPT-IN, and the only thing ghost_buster does that writes to the "
-             "scanned tree. Records every 1:1 name disagreement in the two "
-             "places somebody looks: a regenerated table in the README, and a "
-             "trailing comment on each signature and each call site. Comments "
-             "only -- every edit is parsed before and after and discarded "
-             "unless the syntax tree is identical, so it cannot change what a "
-             "program means. Idempotent: the notes are stripped and rewritten "
-             "whole on each run, so they follow a rename instead of piling up "
-             "behind one, and a run that finds nothing new produces no diff.",
-    )
-    parser.add_argument(
-        "--annotate-readme", type=Path, default=None, metavar="PATH",
-        help="README to write the name-disagreement table into "
-             "(default: <path>/README.md)",
-    )
-
-
-def _add_mutate_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--mutate", action="store_true",
         help="OPT-IN, on cost -- one pytest process per mutant, so a large "
@@ -178,13 +289,10 @@ def _add_mutate_args(parser: argparse.ArgumentParser) -> None:
                         help="restrict mutation to test files whose path contains this")
     parser.add_argument("--mutate-verbose", action="store_true",
                         help="also list killed mutants and candidates that could not be judged")
-
-
-def _add_branches_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--branches", action=argparse.BooleanOptionalAction, default=True,
-        help="ON BY DEFAULT (--no-branches to skip). Flag local/remote-tracking branches with commits not reflected in the "
-             "base branch (fast-forward, ordinary merge, or squash all recognized). "
+        help="ON BY DEFAULT (--no-branches to skip). Flag local/remote-tracking branches with commits "
+             "not reflected in the base branch (fast-forward, ordinary merge, or squash all recognized). "
              "Read-only git plumbing against the checkout as it sits: never fetches, "
              "never pushes, never queries GitHub, so it cannot see a branch's "
              "pull-request state, and a remote-tracking ref already deleted upstream "
@@ -195,9 +303,6 @@ def _add_branches_args(parser: argparse.ArgumentParser) -> None:
         help="base branch to compare against (default: first of origin/main, "
              "origin/master, main, master that resolves)",
     )
-
-
-def _add_trust_and_test_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--trust", action="store_true",
         help="record consent for this repository's code to run here (its test suite, and "
@@ -206,8 +311,8 @@ def _add_trust_and_test_args(parser: argparse.ArgumentParser) -> None:
              "test and mutation scans are DECLINED with a receipt; nothing else changes.")
     parser.add_argument(
         "--tests", action=argparse.BooleanOptionalAction, default=True,
-        help="ON BY DEFAULT (--no-tests to skip). Runs the project's pytest suite and report every test that did not pass: "
-             "failing (MAJOR), flaky (fails in the suite, passes rerun alone; MAJOR), "
+        help="ON BY DEFAULT (--no-tests to skip). Runs the project's pytest suite and report every test "
+             "that did not pass: failing (MAJOR), flaky (fails in the suite, passes rerun alone; MAJOR), "
              "blocked by a missing service/module/variable (MINOR, says what), skipped "
              "without a reason naming a dependency (MAJOR), skipped for a dependency "
              "that is actually present (MAJOR), skipped for an absent one "
@@ -222,13 +327,10 @@ def _add_trust_and_test_args(parser: argparse.ArgumentParser) -> None:
                              "at the project's own virtualenv to run with its dependencies")
     parser.add_argument("--tests-timeout", type=float, default=900.0, metavar="SECONDS",
                         help="timeout for each pytest invocation, the full run included (default 900)")
-
-
-def _add_secrets_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--secrets", action=argparse.BooleanOptionalAction, default=True,
-        help="ON BY DEFAULT (--no-secrets to skip). Scans the checked-out branch's git history for committed secrets with "
-             "gitleaks (must be installed separately; never installed by this tool). "
+        help="ON BY DEFAULT (--no-secrets to skip). Scans the checked-out branch's git history for committed "
+             "secrets with gitleaks (must be installed separately; never installed by this tool). "
              "Read-only: never rewrites history, rotates a credential, or writes into "
              "the target repository. The secret value itself never appears in a finding.",
     )
@@ -236,9 +338,6 @@ def _add_secrets_args(parser: argparse.ArgumentParser) -> None:
                         help="path to the gitleaks executable (default: gitleaks on PATH)")
     parser.add_argument("--secrets-timeout", type=float, default=300.0, metavar="SECONDS",
                         help="timeout for the gitleaks run (default 300)")
-
-
-def _add_correlate_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--correlate-with", action="append", default=[], metavar="[LABEL=]FILE",
         help="another repository's --json output, optionally named "
@@ -248,14 +347,6 @@ def _add_correlate_args(parser: argparse.ArgumentParser) -> None:
              "unrelated findings. Correlation over this run's own findings "
              "always runs and needs no flag.",
     )
-    parser.add_argument(
-        "--no-correlate", action="store_true",
-        help="skip the correlation pass entirely (it reads findings already "
-             "computed, runs no new scan, and is normally free)",
-    )
-
-
-def _add_project_and_kernel_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--project", action=argparse.BooleanOptionalAction, default=True,
         help="ON BY DEFAULT (--no-project to skip). Repository-shaped facts no "
@@ -285,9 +376,6 @@ def _add_project_and_kernel_args(parser: argparse.ArgumentParser) -> None:
         "--single-repo", action="store_true",
         help="skip the joined-repository question and scan this repository alone",
     )
-
-
-def _add_structure_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--structure", action=argparse.BooleanOptionalAction, default=True,
         help="ON BY DEFAULT (--no-structure to skip). Build a structural model "
@@ -310,13 +398,11 @@ def _add_structure_args(parser: argparse.ArgumentParser) -> None:
         "--structure-report", action="store_true",
         help="also print the full structural model in readable form",
     )
-
-
-def _add_ledger_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
-        "--ledger", action=argparse.BooleanOptionalAction, default=True,
-        help="ON BY DEFAULT (--no-ledger to skip). Remember this run in "
-             "<path>/.ghost_ledger.json and report what only history can say: a "
+        "--ledger", action=argparse.BooleanOptionalAction, default=None,
+        help="OPT-IN (a default scan writes nothing into the folder it scans). Remember "
+             "this run in <path>/.ghost_ledger.json -- or in --ledger-path FILE, which "
+             "also turns this on -- and report what only history can say: a "
              "finding that was fixed and came back, one open for many runs with no "
              "decision recorded, one that keeps appearing and vanishing, and a check "
              "that has not actually run here in several runs. Strictly additive -- "
@@ -332,26 +418,39 @@ def _add_ledger_args(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--ledger-path", type=Path, default=None, metavar="FILE",
-        help="where the ledger lives (default: <path>/.ghost_ledger.json)",
+        help="where the ledger lives (default: <path>/.ghost_ledger.json). The file's parent folder "
+             "must already exist, or the scan stops with exit 2 before it starts; "
+             "--create-ledger-dir opts in to creating it.",
     )
-
-
-def _build_parser() -> argparse.ArgumentParser:
-    """Every flag in one place. Argument setup grouped by feature domain."""
-    parser = argparse.ArgumentParser(prog="ghost_buster")
-    _add_core_args(parser)
-    _add_operate_args(parser)
-    _add_report_args(parser)
-    _add_annotate_args(parser)
-    _add_mutate_args(parser)
-    _add_branches_args(parser)
-    _add_trust_and_test_args(parser)
-    _add_secrets_args(parser)
-    _add_correlate_args(parser)
-    _add_project_and_kernel_args(parser)
-    _add_structure_args(parser)
-    _add_ledger_args(parser)
+    parser.add_argument(
+        "--create-ledger-dir", action="store_true",
+        help="let --ledger-path create its parent folder(s) when they do not exist. Without it a "
+             "--ledger-path whose parent folder is missing is a usage error (exit 2) and nothing is "
+             "created: a typo in the path must not make directories anywhere on the disk.",
+    )
+    parser.add_argument(
+        "--verbose", "-v", action="store_true",
+        help="also write debug diagnostics to stderr (which ledger path is used, and the like). "
+             "stdout, the JSON document and the exit code are unchanged. The same can be set "
+             "without the flag by GHOST_TOOLS_LOG=DEBUG|INFO|WARNING|ERROR; the flag wins.",
+    )
+    parser.add_argument(
+        "--no-correlate", action="store_true",
+        help="skip the correlation pass entirely (it reads findings already "
+             "computed, runs no new scan, and is normally free)",
+    )
     return parser
+
+
+def _chain_result(args, code, status, message, extra=None) -> int:
+    """--verify-chain's answer: text on stdout, or under --json the same
+    envelope every other mode uses, with the chain verdict under `chain`."""
+    if getattr(args, "json", False):
+        err = None if status != "error" else ("usage", message)
+        _emit(_dump(_envelope(status, code, [], error=err, extra={"chain": extra or {"report": message}})))
+    elif status != "error":
+        print(message)
+    return code
 
 
 def _verify_chain(args) -> int:
@@ -361,40 +460,22 @@ def _verify_chain(args) -> int:
     scanned. See attest.verify for what a chain does and does not prove."""
     path = args.ledger_path or (args.path / ".ghost_ledger.json")
     if not path.is_file():
-        print(f"ghost_buster: chain: no ledger at {path}", file=sys.stderr)
-        return 2
+        msg = f"ghost_buster: chain: no ledger at {path}"
+        log.error("%s", msg)
+        return _chain_result(args, 2, "error", msg)
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as e:
-        print(f"error: ledger {path}: {e}", file=sys.stderr)
-        return 2
+        msg = f"error: ledger {path}: {e}"
+        log.error("%s", msg)
+        return _chain_result(args, 2, "error", msg)
     runs = raw.get("runs") or []
     breaks = attest.verify(runs)
-    print(attest.render(breaks, len(runs)))
-    return 1 if any("no link recorded" not in b.what for b in breaks) else 0
-
-
-def _operate(args, evidence, casefile_path, archive) -> int:
-    """--operate: the only mode that writes to the target. Everything it
-    needs was already established by the scan; this decides whether to
-    let it run and what to say about the result."""
-    if archive is not None:
-        print("refused: an archive is not a patient; remove .ghost_archive to operate",
-              file=sys.stderr)
-        return 2
-    try:
-        op = operate(args.path, evidence.files, evidence.findings, evidence.checks,
-                     casefile=Casefile(casefile_path), branch=args.operate_branch,
-                     dry_run=args.operate_dry_run)
-    except Refused as e:
-        print(f"refused: {e}", file=sys.stderr)
-        return 2
-    print(op.render())
-    if not op.came_in_untouched:
-        print("error: the branch the patient came in on was modified; "
-              "this should be impossible and is a bug", file=sys.stderr)
-        return 2
-    return 0
+    broken = any("no link recorded" not in b.what for b in breaks)
+    report = attest.render(breaks, len(runs))
+    return _chain_result(args, 1 if broken else 0, "ok", report,
+                         {"runs": len(runs), "broken": broken, "report": report,
+                          "breaks": [b.what for b in breaks]})
 
 
 def _present(args, evidence, new, known, priors, archive, casefile_path) -> None:
@@ -408,6 +489,8 @@ def _present(args, evidence, new, known, priors, archive, casefile_path) -> None
         print(f"serum candidacy: not assessed (archive: {archive.reason or 'no reason given'})")
     else:
         retired = Casefile(casefile_path).retired() if casefile_path.is_file() else set()
+        # A decision recorded under an older spelling of the id still applies.
+        retired |= {f.id for f in evidence.findings if any(i in retired for i in f.previous_ids)}
         print(readiness.assess(evidence.findings, evidence.checks, retired).render())
     print()
     if evidence.profile is not None:
@@ -417,62 +500,185 @@ def _present(args, evidence, new, known, priors, archive, casefile_path) -> None
         print(render_run(evidence.mutation_run, verbose=args.mutate_verbose))
 
 
-def main(argv: List[str] = None) -> int:
-    parser = _build_parser()
-    args = parser.parse_args(argv)
-    # Consent to run this repository's code, resolved once and carried on
-    # args so every check that executes code asks the same answer.
-    args.trusted = trust_grant(args.path) if args.trust else trust_check(args.path)
-    if args.trust:
-        print(f"ghost_buster: trust: {args.trusted.identity}: {args.trusted.reason}", file=sys.stderr)
-    elif args.trusted.store is None:
-        print(f"ghost_buster: trust: {args.trusted.reason}", file=sys.stderr)
+def _note_stale_baseline(baseline, findings) -> List[Finding]:
+    """The receipt line and the finding, for baseline entries that matched
+    nothing. Both, because they reach different readers: the line is on the
+    same channel as every other check's receipt, and the finding is what a
+    caller reading --json actually gets. Until 1.8.0 there was only the
+    line. See Baseline.derive_findings for why the rot is worth reporting.
 
-    if args.priors:
-        casefile_path = args.casefile or (args.path / ".ghost_casefile.json")
-        ledger_path = args.ledger_path or (args.path / ".ghost_ledger.json")
-        ledger = Ledger(ledger_path) if ledger_path.is_file() else None
-        rows = build_priors(Casefile(casefile_path), ledger)
-        print(priors_json(rows) if args.json else render_priors(rows, casefile_path, ledger_path if ledger else None))
-        return 0
-
-    if not args.path.is_dir():
-        print(f"error: {args.path} is not a directory", file=sys.stderr)
-        return 2
-
-    # The evidence, gathered by pipeline.py. Everything from here down is
-    # interface: the baseline diff, what to print, and what to exit with.
-    try:
-        evidence = gather(args)
-    except Stop as e:
-        print(e, file=sys.stderr)
-        return 2
-    # The two the baseline diff and the exit code are computed from. The
-    # rest of the Evidence goes to whichever helper needs it.
-    findings = evidence.findings
-    baseline_path = evidence.baseline_path
-
-    try:
-        baseline = Baseline(baseline_path)
-    except (ValueError, OSError) as e:
-        # A corrupt or unreadable baseline used to escape as a traceback with
-        # exit 1, the same status as "MAJOR finding". It is a usage error.
-        print(f"error: baseline {baseline_path} could not be read: {type(e).__name__}: {e}", file=sys.stderr)
-        return 2
-
-    if args.accept:
-        baseline.accept(findings)
-        print(f"accepted {len(findings)} finding(s) into {baseline_path}", file=sys.stderr)
-        if args.json:
-            print(FindingSet(findings).to_json())
-        return 0
-
-    new, known = baseline.diff(findings)
+    What it returns belongs in the run's NEW list and never in the set the
+    baseline diffs: the baseline does not get to suppress the report of its
+    own rot.
+    """
     stale = baseline.stale(findings)
     if stale:
-        print(f"ghost_buster: {len(stale)} of {baseline.size} baseline entries matched nothing scanned "
-              f"(fixed, renamed detector, or a baseline written from another checkout); "
-              f"first: {stale[0].id} {stale[0].evidence.file}", file=sys.stderr)
+        log.warning("ghost_buster: %d of %d baseline entries matched nothing scanned "
+                    "(fixed, renamed detector, or a baseline written from another checkout); "
+                    "first: %s %s", len(stale), baseline.size, stale[0].id, stale[0].evidence.file)
+    return baseline.derive_findings(findings)
+
+
+def _setup_trust(args) -> None:
+    """Handle trust resolution and logging."""
+    args.trusted = trust_grant(args.path) if args.trust else trust_check(args.path)
+    if args.trust:
+        log.info("ghost_buster: trust: %s: %s", args.trusted.identity, args.trusted.reason)
+    elif args.trusted.store is None:
+        log.info("ghost_buster: trust: %s", args.trusted.reason)
+
+
+def _handle_priors_mode(args) -> Optional[int]:
+    """Handle --priors mode and exit early if active."""
+    if not args.priors:
+        return None
+
+    casefile_path = args.casefile or (args.path / ".ghost_casefile.json")
+    ledger_path = args.ledger_path or (args.path / ".ghost_ledger.json")
+    ledger = Ledger(ledger_path) if ledger_path.is_file() else None
+    try:
+        casefile = Casefile(casefile_path)
+    except CasefileError as e:
+        return _fail(args, EXIT_USAGE, "usage", f"error: {e}")
+    rows = build_priors(casefile, ledger)
+    # Under --json this is a bare list of per-detector rows, NOT the scan
+    # envelope: it is data about the case file, not a scan. See the README.
+    text = priors_json(rows) if args.json else render_priors(rows, casefile_path, ledger_path if ledger else None)
+    if args.json:
+        _emit(text)
+    else:
+        print(text)
+    return 0
+
+
+def _fail(args, code: int, kind: str, message: str) -> int:
+    """Say why the scan did not happen: a plain reason on stderr and, under
+    --json, valid JSON on stdout with status "error". Returns the code."""
+    log.error("%s", message)
+    if getattr(args, "json", False):
+        _emit(_dump(_envelope("error", code, [], error=(kind, message))))
+    return code
+
+
+def _validate_path(args) -> Optional[int]:
+    """Validate and gather arrival state from path."""
+    if not args.path.is_dir():
+        return _fail(args, EXIT_USAGE, "usage", f"error: {args.path} is not a directory")
+    if not os.access(args.path, os.R_OK | os.X_OK):
+        return _fail(args, EXIT_USAGE, "usage", f"error: {args.path} cannot be read (permission denied)")
+    return None
+
+
+def _validate_ledger_path(args) -> Optional[int]:
+    """Refuse a --ledger-path that would have to invent folders, before the scan.
+
+    The ledger is written at the very end of a scan that can take minutes, so
+    a path that cannot be written is worth refusing up front: exit 2, a plain
+    reason on stderr and under --json the usual error envelope, with nothing
+    created. `--create-ledger-dir` is the explicit opt-in to make the folders.
+    A scan that will not write a ledger (--no-ledger) is not asked about it.
+    """
+    path = args.ledger_path
+    if path is None or args.ledger is False:
+        return None
+    if path.is_dir():
+        return _fail(args, EXIT_USAGE, "usage", f"error: --ledger-path {path} is a folder, not a file")
+    parent = path.parent
+    if parent.is_dir():
+        log.debug("ledger: %s (its folder exists)", path)
+        return None
+    if parent.exists():
+        return _fail(args, EXIT_USAGE, "usage", f"error: --ledger-path {path}: {parent} is not a folder")
+    if args.create_ledger_dir:
+        log.debug("ledger: %s (its folder %s does not exist and will be created: --create-ledger-dir)", path, parent)
+        return None
+    return _fail(args, EXIT_USAGE, "usage",
+                 f"error: --ledger-path {path}: the folder {parent} does not exist. Nothing was created. "
+                 "Create it first, or pass --create-ledger-dir to have it created")
+
+
+def _validate_joins(args) -> Optional[int]:
+    """Refuse a --join that is absent or not a folder, before the scan: exit 2
+    naming the path, like every other path argument. It used to print "boundary
+    scan joined 2 repositories" and exit 0, so a typo read as a checked seam."""
+    for path in args.join:
+        if not path.is_dir():
+            what = "does not exist" if not path.exists() else "is not a directory"
+            return _fail(args, EXIT_USAGE, "usage", f"error: --join {path} {what}")
+    return None
+
+
+def _validate_casefile(args) -> Optional[int]:
+    """Refuse a --casefile (or a case file found in the scanned folder) that
+    cannot be read, before the scan, the same way a bad baseline is refused:
+    exit 2, a plain reason on stderr and under --json the usual error envelope.
+    It used to surface after the scan as a traceback and exit 3 (a crash)."""
+    path = args.casefile or (args.path / ".ghost_casefile.json")
+    try:
+        Casefile(path)
+    except CasefileError as e:
+        return _fail(args, EXIT_USAGE, "usage", f"error: {e}")
+    return None
+
+
+def _validate_baseline(args) -> Optional[int]:
+    """Refuse a --baseline FILE that is not there, is a folder or cannot be read, before the scan.
+
+    A path the user named that does not exist used to be read as an empty baseline: exit 0, `baseline.path`
+    null, no row saying so, so a mistyped path looked like "nothing is suppressed" and a CI step passed on
+    nothing. With --accept the file is being created, so a missing file is fine there. A baseline found in the
+    scanned folder (no --baseline) is not named by the user and keeps its old rules."""
+    if args.baseline is None:
+        return None
+    path = Path(args.baseline)
+    if path.exists() and not path.is_file():
+        return _fail(args, EXIT_USAGE, "usage", f"error: --baseline {path} is a folder, not a baseline file")
+    if not path.exists():
+        if args.accept:
+            return None
+        return _fail(args, EXIT_USAGE, "usage",
+                     f"error: --baseline {path} does not exist. Nothing was scanned. Check the path, or pass "
+                     "--accept to create it")
+    try:
+        path.read_bytes()
+    except OSError as e:
+        return _fail(args, EXIT_USAGE, "usage", f"error: baseline {path} could not be read: {type(e).__name__}: {e}")
+    return None
+
+
+def _load_baseline(baseline_path) -> Baseline:
+    """Load baseline, with proper error handling."""
+    try:
+        return Baseline(baseline_path)
+    except (ValueError, OSError) as e:
+        raise Stop(f"error: baseline {baseline_path} could not be read: {type(e).__name__}: {e}") from e
+
+
+def _gather_evidence_safe(args):
+    """Gather evidence with error handling."""
+    try:
+        return gather(args)
+    except Stop:
+        raise
+
+
+def _handle_accept_mode(args, baseline, findings, baseline_path, evidence=None) -> Optional[int]:
+    """Handle --accept mode and exit early if active."""
+    if not args.accept:
+        return None
+
+    baseline.accept(findings)
+    log.info("accepted %d finding(s) into %s", len(findings), baseline_path)
+    if args.json:
+        _emit(_dump(_envelope("ok", EXIT_CLEAN, findings, evidence,
+                              baseline={"path": str(baseline_path), "suppressed": 0, "explicit": True})))
+    return 0
+
+
+def _prepare_output_data(args, evidence, baseline, findings) -> tuple:
+    """Prepare new/known findings and associated data."""
+    new, known = baseline.diff(findings)
+    new.extend(_note_stale_baseline(baseline, findings))
 
     casefile_path = args.casefile or (args.path / ".ghost_casefile.json")
     priors = None
@@ -481,20 +687,144 @@ def main(argv: List[str] = None) -> int:
 
     archive = archive_marked(args.path)
     if archive is not None:
-        print(archive.receipt(), file=sys.stderr)
+        log.info("%s", archive.receipt())
 
+    return new, known, priors, archive, casefile_path
+
+
+def _handle_dispatch_modes(args) -> Optional[int]:
+    """Handle verify-chain mode."""
     if args.verify_chain:
         return _verify_chain(args)
+    return None
 
-    if args.operate:
-        return _operate(args, evidence, casefile_path, archive)
 
+@delivers("ghost_buster")
+def main(argv: Optional[List[str]] = None) -> int:
+    """Run one scan and return its exit code (see EXIT_* above).
+
+    Anything the code below does not handle itself is a crash: it is
+    reported on stderr in one plain line, under --json it still leaves valid
+    JSON on stdout with status "error", and the exit code is EXIT_CRASH --
+    never the code that means "findings were found". Ctrl-C is EXIT_INTERRUPTED
+    (130), also with an error envelope under --json.
+    """
+    argv = list(sys.argv[1:] if argv is None else argv)
+    want_json = "--json" in argv
+    _OUT["stream"] = sys.stdout
+    try:
+        return _main_json_quiet(argv)
+    except SystemExit:
+        raise
+    except KeyboardInterrupt:
+        message = "ghost_buster: interrupted, the scan did not complete"
+        return _fail(argparse.Namespace(json=want_json), EXIT_INTERRUPTED, "interrupted", message)
+    except Exception as e:  # noqa: BLE001 -- this is the crash boundary
+        message = f"ghost_buster: internal error, the scan did not complete: {type(e).__name__}: {e}"
+        traceback.print_exc()
+        return _fail(argparse.Namespace(json=want_json), EXIT_CRASH, "crash", message)
+    finally:
+        _OUT["stream"] = None
+
+
+def _baseline_info(args, baseline, baseline_path, known) -> dict:
+    """What `--json` reports about the baseline, and what the human report
+    says when it hid findings the user never asked it to hide."""
+    present = Path(baseline_path).is_file()
+    info = {"path": str(baseline_path) if present else None,
+            "suppressed": len(known), "explicit": args.baseline is not None}
+    if info["suppressed"] and not info["explicit"] and not args.json:
+        log.warning("ghost_buster: WARNING: %d finding(s) hidden by %s, "
+                    "a baseline found in the scanned folder and not named with --baseline. "
+                    "Pass --baseline FILE to use it on purpose.", info["suppressed"], baseline_path)
+    return info
+
+
+def _main_json_quiet(argv: List[str]) -> int:
+    """Parse, then run. Under --json stdout carries one JSON document and
+    nothing else: anything printed while the scan runs goes to stderr
+    instead (_emit writes the document to the real stdout). Parsing happens
+    first so `--help` and `--version` still print where they always did."""
+    configure_diagnostics()   # the environment's level; --verbose is applied once the line is parsed
+    parser = _build_parser()
+    parser.json_mode = "--json" in argv
+    args = parser.parse_args(argv)
+    if args.verbose:
+        configure_diagnostics(verbose=True)
     if args.json:
-        print(FindingSet(new).to_json())
+        with contextlib.redirect_stdout(sys.stderr):
+            return _main(args)
+    return _main(args)
+
+
+def _main(args) -> int:
+    # Setup phase
+    _setup_trust(args)
+
+    # Early exit modes
+    result = _handle_priors_mode(args)
+    if result is not None:
+        return result
+
+    result = _validate_path(args)
+    if result is not None:
+        return result
+
+    # --verify-chain reads the ledger, not the tree: it answers before
+    # anything is scanned.
+    result = _handle_dispatch_modes(args)
+    if result is not None:
+        return result
+
+    result = _validate_ledger_path(args)
+    if result is not None:
+        return result
+
+    result = _validate_joins(args)
+    if result is not None:
+        return result
+
+    result = _validate_casefile(args)
+    if result is not None:
+        return result
+
+    result = _validate_baseline(args)
+    if result is not None:
+        return result
+
+    # Gather evidence
+    try:
+        evidence = _gather_evidence_safe(args)
+    except Stop as e:
+        return _fail(args, EXIT_USAGE, "usage", str(e))
+
+    findings = evidence.findings
+    baseline_path = evidence.baseline_path
+
+    # Load and validate baseline
+    try:
+        baseline = _load_baseline(baseline_path)
+    except Stop as e:
+        return _fail(args, EXIT_USAGE, "usage", str(e))
+
+    # Accept mode
+    result = _handle_accept_mode(args, baseline, findings, baseline_path, evidence)
+    if result is not None:
+        return result
+
+    # Prepare output
+    new, known, priors, archive, casefile_path = _prepare_output_data(args, evidence, baseline, findings)
+    info = _baseline_info(args, baseline, baseline_path, known)
+
+    code = EXIT_FINDINGS if any(f.severity in (Severity.CRITICAL, Severity.MAJOR) for f in new) else EXIT_CLEAN
+
+    # Present results
+    if args.json:
+        _emit(_dump(_envelope("ok", code, new, evidence, baseline=info)))
     else:
         _present(args, evidence, new, known, priors, archive, casefile_path)
 
-    return 1 if any(f.severity in (Severity.CRITICAL, Severity.MAJOR) for f in new) else 0
+    return code
 
 
 if __name__ == "__main__":

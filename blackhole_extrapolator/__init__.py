@@ -33,13 +33,15 @@ from .detect import (
     detect_orphaned_tests,
     detect_unparseable,
     scan,
+    scan_with_report,
 )
 from .extrapolate import extrapolate, group_by_target, infer_usage_invariants
+from .skips import ScanReport, Skip, SkipLog
 from .schema import Anchor, EvidenceKind, NegativeEvidence, Void, VoidKind
 
 __all__ = [
     "Anchor", "EvidenceKind", "NegativeEvidence", "Void", "VoidKind",
-    "scan", "detect_dangling_names", "detect_missing_imports",
+    "scan", "scan_with_report", "ScanReport", "Skip", "SkipLog", "detect_dangling_names", "detect_missing_imports",
     "detect_orphaned_tests", "detect_unparseable", "detect_destroyed_residue",
     "detect_dangling_in_debris",
     "extrapolate", "group_by_target", "infer_usage_invariants",

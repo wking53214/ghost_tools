@@ -40,8 +40,8 @@ MUTANTS = [
     # The call site appears twice, so mutating one left the other printing.
     # Break the reporting itself, which covers both paths at once.
     ("demoting an import also stops reporting it", _L,
-     "    if unresolved:\n        by_module = {}",
-     "    if False:\n        by_module = {}"),
+     "    if unresolved:\n        by_module: dict[str, set[str]] = {}",
+     "    if False:\n        by_module: dict[str, set[str]] = {}"),
 
     # A -- the archive classifier, including the bug my own first version had.
     # Restores the ACTUAL first version: an early return on the manifest,

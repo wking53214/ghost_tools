@@ -11,14 +11,20 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
+from ghost_buster import add_version_argument
+from ghost_buster.delivery import delivers
+from ghost_buster.diagnostics import add_verbose_argument, configure, get_logger
 from ghost_buster.schema import FindingSet
 
 from .report import render_ghost_report, render_triage_report
 
+log = get_logger(__name__)
 
-def main(argv: List[str] = None) -> int:
+
+@delivers("ghost_writer")
+def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(prog="ghost_writer")
     parser.add_argument("findings", type=Path, help="a FindingSet JSON file (from ghost_buster --json)")
     parser.add_argument(
@@ -29,13 +35,20 @@ def main(argv: List[str] = None) -> int:
     )
     parser.add_argument("--title", default=None)
     parser.add_argument("--out", type=Path, default=None, help="write to a file instead of stdout")
+    add_version_argument(parser)
+    add_verbose_argument(parser)
     args = parser.parse_args(argv)
+    configure(verbose=args.verbose)
 
     if not args.findings.is_file():
-        print(f"error: {args.findings} is not a file", file=sys.stderr)
+        log.error("error: %s is not a file", args.findings)
         return 2
 
-    fs = FindingSet.from_json(args.findings.read_text(encoding="utf-8"))
+    try:
+        fs = FindingSet.from_json(args.findings.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:   # FindingSetError, bad JSON and bad UTF-8 are ValueErrors
+        log.error("error: %s is not a findings file: %s", args.findings, e)
+        return 2
     if args.mode == "triage":
         report = render_triage_report(list(fs), title=args.title or "Ghost Findings, Awaiting Triage")
     else:

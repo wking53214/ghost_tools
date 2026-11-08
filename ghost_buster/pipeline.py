@@ -25,14 +25,14 @@ about arguments, the baseline diff, the report and the exit status.
 """
 from __future__ import annotations
 
+import os
 import sys
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import Callable, Dict, Iterable, List, Optional
 
 from . import attest
 from . import __version__
-from .annotate import annotate
 from .boundary import (
     build_joined_model, derive_findings as derive_boundary_findings,
     render_report as render_boundary_report, render_single_repo_notice,
@@ -43,13 +43,14 @@ from .correlate import (
 )
 from .kernel import check_kernel, render_report as render_kernel_report
 from .ledger import (
-    COULD_NOT_RUN, DECLINED, Ledger, LedgerError, NOT_RUN, RAN,
+    COULD_NOT_RUN, DECLINED, Ledger, LedgerError, NOT_APPLICABLE, NOT_RUN, RAN,
     _head_commit, render_report as render_ledger_report,
 )
 from .mechanical import run_all
 from .mutation import run_mutations
 from .project import render_report as render_project_report, scan as scan_project
-from .schema import Finding, disambiguate_ids
+from . import corpus
+from .schema import Finding, disambiguate_ids, paths_from_scan_root, scanning
 from .secrets import render_report as render_secrets_report, scan as scan_secrets
 from .speed import Profile
 from .structure import (
@@ -60,7 +61,10 @@ from .testsuite import render_report as render_test_report, scan as scan_tests
 from .trajectory import (
     derive as trajectory_derive, render_report as render_trajectory_report,
 )
+from .diagnostics import get_logger
 from .trust import declined_receipt
+
+log = get_logger(__name__)
 
 
 class Stop(Exception):
@@ -72,7 +76,9 @@ class Stop(Exception):
 
 
 def to_stderr(message: str) -> None:
-    print(message, file=sys.stderr)
+    """Where a check's receipt line goes: the diagnostics logger, which
+    writes it to stderr. The name stays because callers pass it as `say`."""
+    log.info("%s", message)
 
 
 @dataclass
@@ -86,6 +92,27 @@ class Evidence:
     mutation_run: object = None
     profile: object = None
     profile_seconds: float = 0.0
+    #: Why each check in `checks` is in the state it is in, in plain words.
+    #: Only checks that did not run have an entry.
+    reasons: Dict[str, str] = field(default_factory=dict)
+    #: (detector, "ExcType: message") for every file-level detector that
+    #: raised. Its findings are absent from the run; the others still ran.
+    detector_failures: List[tuple] = field(default_factory=list)
+    #: .py files no structural detector could read, with the reason.
+    unparsable: List[tuple] = field(default_factory=list)
+    #: .py/.md files under the root that were left out (excluded directory,
+    #: dot-file, egg-info, or a second name for a file already counted).
+    files_skipped: int = 0
+    #: Excluded directory names met under the scan root, with how many
+    #: directories carried that name and how many .py/.md files sat inside.
+    #: {name: {"dirs": n, "files": m}}. The scan names what it did not look at.
+    skipped_dirs: Dict[str, Dict[str, int]] = field(default_factory=dict)
+    #: Symlinked directories whose files were NOT scanned (their target is
+    #: outside the scan root, or they point back into the tree being walked),
+    #: [(relative path, files behind it)].
+    symlinked_dirs: List[tuple] = field(default_factory=list)
+    #: The largest file read, in bytes (--max-file-size).
+    max_file_bytes: int = 0
 
 
 _EXCLUDED_DIRS = frozenset({
@@ -105,6 +132,43 @@ _EXCLUDED_DIRS = frozenset({
 
 
 def _collect_files(root: Path, extra_excludes: Iterable[str] = ()) -> List[Path]:
+    return _collect(root, extra_excludes)[0]
+
+
+def _collect(root: Path, extra_excludes: Iterable[str] = ()):
+    """(files, number of candidate files left out). See `_collect_detail`."""
+    found = _collect_detail(root, extra_excludes)
+    return found.files, found.skipped
+
+
+@dataclass
+class Collected:
+    files: List[Path]
+    skipped: int
+    #: {excluded dir name: {"dirs": directories with that name, "files": candidate files inside}}
+    skipped_dirs: Dict[str, Dict[str, int]]
+    #: [(posix path relative to root, candidate files behind the link)] for
+    #: symlinked directories that were not walked into and whose files are
+    #: not scanned under any other name.
+    symlinked_dirs: List[tuple]
+
+
+def _is_candidate(name: str) -> bool:
+    return name.endswith(".py") or name.endswith(".md")
+
+
+def _count_candidates(directory: str, limit: int = 200_000) -> int:
+    """Candidate files under `directory`, not following links; stops
+    counting at `limit` so a pathological tree cannot stall the scan."""
+    total = 0
+    for _dp, _dn, names in os.walk(directory, followlinks=False):
+        total += sum(1 for n in names if _is_candidate(n))
+        if total >= limit:
+            break
+    return total
+
+
+def _collect_detail(root: Path, extra_excludes: Iterable[str] = ()) -> Collected:
     """.py for every code detector, plus .md so doc_test_count_drift (v0.3)
     has something to read -- every other detector calls _parse() on
     whatever it's handed, which fails closed (returns None, gets skipped)
@@ -116,25 +180,181 @@ def _collect_files(root: Path, extra_excludes: Iterable[str] = ()) -> List[Path]
     of a sibling repo -- and any dot-prefixed file. Exclusion is by directory
     NAME anywhere in the path, so pointing the scan directly at, say, a
     `venv/` would also come back empty; scan the project root.
+
+    What was skipped is NAMED (unreleased): every excluded directory name met
+    under the root is counted, with the files inside it, and a symlinked
+    directory is never walked into (a link could point outside the tree or
+    back into it) but is recorded with the files behind it, unless its
+    target is inside the root and so is scanned under its real name anyway.
     """
     excluded = _EXCLUDED_DIRS | set(extra_excludes)
+    root = Path(root)
     # Each real path once: a symlinked file is otherwise listed under both
     # names, and every function in it becomes its own near-duplicate.
     # Measured on OBSERVE, which keeps genuine symlinks.
-    seen_real = set()
-    out = []
-    for p in sorted(list(root.rglob("*.py")) + list(root.rglob("*.md"))):
-        if not excluded.isdisjoint(p.parts) or p.name.startswith("."):
-            continue
-        if any(part.endswith(".egg-info") for part in p.parts[:-1]):
+    #
+    # WHICH OF THE TWO NAMES SURVIVES (v1.7.1)
+    #
+    # The file, never the link to it. De-duplicating kept whichever name
+    # sorted first, which is arbitrary, and when the link sorted first every
+    # finding in that file named the link -- so a reader who followed the
+    # reported path and looked at its history saw a symlink that had never
+    # changed, and concluded nothing had happened. The bytes were in the
+    # other file, which no finding mentioned.
+    #
+    # A finding has to name the path whose history will show the change.
+    # Nothing else here moves for a repository with no symlinks in it.
+    # A root that itself sits under an excluded name excludes everything.
+    root_excluded = [part for part in root.parts if part in excluded]
+    candidates, skipped_dirs, symlinked = _walk_candidates(root, excluded, bool(root_excluded))
+    if root_excluded:
+        # Everything is under an excluded name; say which one.
+        skipped_dirs.setdefault(root_excluded[0], {"dirs": 0, "files": 0})["files"] += len(candidates)
+        return Collected([], len(candidates), skipped_dirs, symlinked)
+    out = _one_per_real_file(candidates)
+    total_candidates = len(candidates) + sum(r["files"] for r in skipped_dirs.values())
+    return Collected(out, total_candidates - len(out), skipped_dirs, symlinked)
+
+
+def _one_per_real_file(candidates: List[Path]) -> List[Path]:
+    """Each real path once, never a dot-file (see the notes in `_collect_detail`)."""
+    seen_real: Dict[Path, int] = {}
+    out: List[Path] = []
+    for p in candidates:
+        if p.name.startswith("."):
             continue
         real = p.resolve()
-        if real in seen_real:
+        already = seen_real.get(real)
+        if already is not None:
+            if out[already].is_symlink() and not p.is_symlink():
+                out[already] = p
             continue
-        seen_real.add(real)
+        seen_real[real] = len(out)
         out.append(p)
     return out
 
+
+def _walk_candidates(root: Path, excluded, root_excluded: bool):
+    """(sorted candidate files, skipped dirs by name, symlinked dirs not followed)."""
+    skipped_dirs: Dict[str, Dict[str, int]] = {}
+    symlinked: List[tuple] = []
+    candidates: List[Path] = []
+    real_root = os.path.realpath(str(root))
+
+    def note_skipped(name: str, dirs: int, files: int) -> None:
+        row = skipped_dirs.setdefault(name, {"dirs": 0, "files": 0})
+        row["dirs"] += dirs
+        row["files"] += files
+
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        here = Path(dirpath)
+        for d in list(dirnames):
+            full = here / d
+            if full.is_symlink():
+                dirnames.remove(d)           # os.walk would not descend anyway
+                if d in excluded:
+                    note_skipped(d, 1, 0)
+                    continue
+                target = os.path.realpath(str(full))
+                loops = target == real_root or real_root.startswith(target + os.sep)
+                if target.startswith(real_root + os.sep) and not loops:
+                    continue                 # its files are scanned under their real names
+                behind = 0 if loops or not os.path.isdir(target) else _count_candidates(target)
+                symlinked.append((PurePath(os.path.relpath(full, root)).as_posix(), behind))
+            elif d in excluded and not root_excluded:
+                dirnames.remove(d)
+                note_skipped(d, 1, _count_candidates(str(full)))
+            elif d.endswith(".egg-info"):
+                dirnames.remove(d)
+                note_skipped("*.egg-info", 1, _count_candidates(str(full)))
+        for n in filenames:
+            if _is_candidate(n):
+                candidates.append(here / n)
+    candidates.sort()
+    return candidates, skipped_dirs, symlinked
+
+
+#: How many names a scan lists for skipped or symlinked directories before
+#: it says "and N more". The counts stay exact; only the list is capped.
+SKIP_LIST_CAP = 20
+
+
+def render_skipped_dirs(skipped: Dict[str, Dict[str, int]]) -> str:
+    rows = sorted(skipped.items(), key=lambda kv: (-kv[1]["files"], kv[0]))
+    shown = ", ".join(f"{name} ({v['dirs']} dir(s), {v['files']} file(s))"
+                      for name, v in rows[:SKIP_LIST_CAP])
+    return shown + (f", and {len(rows) - SKIP_LIST_CAP} more" if len(rows) > SKIP_LIST_CAP else "")
+
+
+def _max_file_bytes(args) -> int:
+    """--max-file-size, else $GHOST_MAX_FILE_BYTES, else the default."""
+    value = getattr(args, "max_file_size", None)
+    if value is None:
+        env = os.environ.get("GHOST_MAX_FILE_BYTES", "").strip()
+        if env:
+            try:
+                return parse_size(env)
+            except ValueError:
+                pass
+        return corpus.DEFAULT_MAX_FILE_BYTES
+    return int(value)
+
+
+def parse_size(text: str) -> int:
+    """'5242880', '512K', '5M', '1G' -> bytes."""
+    t = str(text).strip().upper().rstrip("B")
+    mult = {"K": 1024, "M": 1024 ** 2, "G": 1024 ** 3}.get(t[-1:], 1)
+    n = int(float(t[:-1] if mult != 1 else t) * mult)
+    if n < 1:
+        raise ValueError("size must be positive")
+    return n
+
+
+def _run_detectors(args, files, detector_failures):
+    """(findings, Profile or None, seconds) from every file-level detector."""
+    if not args.profile:
+        return run_all(files, detector_failures), None, 0.0
+    import time
+    started = time.perf_counter()
+    with Profile() as profile:
+        findings = run_all(files, detector_failures)
+    return findings, profile, time.perf_counter() - started
+
+
+def _withhold_oversize(files: List[Path], limit: int):
+    """(files every check may read, [(file, size)] over `limit`)."""
+    oversize = []
+    for f in files:
+        try:
+            size = f.stat().st_size
+        except OSError:
+            continue
+        if size > limit:
+            oversize.append((f, size))
+    drop = {f for f, _ in oversize}
+    return [f for f in files if f not in drop], oversize
+
+
+def _unassessable(root: Path, files: List[Path], oversize, limit: int) -> List[tuple]:
+    """(relative path, reason) for each file no check could assess."""
+    out = [(PurePath(os.path.relpath(p, root)).as_posix(), why)
+           for p, why in corpus.unparsed([f for f in files if f.suffix == ".py"])]
+    out += [(PurePath(os.path.relpath(f, root)).as_posix(),
+             f"too large: {size} bytes is over the {limit}-byte limit "
+             "(--max-file-size), so it was not read")
+            for f, size in oversize]
+    return out
+
+
+def _say_what_was_skipped(found: "Collected", say) -> None:
+    if found.skipped_dirs:
+        say("ghost_buster: skipped directories (not scanned): "
+            + render_skipped_dirs(found.skipped_dirs))
+    links = found.symlinked_dirs
+    if links:
+        say("ghost_buster: symlinked directories (not followed): "
+            + ", ".join(f"{n} ({c} file(s))" for n, c in links[:SKIP_LIST_CAP])
+            + (f", and {len(links) - SKIP_LIST_CAP} more" if len(links) > SKIP_LIST_CAP else ""))
 
 
 def _resolve_join_mode(args, files, say=to_stderr) -> List[Path]:
@@ -154,7 +374,7 @@ def _resolve_join_mode(args, files, say=to_stderr) -> List[Path]:
     notice = render_single_repo_notice(args.path, files)
     if notice is None:
         return []      # nothing reaches across a boundary; no question to ask
-    print(notice, file=sys.stderr)
+    log.info("%s", notice)
     # A prompt is not a receipt: it needs no newline and has to reach a
     # terminal whatever the caller does with the receipt channel.
     print("ghost_buster: scan this repository alone, or join another? "
@@ -165,7 +385,12 @@ def _resolve_join_mode(args, files, say=to_stderr) -> List[Path]:
     except (EOFError, KeyboardInterrupt):
         print(file=sys.stderr)
         return []
-    return [Path(p) for p in answer.split() if p]
+    typed = [Path(p) for p in answer.split() if p]
+    for p in typed:
+        # A path typed at the prompt is held to the same rule as --join: a typo is not a checked seam.
+        if not p.is_dir():
+            raise Stop(f"error: --join {p} " + ("does not exist" if not p.exists() else "is not a directory"))
+    return typed
 
 
 
@@ -196,8 +421,22 @@ def _state(report) -> str:
     return RAN if getattr(report, "ran", False) else COULD_NOT_RUN
 
 
+def _declined(checks: dict, reasons: dict, key: str, label: str, flag: str, say) -> None:
+    """Record a check the user turned off: announce it, and keep the state and
+    the reason in step so --json says the same thing the output did."""
+    _skipped(label, flag, say)
+    checks[key] = DECLINED
+    reasons[key] = f"skipped at your request ({flag})"
 
-def _run_repository_checks(args, findings: List[Finding], checks: dict, say):
+
+def _note_if_not_run(checks: dict, reasons: dict, key: str, report, fallback: str) -> None:
+    """When a check did not run, keep the reason it gave, or the fallback."""
+    if checks[key] != RAN:
+        reasons[key] = getattr(report, "reason", "") or fallback
+
+
+
+def _run_repository_checks(args, findings: List[Finding], checks: dict, say, reasons=None):
     """The three checks that take a repository rather than a file list:
     --branches, --tests, --secrets. All three are ON by default; each
     appends to `findings` and prints its own one-line report to stderr,
@@ -205,8 +444,11 @@ def _run_repository_checks(args, findings: List[Finding], checks: dict, say):
     TestStatusReport when --tests ran (the correlation layer needs the
     measured counts), else None.
 
+    `reasons` collects, per check that did not run, why, for --json.
+
     Extracted from main() for the same reason as _build_parser: these are
     one cohesive stage, and main() was over the long_function threshold."""
+    reasons = {} if reasons is None else reasons
     if args.branches:
         branch_findings, branch_report = scan_branches(args.path, args.branches_base)
         if branch_report.ran:
@@ -216,16 +458,17 @@ def _run_repository_checks(args, findings: List[Finding], checks: dict, say):
             )
         else:
             say(f"ghost_buster: branch scan did not run: {branch_report.reason}")
+            reasons["branches"] = branch_report.reason or "branch scan did not run"
         findings.extend(branch_findings)
         checks["branches"] = _state(branch_report)
     else:
-        _skipped("branch scan", "--no-branches", say)
-        checks["branches"] = DECLINED
+        _declined(checks, reasons, "branches", "branch scan", "--no-branches", say)
 
     test_report = None
     if args.tests and not args.trusted.trusted:
         say(declined_receipt("test status scan", args.trusted))
         checks["tests"] = DECLINED
+        reasons["tests"] = f"declined: {args.trusted.reason}"
     elif args.tests:
         test_findings, test_report = scan_tests(
             args.path, python=args.tests_python, reruns=args.tests_reruns,
@@ -234,18 +477,18 @@ def _run_repository_checks(args, findings: List[Finding], checks: dict, say):
         say(render_test_report(test_report))
         findings.extend(test_findings)
         checks["tests"] = _state(test_report)
+        _note_if_not_run(checks, reasons, "tests", test_report, "test scan did not run")
     else:
-        _skipped("test status scan", "--no-tests", say)
-        checks["tests"] = DECLINED
+        _declined(checks, reasons, "tests", "test status scan", "--no-tests", say)
 
     if args.project:
         project_findings, project_report = scan_project(args.path)
         say(render_project_report(project_report))
         findings.extend(project_findings)
         checks["project"] = _state(project_report)
+        _note_if_not_run(checks, reasons, "project", project_report, "project scan did not run")
     else:
-        _skipped("project scan", "--no-project", say)
-        checks["project"] = DECLINED
+        _declined(checks, reasons, "project", "project scan", "--no-project", say)
 
     if args.secrets:
         secrets_findings, secrets_report = scan_secrets(
@@ -254,26 +497,28 @@ def _run_repository_checks(args, findings: List[Finding], checks: dict, say):
         say(render_secrets_report(secrets_report))
         findings.extend(secrets_findings)
         checks["secrets"] = _state(secrets_report)
+        _note_if_not_run(checks, reasons, "secrets", secrets_report, "secrets scan did not run")
     else:
-        _skipped("secrets scan", "--no-secrets", say)
-        checks["secrets"] = DECLINED
+        _declined(checks, reasons, "secrets", "secrets scan", "--no-secrets", say)
 
     return test_report
 
 
 
 
-def _run_opt_in_analyses(args, files, findings, checks, say):
+def _run_opt_in_analyses(args, files, findings, checks, say, reasons=None):
     """--mutate and --kernel: the two checks that are off unless asked for.
     Both cost something a default run should not spend -- mutation runs one
     pytest process per mutant, and a kernel check needs a second tree to
     compare against -- and both announce themselves when not run, because
     an absent check is a fact about the scan. Returns the MutationRun when
     one happened, which the report renders."""
+    reasons = {} if reasons is None else reasons
     mutation_run = None
     if args.mutate and not args.trusted.trusted:
         say(declined_receipt("mutation analysis", args.trusted))
         checks["mutate"] = DECLINED
+        reasons["mutate"] = f"declined: {args.trusted.reason}"
     elif args.mutate:
         mutation_run = run_mutations(
             args.path, files, max_mutants_per_candidate=args.mutate_max,
@@ -283,6 +528,7 @@ def _run_opt_in_analyses(args, files, findings, checks, say):
         checks["mutate"] = RAN
     else:
         checks["mutate"] = NOT_RUN
+        reasons["mutate"] = "opt-in and not requested (--mutate)"
         # Opt-in on cost (one pytest process per mutant), not because it
         # matters less -- so it is named on every run rather than simply
         # being absent.
@@ -293,17 +539,21 @@ def _run_opt_in_analyses(args, files, findings, checks, say):
         say(render_kernel_report(kernel_report))
         findings.extend(kernel_findings)
         checks["kernel"] = RAN if kernel_report.ran else COULD_NOT_RUN
+        if not kernel_report.ran:
+            reasons["kernel"] = getattr(kernel_report, "reason", "") or "kernel check did not run"
     else:
         checks["kernel"] = NOT_RUN
+        reasons["kernel"] = "opt-in and not requested (--kernel PATH)"
         say("ghost_buster: kernel check NOT RUN (opt-in: --kernel PATH)")
     return mutation_run
 
 
-def _run_model_checks(args, files, findings, checks, say) -> None:
+def _run_model_checks(args, files, findings, checks, say, reasons=None) -> None:
     """The two checks that build a model of the code before deriving
     anything from it: the cross-repository boundary (--join) and this
     repository's own structure (--structure). Both append to `findings`
     and leave their state in `checks`."""
+    reasons = {} if reasons is None else reasons
     join_paths = _resolve_join_mode(args, files)
     if join_paths:
         roots = [args.path] + list(join_paths)
@@ -316,14 +566,27 @@ def _run_model_checks(args, files, findings, checks, say) -> None:
         say(render_boundary_report(joined, boundary_findings))
         findings.extend(boundary_findings)
         checks["boundary"] = RAN if joined.ran else COULD_NOT_RUN
+        if not joined.ran:
+            reasons["boundary"] = getattr(joined, "reason", "") or "boundary scan did not run"
     else:
-        checks["boundary"] = NOT_RUN
+        # Which of the two it is, the notice already decides: it is written
+        # when this repository reaches for a package it does not provide or
+        # holds a dormant test, and withheld when it does neither. That is
+        # exactly the difference between a seam left unchecked and no seam
+        # at all, so the state follows the notice rather than assuming the
+        # worse of the two. Before 1.8.0 both were NOT_RUN and every
+        # single-repository scan grew a blind-spot streak nothing could
+        # clear.
         notice = render_single_repo_notice(args.path, files)
         if notice:
+            checks["boundary"] = NOT_RUN
+            reasons["boundary"] = ("single-repository scan; this repository reaches across a "
+                                   "boundary and no other repository was joined (--join)")
             say(notice)
         else:
-            say("ghost_buster: boundary scan NOT RUN (single repository; "
-                "no unprovided packages reached for)")
+            checks["boundary"] = NOT_APPLICABLE
+            say("ghost_buster: boundary scan NOT APPLICABLE (single repository; "
+                "no unprovided packages reached for, no dormant tests)")
 
     if args.structure:
         model = build_model(args.path, files)
@@ -331,6 +594,8 @@ def _run_model_checks(args, files, findings, checks, say) -> None:
         say(render_structure_report(model, structure_findings))
         findings.extend(structure_findings)
         checks["structure"] = RAN if model.ran else COULD_NOT_RUN
+        if not model.ran:
+            reasons["structure"] = getattr(model, "reason", "") or "structure scan did not run"
         if args.structure_out:
             try:
                 args.structure_out.write_text(model.to_json(), encoding="utf-8")
@@ -342,15 +607,18 @@ def _run_model_checks(args, files, findings, checks, say) -> None:
     else:
         _skipped("structure scan", "--no-structure", say)
         checks["structure"] = DECLINED
+        reasons["structure"] = "skipped at your request (--no-structure)"
 
 
-def _correlate(args, findings, checks, test_report, say) -> None:
+def _correlate(args, findings, checks, test_report, say, reasons=None) -> None:
     """Connect findings to each other and to prior runs. This reads
     findings already computed and runs no new scan, which is why it is
     normally free and on by default."""
     if args.no_correlate:
         _skipped("correlation", "--no-correlate", say)
         checks["correlate"] = DECLINED
+        if reasons is not None:
+            reasons["correlate"] = "skipped at your request (--no-correlate)"
         return
     prior_runs = []
     for prior_path in args.correlate_with:
@@ -369,16 +637,28 @@ def _correlate(args, findings, checks, test_report, say) -> None:
     checks["correlate"] = RAN
 
 
-def _record_in_ledger(args, files, findings, checks, baseline_path, say) -> None:
+def _record_in_ledger(args, files, findings, checks, baseline_path, say, reasons=None) -> None:
     """Fold this run into the repository's history, then derive what the
     history says: which findings are old, and which way the series is
     going. Both are appended to `findings` as derived findings -- see
     schema.DERIVED_DETECTORS, which keeps them out of the measurement
     they are a statement about."""
-    if not args.ledger:
-        _skipped("ledger", "--no-ledger", say)
-        return
     ledger_path = args.ledger_path or (args.path / ".ghost_ledger.json")
+    # Opt-in: a default scan writes nothing into the folder it scans. An
+    # explicit --ledger, or an explicit --ledger-path, is the request.
+    wanted = args.ledger if args.ledger is not None else args.ledger_path is not None
+    reasons = {} if reasons is None else reasons
+    if not wanted:
+        # Custody that was off is a fact about the scan, like an absent
+        # mutation run: it is recorded so --json lists it as unmeasured.
+        if args.ledger is False:
+            _declined(checks, reasons, "ledger", "ledger", "--no-ledger", say)
+        else:
+            checks["ledger"] = NOT_RUN
+            reasons["ledger"] = "opt-in and not requested (--ledger or --ledger-path FILE)"
+            say("ghost_buster: ledger NOT UPDATED (opt-in: --ledger or --ledger-path FILE)"
+                + (f"; the existing {ledger_path} was left untouched" if ledger_path.is_file() else ""))
+        return
     try:
         ledger = Ledger(ledger_path)
     except LedgerError as e:
@@ -395,6 +675,9 @@ def _record_in_ledger(args, files, findings, checks, baseline_path, say) -> None
         records={"baseline": attest.digest_file(baseline_path),
                  "casefile": attest.digest_file(
                      args.casefile or (args.path / ".ghost_casefile.json"))},
+        # So the ledger can ask git what moved since the run it remembers.
+        # A file that moved is not a defect that was fixed.
+        root=args.path,
     )
     history = ledger.derive(findings)
     say(render_ledger_report(ledger, history))
@@ -408,7 +691,7 @@ def _record_in_ledger(args, files, findings, checks, baseline_path, say) -> None
     say(render_trajectory_report(ledger.runs))
     findings.extend(trend)
     try:
-        ledger.save()
+        ledger.save(create_dirs=bool(getattr(args, "create_ledger_dir", False)))
     except OSError as e:
         raise Stop(f"error: ledger {ledger_path} could not be written: "
                    f"{type(e).__name__}: {e}") from e
@@ -419,9 +702,26 @@ def gather(args, say: Callable[[str], None] = to_stderr) -> Evidence:
 
     Raises `Stop` on a usage error. Everything else is a finding.
     """
+    # The scan folder, fully resolved, once. Ids are relative to it (see
+    # schema.scanning), so how it was typed -- ./x, x/, a relative path, a
+    # symlink to it -- cannot change them.
+    args.path = Path(os.path.realpath(args.path))
+    with scanning(args.path):
+        return _gather(args, say)
+
+
+def _gather(args, say) -> Evidence:
     baseline_path = args.baseline or (args.path / ".ghost_baseline.json")
-    files = _collect_files(args.path, args.exclude)
-    if not files:
+    corpus.set_max_file_bytes(_max_file_bytes(args))
+    found = _collect_detail(args.path, args.exclude)
+    files, files_skipped = found.files, found.skipped
+    # A file over the size limit is never read, by any detector: it stays in
+    # the scan's file list (so it is counted and named) but is withheld from
+    # every check and reported as unassessable with the reason.
+    all_files = files
+    limit = corpus.max_file_bytes()
+    files, oversize = _withhold_oversize(all_files, limit)
+    if not all_files:
         # A scan of nothing is not a clean scan. A checkout under a directory
         # named venv, node_modules or .tox, an empty directory, or a wrong
         # path all used to print "0 new finding(s)" and exit 0 (measured
@@ -429,36 +729,34 @@ def gather(args, say: Callable[[str], None] = to_stderr) -> Evidence:
         raise Stop(f"error: no .py or .md files to scan under {args.path} "
                    f"(excluded directory names: "
                    f"{', '.join(sorted(_EXCLUDED_DIRS | set(args.exclude)))})")
-    say(f"ghost_buster: scanning {len(files)} file(s) under {args.path}")
+    say(f"ghost_buster: scanning {len(all_files)} file(s) under {args.path}")
+    log.debug("baseline %s; size limit %s bytes; %d file(s) withheld as oversize",
+              baseline_path, limit, len(oversize))
     # Every check's state, recorded whatever it is. This dict is the reason
     # the ledger can notice a blind spot: "declined" and "could not run" are
     # facts worth remembering, not the absence of one.
     checks = {"structural": RAN}
-    profile = None
-    profile_seconds = 0.0
-    if args.profile:
-        import time
-        started = time.perf_counter()
-        with Profile() as profile:
-            findings = run_all(files)
-        profile_seconds = time.perf_counter() - started
-    else:
-        findings = run_all(files)
+    reasons: Dict[str, str] = {}
+    detector_failures: List[tuple] = []
+    findings, profile, profile_seconds = _run_detectors(args, files, detector_failures)
 
-    if args.annotate_names:
-        readme = args.annotate_readme or (args.path / "README.md")
-        disagreements, changed, wrote_readme = annotate(files, readme, root=args.path)
-        say(f"ghost_buster: {len(disagreements)} name disagreement(s); "
-              f"annotated {len(changed)} file(s); "
-              f"{'updated' if wrote_readme else 'no change to'} {readme}")
+    for name, why in detector_failures:
+        say(f"ghost_buster: detector {name} FAILED and its findings are missing: {why}")
+    unparsable = _unassessable(args.path, files, oversize, limit)
+    _say_what_was_skipped(found, say)
+    if unparsable:
+        say(f"ghost_buster: {len(unparsable)} file(s) could not be parsed and were not analysed by the code detectors")
+    if detector_failures:
+        checks["structural"] = COULD_NOT_RUN
+        reasons["structural"] = "; ".join(f"{n}: {w}" for n, w in detector_failures)
 
-    mutation_run = _run_opt_in_analyses(args, files, findings, checks, say)
+    mutation_run = _run_opt_in_analyses(args, files, findings, checks, say, reasons)
 
-    _run_model_checks(args, files, findings, checks, say)
+    _run_model_checks(args, files, findings, checks, say, reasons)
 
-    test_report = _run_repository_checks(args, findings, checks, say)
+    test_report = _run_repository_checks(args, findings, checks, say, reasons)
 
-    _correlate(args, findings, checks, test_report, say)
+    _correlate(args, findings, checks, test_report, say, reasons)
 
     # Every finding now has its own id, including the ones whose detector,
     # path and summary happen to match another's. This runs before the
@@ -475,9 +773,14 @@ def gather(args, say: Callable[[str], None] = to_stderr) -> Evidence:
     # the diff, `--accept` would quietly erase history: a finding you
     # agreed to stop hearing about would also stop being remembered, and
     # a regression years later would read as a first sighting.
-    _record_in_ledger(args, files, findings, checks, baseline_path, say)
+    _record_in_ledger(args, files, findings, checks, baseline_path, say, reasons)
 
-    return Evidence(files=files, findings=findings, checks=checks,
+    paths_from_scan_root(findings, files, args.path)
+
+    return Evidence(files=all_files, findings=findings, checks=checks,
                     baseline_path=baseline_path, test_report=test_report,
                     mutation_run=mutation_run, profile=profile,
-                    profile_seconds=profile_seconds)
+                    profile_seconds=profile_seconds, reasons=reasons,
+                    detector_failures=detector_failures, unparsable=unparsable,
+                    files_skipped=files_skipped, skipped_dirs=found.skipped_dirs,
+                    symlinked_dirs=found.symlinked_dirs, max_file_bytes=limit)

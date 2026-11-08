@@ -8,6 +8,8 @@ fixture cannot express the thing being checked.
 """
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from ghost_buster.boundary import (
@@ -16,6 +18,7 @@ from ghost_buster.boundary import (
 from ghost_buster.cli import main
 from ghost_buster.pipeline import _collect_files
 from ghost_buster.schema import Severity
+from empty_baseline import empty_baseline
 
 GUARDED = '''import sys
 
@@ -284,9 +287,10 @@ def test_the_cli_does_not_prompt_when_stdin_is_not_a_terminal(tmp_path, capsys, 
     build gets removed from the build."""
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
     root = _consumer(tmp_path)
-    main([str(root), "--no-tests", "--no-secrets", "--no-branches", "--no-ledger",
-          "--no-project", "--no-structure", "--baseline", str(tmp_path / "b.json")])
+    rc = main([str(root), "--no-tests", "--no-secrets", "--no-branches", "--no-ledger",
+               "--no-project", "--no-structure", "--baseline", empty_baseline(tmp_path)])
     err = capsys.readouterr().err
+    assert rc in (0, 1), "a prompt that reads a closed stdin is a crash, not a scan"
     assert "--join" in err, "it must still say the seams went unchecked"
     assert "boundary scan joined" not in err
 
@@ -294,9 +298,10 @@ def test_the_cli_does_not_prompt_when_stdin_is_not_a_terminal(tmp_path, capsys, 
 def test_single_repo_flag_skips_the_question(tmp_path, capsys, monkeypatch):
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     root = _consumer(tmp_path)
-    main([str(root), "--single-repo", "--no-tests", "--no-secrets", "--no-branches",
-          "--no-ledger", "--no-project", "--no-structure",
-          "--baseline", str(tmp_path / "b.json")])
+    rc = main([str(root), "--single-repo", "--no-tests", "--no-secrets", "--no-branches",
+               "--no-ledger", "--no-project", "--no-structure",
+               "--baseline", empty_baseline(tmp_path)])
+    assert rc in (0, 1), "a prompt that reads a closed stdin is a crash, not a scan"
     assert "boundary scan joined" not in capsys.readouterr().err
 
 
@@ -304,5 +309,127 @@ def test_the_cli_joins_when_told_to(tmp_path, capsys):
     consumer, provider = _consumer(tmp_path), _provider(tmp_path)
     main([str(consumer), "--join", str(provider), "--no-tests", "--no-secrets",
           "--no-branches", "--no-ledger", "--no-project", "--no-structure",
-          "--baseline", str(tmp_path / "b.json")])
+          "--baseline", empty_baseline(tmp_path)])
     assert "boundary scan joined 2 repositories" in capsys.readouterr().err
+
+
+# A --join that names nothing readable used to print "boundary scan joined 2
+# repositories" with no unmeasured row and exit 0, so a typo read as a checked
+# seam. Like every other path argument it is now exit 2 naming the path.
+
+_QUIET_JOIN = ["--no-tests", "--no-secrets", "--no-branches", "--no-ledger",
+               "--no-project", "--no-structure"]
+
+
+def test_a_join_path_that_does_not_exist_is_a_usage_error(tmp_path, capsys):
+    consumer = _consumer(tmp_path)
+    missing = tmp_path / "no_such_repo"
+    code = main([str(consumer), "--join", str(missing), *_QUIET_JOIN,
+                 "--baseline", empty_baseline(tmp_path)])
+    err = capsys.readouterr().err
+    assert code == 2
+    assert str(missing) in err and "--join" in err
+    assert "boundary scan joined" not in err
+
+
+def test_a_join_path_that_is_a_plain_file_is_a_usage_error(tmp_path, capsys):
+    consumer = _consumer(tmp_path)
+    plain = tmp_path / "plain.txt"
+    plain.write_text("not a repository\n")
+    code = main([str(consumer), "--join", str(plain), *_QUIET_JOIN,
+                 "--baseline", empty_baseline(tmp_path)])
+    err = capsys.readouterr().err
+    assert code == 2
+    assert str(plain) in err and "--join" in err
+    assert "boundary scan joined" not in err
+
+
+def test_one_bad_join_among_good_ones_still_refuses(tmp_path, capsys):
+    consumer, provider = _consumer(tmp_path), _provider(tmp_path)
+    missing = tmp_path / "typo"
+    code = main([str(consumer), "--join", str(provider), "--join", str(missing), *_QUIET_JOIN,
+                 "--baseline", empty_baseline(tmp_path)])
+    err = capsys.readouterr().err
+    assert code == 2 and str(missing) in err
+    assert "boundary scan joined" not in err
+
+
+def test_a_bad_join_under_json_is_the_usual_error_envelope(tmp_path, capsys):
+    consumer = _consumer(tmp_path)
+    missing = tmp_path / "no_such_repo"
+    code = main([str(consumer), "--join", str(missing), "--json", *_QUIET_JOIN,
+                 "--baseline", empty_baseline(tmp_path)])
+    out = capsys.readouterr().out
+    assert code == 2
+    assert json.loads(out)["status"] == "error"
+
+
+def test_a_bad_path_typed_at_the_join_prompt_is_refused_the_same_way(tmp_path, capsys, monkeypatch):
+    consumer = _consumer(tmp_path)
+    missing = tmp_path / "typo"
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True, raising=False)
+    monkeypatch.setattr("builtins.input", lambda *a: str(missing))
+    code = main([str(consumer), *_QUIET_JOIN, "--baseline", empty_baseline(tmp_path)])
+    err = capsys.readouterr().err
+    assert code == 2 and str(missing) in err
+    assert "boundary scan joined" not in err
+
+
+# ---------------------------------------------------------------------------
+# What a single-repo run FILES the check as (1.8.0)
+#
+# "Nobody looked" and "there was nothing to look at" are different claims and
+# the ledger had only the first, so every single-repository scan grew a
+# blind-spot streak no action could clear -- the check could not run, because
+# there was nothing for it to run on. Measured on ATS: 7 consecutive runs of
+# a permanent finding reporting a gap that did not exist.
+#
+# The notice already draws the line, so the state follows it rather than
+# assuming the worse of the two.
+# ---------------------------------------------------------------------------
+
+def _boundary_state(root, tmp_path, capsys):
+    from ghost_buster.ledger import Ledger
+    ledger_path = tmp_path / "led.json"
+    main([str(root), "--single-repo", "--no-tests", "--no-secrets", "--no-branches",
+          "--no-project", "--no-structure", "--ledger-path", str(ledger_path),
+          "--baseline", empty_baseline(tmp_path)])
+    capsys.readouterr()
+    return Ledger(ledger_path).runs[-1].checks["boundary"], ledger_path
+
+
+def test_a_repo_with_no_seam_files_the_boundary_check_as_not_applicable(tmp_path, capsys):
+    from ghost_buster.ledger import NOT_APPLICABLE
+    root = tmp_path / "solo"
+    (root / "app").mkdir(parents=True)
+    (root / ".git").mkdir()
+    (root / "app" / "__init__.py").write_text("def go():\n    pass\n")
+    state, _ = _boundary_state(root, tmp_path, capsys)
+    assert state == NOT_APPLICABLE
+
+
+def test_a_repo_with_an_unchecked_seam_still_files_it_as_not_run(tmp_path, capsys):
+    """The half that must not soften. This repository DOES reach across a
+    boundary and was scanned alone, so the seam really is unchecked and the
+    streak it accrues is the point."""
+    from ghost_buster.ledger import NOT_RUN
+    root = _consumer(tmp_path)
+    (root / ".git").mkdir(exist_ok=True)
+    state, _ = _boundary_state(root, tmp_path, capsys)
+    assert state == NOT_RUN
+
+
+def test_a_seamless_repo_never_grows_a_boundary_blind_spot(tmp_path, capsys):
+    """The consequence, end to end: the finding that could not be cleared."""
+    from ghost_buster.ledger import BLIND_SPOT_AFTER
+    root = tmp_path / "solo2"
+    (root / "app").mkdir(parents=True)
+    (root / ".git").mkdir()
+    (root / "app" / "__init__.py").write_text("def go():\n    pass\n")
+    for _ in range(BLIND_SPOT_AFTER + 2):
+        _, ledger_path = _boundary_state(root, tmp_path, capsys)
+    main([str(root), "--single-repo", "--json", "--no-tests", "--no-secrets",
+          "--no-branches", "--no-project", "--no-structure",
+          "--ledger-path", str(ledger_path), "--baseline", empty_baseline(tmp_path)])
+    rows = json.loads(capsys.readouterr().out)["findings"]
+    assert not [r for r in rows if r.get("attributes", {}).get("check") == "boundary"]

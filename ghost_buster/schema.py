@@ -56,11 +56,15 @@ tool is designed not to repeat.
 from __future__ import annotations
 
 import hashlib
+import unicodedata
 import json
+import os
+from contextlib import contextmanager
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Iterable, Any, Dict, List, Optional
+from pathlib import PurePath
+from typing import Iterable, Iterator, Any, Dict, List, Optional, Union
 
 
 class Severity(str, Enum):
@@ -74,10 +78,41 @@ class Status(str, Enum):
     """How sure ghost_buster is that this finding is real. See module
     docstring -- this is intentionally the same discipline as the HULK
     campaign's status vocabulary, narrowed to what ghost_buster actually
-    needs."""
+    needs.
+
+    WHICH OF THESE THIS TOOL PRODUCES (v1.7.6)
+
+    Three, and the distinction is worth stating because for a long time
+    nothing did. Its own `unreachable_declared_state` detector, pointed at
+    this repository, reported two members that no code here ever assigns:
+
+        produced here      CONFIRMED, REASONED, SUPPRESSED
+        arrives from data  CONFIRMED_BY_REVIEW, REJECTED
+
+    The second pair is not dead and must not be deleted. `Finding.from_dict`
+    reconstructs any member from a stored record, so a baseline, a casefile,
+    a hand-edited FindingSet or another tool's output can carry them, and
+    removing the members would turn reading such a file into a crash.
+
+    They are also not the mechanism a human triages with. That is
+    `disposition` -- "fix", "suppress", "document" -- implemented in
+    `ghost_writer/triage.py`, which is what closed the loop the README had
+    drawn for a long time and nothing had walked. `REJECTED` is an older
+    vocabulary for the same decision, kept readable rather than kept alive.
+
+    `AUTHORITATIVE` excludes REJECTED and includes CONFIRMED_BY_REVIEW, so
+    both are handled correctly when they do arrive. That is the point: a
+    state this tool does not produce still has to be read, and read
+    correctly, when somebody else produces it.
+
+    The detector still reports both, and should. The finding is true. What
+    changed is that this declaration no longer implies a state the code can
+    reach on its own.
+    """
 
     CONFIRMED = "confirmed"                  # deterministic detector; not in doubt
     REASONED = "reasoned"                    # semantic/LLM claim; not yet verified
+    # Read, never written here. See the note above.
     CONFIRMED_BY_REVIEW = "confirmed_by_review"  # a REASONED finding a human verified
     REJECTED = "rejected"                    # a human looked and said no
     SUPPRESSED = "suppressed"                # known, accepted, tracked -- not re-surfaced
@@ -126,7 +161,62 @@ def _stable_id(*parts: str) -> str:
     return f"ghost-{digest[:12]}"
 
 
-def _portable_path(path: str) -> str:
+def _nfc(text: str) -> str:
+    """A path in Unicode normalisation form C. macOS hands back decomposed
+    names (NFD) and Linux, Windows and git usually hand back composed ones
+    (NFC), so the same file `cafe\u0301.py` / `caf\u00e9.py` hashed to two
+    different ids on two machines and a committed baseline matched on one
+    and went inert on the other."""
+    return unicodedata.normalize("NFC", text)
+
+
+#: The folder being scanned, set for the length of one scan by
+#: `scanning(root)`. While it is set, a file under it is identified by its
+#: path relative to it, in posix form, so an id does not depend on how the
+#: scan path was typed (`./x`, `x/`, absolute, a symlink to it, relative to
+#: another working directory). Outside a scan it is None and `_portable_path`
+#: behaves as it always did.
+_SCAN_ROOT: Optional[str] = None
+
+
+@contextmanager
+def scanning(root: Any) -> Iterator[None]:
+    """Identify files relative to `root` for the length of the block."""
+    global _SCAN_ROOT
+    previous = _SCAN_ROOT
+    _SCAN_ROOT = os.path.realpath(str(root))
+    try:
+        yield
+    finally:
+        _SCAN_ROOT = previous
+
+
+def _relative_to_scan_root(path: str) -> Optional[str]:
+    """`path` relative to the scan root in posix form, or None when no scan
+    is active or the file is outside the root."""
+    if _SCAN_ROOT is None or not os.path.isabs(path):
+        return None
+    # The root is fully resolved; resolve only the directory part of the
+    # file so a symlinked FILE keeps the name it was reported under.
+    head, tail = os.path.split(path)
+    full = os.path.join(os.path.realpath(head), tail)
+    rel = os.path.relpath(full, _SCAN_ROOT)
+    if rel == "." or rel == ".." or rel.startswith(".." + os.sep):
+        return None
+    return PurePath(rel).as_posix()
+
+
+def _legacy_portable_path(path: str) -> str:
+    """The path an id was hashed from before ids were scan-root relative."""
+    global _SCAN_ROOT
+    saved, _SCAN_ROOT = _SCAN_ROOT, None
+    try:
+        return _portable_path(path)
+    finally:
+        _SCAN_ROOT = saved
+
+
+def _portable_path(path: Union[str, "os.PathLike[str]"]) -> str:
     """The part of a path that identifies a file inside its project.
 
     The ID hashed the ABSOLUTE path, which made every committed baseline
@@ -145,7 +235,10 @@ def _portable_path(path: str) -> str:
     marker), else fall back to the last two segments, which is stable enough
     to distinguish files and short enough not to carry a home directory.
     """
-    from pathlib import PurePath
+    path = os.fspath(path)   # callers hold both str and Path; the rest of this reads a str
+    rel = _relative_to_scan_root(path)
+    if rel is not None:
+        return rel
 
     pure = PurePath(path)
     # A path that is already relative is already portable: it was cut at
@@ -216,12 +309,63 @@ class Finding:
     detail: str = ""
     # Machine-readable join keys, for correlate.py -- see WHY ATTRIBUTES
     # EXIST in the module docstring. Never part of the id.
-    attributes: Dict[str, str] = field(default_factory=dict)
+    attributes: Dict[str, Any] = field(default_factory=dict)  # values are JSON scalars: str, int or float
     confidence: Optional[float] = None  # 0.0-1.0, semantic layer only; None for mechanical
     first_seen: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    disposition: Optional[str] = None  # set by the human triage step, see triage.py
+    # Set by the human triage step: ghost_writer/triage.py, which records
+    # "fix", "suppress" or "document" against a finding id. This is the
+    # mechanism a person judges a finding with; `Status` is what the SCANNER
+    # concluded, and the two are deliberately separate.
+    disposition: Optional[str] = None
     disposition_note: str = ""
+    #: What identifies this finding, when the summary does not (v1.7.3).
+    #:
+    #: A MEASUREMENT IS NOT AN IDENTITY.
+    #:
+    #: The id is a content hash of detector + path + summary, and several
+    #: summaries carry a number the run just measured. The defect does not
+    #: change when the number does, but the id does, so a baseline cannot
+    #: match the finding twice and "accept this" silently means "accept it
+    #: until the next commit".
+    #:
+    #: Measured against 1.7.2 by an adversarial harness: adding three tests
+    #: to a suite, with the documented claim untouched, gave three findings
+    #: three new identities --
+    #:
+    #:     no_ci_configuration            "1 test file(s)" -> "2 test file(s)"
+    #:     doc_count_contradicted_by_run  "collects 30"    -> "collects 33"
+    #:     doc_test_count_drift           "at least 30"    -> "at least 33"
+    #:
+    #: Stripping digits from every summary is not the fix. Two dead-code
+    #: findings for `core_0` and `core_1` in one file differ only in a
+    #: digit, and collapsing those to one identity means accepting one
+    #: suppresses the other -- the same failure pointing the other way, and
+    #: the worse direction.
+    #:
+    #: So the DETECTOR says what identifies its finding, because only the
+    #: detector knows which part of its own sentence is the defect and
+    #: which part is this morning's arithmetic. Left None, the summary is
+    #: used exactly as before.
+    identity_key: Optional[str] = None
+    #: The text the id was hashed from before this detector stated an
+    #: `identity_key` (its summary). When set, the id that text produced stays
+    #: a previous id, so a baseline, ledger or case file written before the
+    #: change still matches. Opt-in: detectors that do not set it are unchanged.
+    previous_key: Optional[str] = None
     id: str = field(init=False)
+    #: The id this finding had before ids were relative to the scan root, so
+    #: a baseline, ledger or case file written under the old spelling can
+    #: still be matched. None when it equals `id`. Never serialised.
+    legacy_id: Optional[str] = field(init=False, default=None, repr=False, compare=False)
+    _legacy_file: Optional[str] = field(init=False, default=None, repr=False, compare=False)
+    #: (id, path) pairs this finding had under the spelling in use before
+    #: paths were hashed in NFC. Only present when NFC changed the path.
+    _pre_nfc: List[tuple] = field(init=False, default_factory=list, repr=False, compare=False)
+    #: The base id `previous_key` produced, and the id to report for it. They differ
+    #: once `disambiguate_ids` has run: whether the old id carried a place suffix depends
+    #: on how the OLD summaries grouped, not on how the new identities do.
+    _pre_key: List[str] = field(init=False, default_factory=list, repr=False, compare=False)
+    _pre_key_ids: List[str] = field(init=False, default_factory=list, repr=False, compare=False)
 
     def __post_init__(self):
         # Store the portable path, not the absolute one, so the baseline
@@ -241,7 +385,26 @@ class Finding:
         self.evidence.related_files = [
             _portable_path(p) for p in self.evidence.related_files
         ]
-        self.id = _stable_id(self.detector, portable, self.summary)
+        key = self.summary if self.identity_key is None else self.identity_key
+        # Hashed in NFC so the same file has the same id whichever
+        # normalisation the filesystem reported it in. `evidence.file` keeps
+        # the spelling the filesystem used. The id it had before this is kept
+        # as a previous id, so an existing baseline still matches.
+        hashed = _nfc(portable)
+        self.id = _stable_id(self.detector, hashed, key)
+        if self.previous_key is not None and self.previous_key != key:
+            old = _stable_id(self.detector, hashed, self.previous_key)
+            self._pre_key.append(old)
+            self._pre_key_ids.append(old)
+        if hashed != portable:
+            self._pre_nfc.append((_stable_id(self.detector, portable, key), portable))
+        if _SCAN_ROOT is not None and self.evidence.absolute_file:
+            old = _legacy_portable_path(self.evidence.absolute_file)
+            old_id = _stable_id(self.detector, _nfc(old), key)
+            if old_id != self.id:
+                self.legacy_id, self._legacy_file = old_id, old
+            if old != _nfc(old):
+                self._pre_nfc.append((_stable_id(self.detector, old, key), old))
         if self.confidence is not None and not (0.0 <= self.confidence <= 1.0):
             raise ValueError(f"confidence must be 0.0-1.0, got {self.confidence}")
         if self.layer == Layer.MECHANICAL and self.status == Status.REASONED:
@@ -251,6 +414,15 @@ class Finding:
                 "the finding is either present (CONFIRMED) or it wasn't "
                 "produced at all. REASONED is reserved for the semantic layer."
             )
+
+    @property
+    def previous_ids(self) -> List[str]:
+        """Every earlier spelling of this finding's id, for matching a
+        baseline, ledger or case file written by an older version."""
+        out = [self.legacy_id] if self.legacy_id else []
+        out.extend(i for i, _ in self._pre_nfc)
+        out.extend(self._pre_key_ids)
+        return [i for i in dict.fromkeys(out) if i != self.id]
 
     def as_dict(self) -> Dict[str, Any]:
         return {
@@ -315,6 +487,39 @@ class Finding:
         return finding
 
 
+def paths_from_scan_root(findings: List["Finding"], files: List[Any], root: Any) -> None:
+    """Show each finding's file relative to the folder that was scanned.
+
+    `Finding` cuts a path at the nearest project marker (.git, pyproject.toml)
+    or, when there is none, keeps the last two path pieces. Both are right for
+    the finding's id, which must not move, and wrong for a tool that joins the
+    path onto the scan folder: a root-level `m.py` in a folder named `tgt`
+    was reported as `tgt/m.py`, and a file three folders deep lost its first
+    folder. Run last, after the ledger, so history keeps the old spelling and
+    only what is shown changes. The id is left exactly as it was.
+    """
+    base = os.path.abspath(str(root))
+    shown = {}
+    for path in files:
+        full = os.path.abspath(str(path))
+        try:
+            shown[full] = PurePath(os.path.relpath(full, base)).as_posix()
+        except ValueError:      # another drive on Windows: leave it alone
+            continue
+    for finding in findings:
+        ev = finding.evidence
+        source = ev.absolute_file or ev.file
+        rel = shown.get(os.path.abspath(source)) if source else None
+        if rel is None or rel.startswith(".."):
+            continue
+        ev.file = rel
+
+
+class FindingSetError(ValueError):
+    """A findings file that cannot be read as findings. A usage error for the
+    caller to report (exit 2), not a crash."""
+
+
 class FindingSet:
     """A run's worth of findings, with the JSON round-trip ghost_writer
     and the baseline mechanism both depend on."""
@@ -336,8 +541,39 @@ class FindingSet:
 
     @classmethod
     def from_json(cls, text: str) -> "FindingSet":
-        payload = json.loads(text)
-        return cls([Finding.from_dict(p) for p in payload])
+        """Read a findings file: a bare list of findings, or the object
+        `ghost-buster --json` prints, whose "findings" member is that list.
+
+        Anything else raises FindingSetError (a ValueError): text that is not
+        JSON, an empty file, `{}` (an object with no "findings" list is not a
+        findings payload; `{"findings": []}` is), `[1]` and findings missing
+        a required member. Callers turn it into a usage error, never a
+        traceback."""
+        try:
+            payload = json.loads(text)
+        except ValueError as e:
+            raise FindingSetError(f"not JSON ({e})") from e
+        # `ghost-buster --json` prints an object whose "findings" member is
+        # the list; baselines and older output are the bare list.
+        if isinstance(payload, dict):
+            if "findings" not in payload:
+                raise FindingSetError('an object without a "findings" list is not a findings payload')
+            payload = payload["findings"]
+        if not isinstance(payload, list):
+            raise FindingSetError(
+                'expected a list of findings or an object with a "findings" list, '
+                f"got {type(payload).__name__}")
+        findings = []
+        for i, p in enumerate(payload):
+            if not isinstance(p, dict):
+                raise FindingSetError(f"finding {i} is {type(p).__name__}, not an object")
+            try:
+                findings.append(Finding.from_dict(p))
+            except KeyError as e:
+                raise FindingSetError(f"finding {i} is missing {e}") from e
+            except (TypeError, ValueError, AttributeError) as e:
+                raise FindingSetError(f"finding {i} is malformed ({type(e).__name__}: {e})") from e
+        return cls(findings)
 
     def __len__(self) -> int:
         return len(self.findings)
@@ -417,6 +653,27 @@ def authoritative(findings: Iterable[Finding]) -> List[Finding]:
     return [f for f in findings if f.status in AUTHORITATIVE]
 
 
+def _detail_without_root(f: Finding) -> str:
+    """`f.detail` with the folder the scan ran in cut out of any absolute path it names.
+
+    The suffix `disambiguate_ids` adds hashes the finding's place, and the place used the detail as written.
+    A detail that names a file by its absolute path ("/home/x/proj/pkg/mod.py:1485") therefore put the
+    checkout's location into the id: the same checkout scanned from two folders gave different suffixes
+    (reproduced on this repository: both `loop_invariant_call` ids that needed one differed), so a committed
+    baseline entry carrying a suffix was stale in every other folder, and every run on a throwaway clone.
+    The prefix is taken from the finding itself: its absolute file minus its project-relative file."""
+    detail = f.detail or ""
+    absolute, relative = f.evidence.absolute_file, f.evidence.file
+    roots = []
+    if absolute and relative and absolute.replace("\\", "/").endswith(relative):
+        roots.append(absolute[:len(absolute) - len(relative)])
+    if _SCAN_ROOT is not None:
+        roots.append(_SCAN_ROOT.rstrip("/") + "/")
+    for root in sorted(set(r for r in roots if len(r) > 1), key=len, reverse=True):
+        detail = detail.replace(root, "")
+    return detail
+
+
 def disambiguate_ids(findings: List[Finding]) -> int:
     """Give every finding its own id, and say how many needed help.
 
@@ -478,13 +735,56 @@ def disambiguate_ids(findings: List[Finding]) -> int:
         # Identical findings (same place, same detail) are one finding
         # reported twice, not two findings; they keep the shared id.
         def place(f: Finding):
-            return (f.evidence.file, f.evidence.line_start or 0,
-                    f.evidence.line_end or 0, f.detail)
+            return (_nfc(f.evidence.file), f.evidence.line_start or 0,
+                    f.evidence.line_end or 0, _detail_without_root(f))
         distinct = {place(f) for f in group}
         if len(distinct) < 2:
             continue
         for f in group:
             where = "|".join(str(part) for part in place(f))
             f.id = f"{base}-{hashlib.sha256(where.encode('utf-8')).hexdigest()[:6]}"
+            if f.legacy_id is not None and f._legacy_file is not None:
+                old_where = "|".join(str(part) for part in (_nfc(f._legacy_file),) + place(f)[1:])
+                f.legacy_id = (f"{f.legacy_id}-"
+                               f"{hashlib.sha256(old_where.encode('utf-8')).hexdigest()[:6]}")
+            f._pre_nfc = [
+                (f"{pid}-" + hashlib.sha256(
+                    '|'.join(str(x) for x in (pfile,) + place(f)[1:]).encode('utf-8')).hexdigest()[:6],
+                 pfile)
+                for pid, pfile in f._pre_nfc]
+            # The suffix this scheme gave before the detail lost the scan folder (1.10.9): a baseline written
+            # from the same folder under it still matches.
+            earlier = "|".join(str(part) for part in place(f)[:3] + (f.detail,))
+            earlier_id = f"{base}-{hashlib.sha256(earlier.encode('utf-8')).hexdigest()[:6]}"
+            if earlier_id != f.id:
+                f._pre_nfc.append((earlier_id, f.evidence.file))
             renamed += 1
+    _disambiguate_previous_keys(findings)
     return renamed
+
+
+def _disambiguate_previous_keys(findings: List[Finding]) -> None:
+    """Give each `previous_key` id the suffix it had, or did not have, under the old summaries.
+
+    A detector that moved from "the summary is the identity" to an `identity_key` merges findings
+    that used to be told apart by their summaries. The ids those summaries produced were plain, so a
+    baseline written before the change holds plain ids; suffixing them by the NEW grouping would make
+    every twin miss its own entry. They are grouped here by the OLD base id, exactly as the old
+    scheme grouped them, and suffixed only where the old scheme would have.
+    """
+    by_old: Dict[str, List[Finding]] = {}
+    for f in findings:
+        for base in f._pre_key:
+            by_old.setdefault(base, []).append(f)
+    for base, group in by_old.items():
+        places = {(_nfc(f.evidence.file), f.evidence.line_start or 0, f.evidence.line_end or 0, _detail_without_root(f))
+                  for f in group}
+        for f in group:
+            if len(places) < 2:
+                suffixed = base
+            else:
+                where = "|".join(str(part) for part in (
+                    _nfc(f.evidence.file), f.evidence.line_start or 0, f.evidence.line_end or 0,
+                    _detail_without_root(f)))
+                suffixed = f"{base}-{hashlib.sha256(where.encode('utf-8')).hexdigest()[:6]}"
+            f._pre_key_ids = [suffixed if b == base else i for b, i in zip(f._pre_key, f._pre_key_ids, strict=True)]

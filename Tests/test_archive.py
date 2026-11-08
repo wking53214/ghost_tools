@@ -1,9 +1,10 @@
 """An archive is not a patient (ghost_buster/archive.py). The scan runs;
-candidacy is not assessed; the surgeon refuses; the receipt says why."""
+candidacy is not assessed; the receipt says why."""
 from __future__ import annotations
 
 from ghost_buster.archive import MARKER, marked
 from ghost_buster.cli import main
+from empty_baseline import empty_baseline
 
 QUIET = ["--no-branches", "--no-tests", "--no-secrets", "--no-project", "--no-correlate",
          "--no-ledger", "--single-repo"]
@@ -36,7 +37,7 @@ def test_an_empty_marker_is_still_an_archive_and_says_no_reason(tmp_path):
 
 def test_findings_are_still_reported_and_candidacy_is_not_assessed(tmp_path, capsys):
     repo = _repo(tmp_path, "specimens kept flattened on purpose")
-    main([str(repo), *QUIET, "--baseline", str(tmp_path / "b.json")])
+    main([str(repo), *QUIET, "--baseline", empty_baseline(tmp_path)])
     out, err = capsys.readouterr()
     assert "this repository is an archive: specimens kept flattened on purpose" in err
     assert "dead_code" in out or "unused" in out
@@ -44,16 +45,8 @@ def test_findings_are_still_reported_and_candidacy_is_not_assessed(tmp_path, cap
     assert "CANDIDATE" not in out and "parses completely" not in out
 
 
-def test_the_surgeon_refuses_an_archive(tmp_path, capsys):
-    repo = _repo(tmp_path, "history")
-    rc = main([str(repo), *QUIET, "--operate", "--operate-dry-run", "--baseline", str(tmp_path / "b.json")])
-    _, err = capsys.readouterr()
-    assert rc == 2
-    assert "refused: an archive is not a patient" in err
-
-
 def test_a_repository_without_the_marker_is_assessed_as_before(tmp_path, capsys):
     repo = _repo(tmp_path)
-    main([str(repo), *QUIET, "--baseline", str(tmp_path / "b.json")])
+    main([str(repo), *QUIET, "--baseline", empty_baseline(tmp_path)])
     out, _ = capsys.readouterr()
     assert "serum candidacy:" in out and "parses completely" in out

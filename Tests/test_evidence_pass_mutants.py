@@ -17,7 +17,6 @@ _S = "ghost_buster/schema.py"
 _L = "ghost_buster/ledger.py"
 _B = "ghost_buster/baseline.py"
 _I = "ghost_buster/__init__.py"
-_O = "ghost_buster/operate.py"
 
 CARRIED = "Tests/test_readiness.py"
 BOUNDARY = "Tests/test_authoritative_boundary.py"
@@ -32,9 +31,6 @@ MUTANTS = [
     ("the carried flag is accepted and dropped", _R,
      "        c if c.name not in carried else Criterion(c.name, c.met, c.evidence, carried=True)\n",
      "        c\n"),
-    ("an operation calls nothing carried", _O,
-     "    carried = (readiness.TESTS, readiness.SECRETS) if op.cuts else ()\n",
-     "    carried = ()\n"),
     ("a claim is authoritative after all", _S,
      "AUTHORITATIVE = frozenset({Status.CONFIRMED, Status.CONFIRMED_BY_REVIEW, Status.SUPPRESSED})",
      "AUTHORITATIVE = frozenset({Status.CONFIRMED, Status.CONFIRMED_BY_REVIEW, Status.SUPPRESSED, Status.REASONED})"),
@@ -66,14 +62,11 @@ CENSUS_MUTANTS = [
 def test_mutant_is_killed(label, rel, old, new):
     tests = {
         _R: CARRIED if "carried" in label else BOUNDARY,
-        _O: CARRIED,
         _S: BOUNDARY,
         _L: BOUNDARY,
         _B: BOUNDARY,
         _I: VERSION,
     }[rel]
-    if rel == _O:
-        tests = "Tests/test_operate.py"
     assert_killed(label, tests, run_tests_with_mutation(tests, rel, old, new))
 
 

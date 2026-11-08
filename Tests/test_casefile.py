@@ -128,9 +128,12 @@ def test_annotate_returns_a_prior_for_every_finding_and_drops_none(tmp_path):
 def test_the_case_file_retires_by_its_latest_decision(tmp_path):
     cf = Casefile(tmp_path / "c.json")
     cf.cases = [
-        Case("committed_secret", "committed_secret", "false", "test fixture", "2026-09-10T00:00:00", "ghost-a", "t.py", "suppress"),
-        Case("committed_secret", "committed_secret", "false", "a word", "2026-09-10T00:00:00", "ghost-b", "u.py", "suppress"),
-        Case("committed_secret", "committed_secret", "real", "actually live", "2026-09-11T00:00:00", "ghost-b", "u.py", "fix"),
+        Case("committed_secret", "committed_secret", "false", "test fixture",
+             "2026-09-10T00:00:00", "ghost-a", "t.py", "suppress"),
+        Case("committed_secret", "committed_secret", "false", "a word",
+             "2026-09-10T00:00:00", "ghost-b", "u.py", "suppress"),
+        Case("committed_secret", "committed_secret", "real", "actually live",
+             "2026-09-11T00:00:00", "ghost-b", "u.py", "fix"),
         Case("dead_code", "dead_code", "false", "", "2026-09-10T00:00:00"),   # no id: nothing to retire
     ]
     assert cf.retired() == {"ghost-a"}

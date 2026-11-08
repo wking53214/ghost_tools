@@ -96,8 +96,10 @@ MUTANTS = [
     ("--join is ignored and every run is single-repo", _P,
      "    if args.join:\n        return list(args.join)\n", ""),
     ("a single-repo run stops saying its seams went unchecked", _P,
-     '        notice = render_single_repo_notice(args.path, files)\n        if notice:\n            say(notice)\n',
-     '        notice = None\n        if notice:\n            say(notice)\n'),
+     '        notice = render_single_repo_notice(args.path, files)\n        if notice:\n',
+     '        notice = None\n        if notice:\n'),
+    ("an unchecked seam is filed as nothing to check", _P,
+     '            checks["boundary"] = NOT_RUN\n', '            checks["boundary"] = NOT_APPLICABLE\n'),
 ]
 
 

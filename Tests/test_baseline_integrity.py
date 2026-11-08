@@ -75,8 +75,9 @@ def test_stored_absolute_paths_from_an_old_baseline_are_read_back_portably(tmp_p
     # project-relative form; one whose path does not exist keeps its
     # two-segment fallback and is reported stale rather than silently inert.
     root = _checkout(tmp_path / "proj")
-    live = Finding.from_dict({**_finding("x").as_dict(), "evidence": {"file": str(root / "src" / "pkg" / "mod.py"), "line_start": 3}})
-    assert live.evidence.file == "src/pkg/mod.py" and live.evidence.absolute_file == str(root / "src" / "pkg" / "mod.py")
+    absolute = str(root / "src" / "pkg" / "mod.py")
+    live = Finding.from_dict({**_finding("x").as_dict(), "evidence": {"file": absolute, "line_start": 3}})
+    assert live.evidence.file == "src/pkg/mod.py" and live.evidence.absolute_file == absolute
     assert live.id == _finding("x").id
 
 
@@ -126,7 +127,7 @@ def test_accept_with_json_emits_json_on_stdout(tmp_path, capsys):
     root = _checkout(tmp_path / "proj")
     assert main([str(root), "--accept", "--json"]) == 0
     out = capsys.readouterr()
-    accepted = json.loads(out.out)
+    accepted = json.loads(out.out)["findings"]
     assert isinstance(accepted, list) and accepted
     assert "accepted" in out.err
 
@@ -173,3 +174,129 @@ def test_a_legacy_baseline_still_suppresses_what_it_accepted(tmp_path, capsys):
     out = capsys.readouterr()
     assert "0 new finding(s)" in out.out, out.out
     assert "matched nothing scanned" not in out.err, out.err
+
+
+# ---------------------------------------------------------------------------
+# 6. A baseline whose entries match nothing says so in the OUTPUT, not only
+#    on the receipt channel (1.8.0).
+#
+#    Attack 1 above has been detectable since 2026-09-08, and the answer went
+#    to stderr alone -- so it reached a person at a terminal and never reached
+#    the JSON a pipeline reads. Measured on ATS: 35 of 48 entries inert,
+#    announced on the one channel most likely to be redirected to /dev/null,
+#    while the 13 live entries suppressed four MAJOR findings.
+# ---------------------------------------------------------------------------
+
+def _stale_baseline(tmp_path, monkeypatch, capsys, entries=3):
+    repo = _checkout(tmp_path / "repo")
+    baseline = FindingSet()
+    for i in range(entries):
+        f = _finding(f"a finding that no longer occurs {i}")
+        f.status = Status.SUPPRESSED
+        baseline.add(f)
+    (repo / ".ghost_baseline.json").write_text(baseline.to_json())
+    monkeypatch.chdir(repo)
+    main([str(repo), "--json", "--no-tests", "--no-secrets", "--no-branches",
+          "--single-repo", "--no-ledger"])
+    return json.loads(capsys.readouterr().out)["findings"]
+
+
+def test_a_stale_baseline_is_a_finding_in_the_json(tmp_path, monkeypatch, capsys):
+    """The one that was only ever a printed line."""
+    rows = _stale_baseline(tmp_path, monkeypatch, capsys)
+    stale = [r for r in rows if r["detector"] == "stale_baseline"]
+    assert len(stale) == 1
+    assert "3 of 3" in stale[0]["summary"]
+    assert stale[0]["attributes"]["stale"] == "3"
+
+
+def test_the_proportion_is_reported_and_not_graded(tmp_path, monkeypatch, capsys):
+    """No threshold: which proportion is bad depends on how a team uses the
+    file, and this tool does not ship numbers it has not measured. The counts
+    are in the attributes so a caller can apply its own cutoff."""
+    rows = _stale_baseline(tmp_path, monkeypatch, capsys)
+    stale = next(r for r in rows if r["detector"] == "stale_baseline")
+    assert stale["severity"] == Severity.MINOR.value
+    assert "100%" in stale["summary"]
+
+
+def test_a_baseline_that_still_matches_produces_no_such_finding(tmp_path, monkeypatch, capsys):
+    """The control. A live baseline is not rot, and reporting it as rot would
+    make the finding noise on every repository that uses the feature."""
+    repo = _checkout(tmp_path / "repo")
+    monkeypatch.chdir(repo)
+    main([str(repo), "--accept", "--no-tests", "--no-secrets", "--no-branches",
+          "--single-repo", "--no-ledger"])
+    capsys.readouterr()
+    main([str(repo), "--json", "--no-tests", "--no-secrets", "--no-branches",
+          "--single-repo", "--no-ledger"])
+    rows = json.loads(capsys.readouterr().out)["findings"]
+    assert not [r for r in rows if r["detector"] == "stale_baseline"]
+
+
+def test_the_baseline_cannot_suppress_the_report_of_its_own_rot(tmp_path, monkeypatch, capsys):
+    """--accept must not be able to buy silence about the entries that no
+    longer match: an entry accepted for this finding would be an entry that
+    can never match anything again, which is the rot accepting itself."""
+    repo = _checkout(tmp_path / "repo")
+    baseline = FindingSet()
+    f = _finding("a finding that no longer occurs")
+    f.status = Status.SUPPRESSED
+    baseline.add(f)
+    (repo / ".ghost_baseline.json").write_text(baseline.to_json())
+    monkeypatch.chdir(repo)
+
+    main([str(repo), "--accept", "--no-tests", "--no-secrets", "--no-branches",
+          "--single-repo", "--no-ledger"])
+    capsys.readouterr()
+    stored = json.loads((repo / ".ghost_baseline.json").read_text())
+    assert not [r for r in stored if r["detector"] == "stale_baseline"]
+
+
+# ---------------------------------------------------------------- 6. a baseline the user named must exist (1.10.9)
+
+def test_a_baseline_named_with_baseline_that_does_not_exist_is_a_usage_error(tmp_path, capsys):
+    """It used to be read as an empty baseline: exit 0, `baseline.path` null, no row saying so."""
+    root = _checkout(tmp_path / "proj")
+    missing = tmp_path / "no-such-baseline.json"
+    assert not missing.exists()
+    assert main([str(root), "--no-tests", "--baseline", str(missing)]) == 2
+    err = capsys.readouterr().err
+    assert "does not exist" in err and str(missing) in err
+    assert not missing.exists()
+
+
+def test_the_refusal_comes_before_the_scan_and_is_the_error_envelope_under_json(tmp_path, capsys):
+    root = _checkout(tmp_path / "proj")
+    missing = tmp_path / "no-such-baseline.json"
+    assert main([str(root), "--no-tests", "--json", "--baseline", str(missing)]) == 2
+    captured = capsys.readouterr()
+    out = json.loads(captured.out)
+    assert out["status"] == "error" and out["exit_code"] == 2 and out["error"]["kind"] == "usage"
+    assert "scanning" not in captured.err
+
+
+def test_a_baseline_that_is_a_folder_is_a_usage_error(tmp_path, capsys):
+    root = _checkout(tmp_path / "proj")
+    assert main([str(root), "--no-tests", "--baseline", str(tmp_path)]) == 2
+    assert "folder" in capsys.readouterr().err
+
+
+def test_accept_may_create_the_baseline_it_names(tmp_path):
+    root = _checkout(tmp_path / "proj")
+    target = tmp_path / "new-baseline.json"
+    assert main([str(root), "--no-tests", "--accept", "--baseline", str(target)]) == 0
+    assert target.is_file()
+
+
+def test_an_existing_empty_baseline_still_works(tmp_path):
+    root = _checkout(tmp_path / "proj")
+    empty = tmp_path / "empty.json"
+    empty.write_text("[]")
+    assert main([str(root), "--no-tests", "--baseline", str(empty)]) in (0, 1)
+
+
+def test_the_default_baseline_in_the_scanned_folder_may_be_absent(tmp_path):
+    root = _checkout(tmp_path / "proj")
+    assert not (root / ".ghost_baseline.json").exists()
+    assert main([str(root), "--no-tests"]) in (0, 1)
