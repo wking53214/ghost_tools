@@ -243,7 +243,8 @@ _SELFHOSTING = {"commit": "5a9154d3c76670f5bf1f46d845acadfed46d7bc8", "decision"
 
 def test_the_readme_self_hosting_paragraph_states_what_the_record_says():
     section = README[README.index("## 4d."):README.index("## 4e.")]
-    assert "SELFHOSTING_2026-10-23.md" in section and "claude/horsemen-production-status-5wsndb" in section
+    assert "SELFHOSTING_2026-10-23.md" in section and "/CNS/blob/main/docs/evidence/" in section
+    assert "horsemen-production-status" not in section
     for key, value in _SELFHOSTING.items():
         assert value in section, f"the self-hosting paragraph lost the recorded {key}: {value}"
     for sentence in ("What the record does not mean", "does not mean there are no secrets, no weak tests",
