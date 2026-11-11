@@ -47,7 +47,7 @@ python -m ruff check .
 python -m mypy
 ```
 
-Do not install the bare name `ghost-tools` from PyPI. The only release of that name there is 1.6.0 (checked 2026-10-22), an old upload of this project, not this code, and it has no `cns` extra. Do not install the bare name `cns` either: on PyPI that name is a different project. `Tests/test_install_hints.py` fails if a file a user reads tells them to `pip install` a bare name from this stack.
+Do not install the bare name `ghost-tools` from PyPI. The only release of that name there is 1.6.0 (checked 2026-10-22), an old upload of this project, not this code, and it has no `cns` extra. Do not install the bare name `cns` either: on PyPI that name is a different project. `Tests/test_install_hints.py` fails if a file a user reads tells them to `pip install` a bare name from this library.
 
 ## 2. Full System Scope & Architectural Depth
 
@@ -64,7 +64,7 @@ ghost-rank                findings ranked by severity and by who depends on the 
 
 Seven rules the code is written to: silence is the defect; fail-closed; say what was established (`CONFIRMED` vs `REASONED`); measured before built (`ghost_buster/calibration.json`); memory only adds (ledger never suppresses); a scan with `--no-tests` writes nothing; a human decides.
 
-Defaults, all 27 detectors and the mutant census: [docs/REFERENCE.md](docs/REFERENCE.md), checked by the test suite. Which failure of AI-assisted work each horseman catches, and which none does: [docs/FAILURE_MODES.md](docs/FAILURE_MODES.md).
+Defaults, all 27 detectors and the mutant census: [docs/REFERENCE.md](docs/REFERENCE.md), checked by the test suite. Which failure of AI-assisted work each tool catches, and which none does: [docs/FAILURE_MODES.md](docs/FAILURE_MODES.md).
 
 222 Python files (everything under the repository root except `Tests/fixtures`; `Tests/test_docs_claims.py` recounts them and fails if this number drifts). Stdlib-oriented CLI, no runtime dependencies, Python 3.11 to 3.13. Kernel scan measures duplication/drift against the `CNS` schema ([public](https://github.com/wking53214/CNS)) when present.
 
@@ -111,23 +111,7 @@ workflow installs the same pin as the `cns` extra, so there they run.
 `Tests/test_cns_independence.py` runs with `cns` blocked and holds the package,
 the CLI and a real scan working without it.
 
-Migration note, version 1.10.8: the pin moved from the tag `v1.9.0` to the tag
-`v2.0.0`, which is the annotated tag that points at commit
-`b13e5d2f9e0e4291725f82794b89117c3d840ac1`. The same text is in the `cns` extra of
-`pyproject.toml`, in `.github/workflows/tests.yml` and as `CNS_PIN` in
-`Tests/test_cns_independence.py`; `Tests/test_workflow_pins.py` and that file hold
-them together. The CNS adapter and independence tests were run against the
-package installed from that tag. The one breaking change CNS lists for 2.0.0,
-`cns.stack.StackPin` requiring a full 40 character commit, is not used anywhere
-in this repository.
-
-Version 1.10.10 moved the pin again, from the tag `v2.0.0` to the tag `v2.1.0`, which is the annotated tag
-that points at commit `fde931ffa89aebec95647742256ad53033bd3d02`. The same three places carry it.
-
-Version 1.10.12 moved the pin to the tag `v2.2.0`, a lightweight tag, so the tag is the commit
-`ce6bd05578a7a3e3cafa0cfa1e9a2cca8a5f171f`. CNS 2.2.0 equals 2.1.0 in the `cns` package; it adds the composition layer
-beside it. The same three places carry the pin.
-As of 2026-10-31 the CNS pin is the tag `v2.3.0` (a lightweight tag: the tag is the commit `41592fb7b6735abe140f745353c09ba3eed8e7a2`), moved from `v2.2.0` so that the circuit installs against one CNS release; no code in this repository changed.
+Current pin: the tag `v2.3.0` of CNS (a lightweight tag, so the tag is the commit `41592fb7b6735abe140f745353c09ba3eed8e7a2`). The same text is in the `cns` extra of `pyproject.toml`, in `.github/workflows/tests.yml` and as `CNS_PIN` in `Tests/test_cns_independence.py`; `Tests/test_workflow_pins.py` and that file hold them together. Earlier pins (v1.9.0, v2.0.0, v2.1.0, v2.2.0) and the reasons for each move are in CHANGELOG.md, releases 1.10.8 to 1.10.12.
 
 ## 3. What It Does NOT Do / Non-Goals
 
@@ -227,7 +211,7 @@ Newest first. Most entries from 1.10.0 on were found by audit rounds, where a re
 
 ## 4d. Self-hosting
 
-This repository's scanner scans this repository on every push (CI job `self-scan`). That is not the same as the full circuit governing it. The full circuit as it was then (before the owner's ruling of 2026-10-29 released the Drafter, Burnish and WATCHER_MCU from it; the Warden seated the Drafter, Judge and Burnish around this scanner) was run over a fresh clone of this repository at commit `5a9154d3c76670f5bf1f46d845acadfed46d7bc8` (version 1.10.8) on 2026-10-22 and 2026-10-23, one run. The record is `docs/evidence/SELFHOSTING_2026-10-23.md` in the [CNS repository](https://github.com/wking53214/CNS/blob/main/docs/evidence/SELFHOSTING_2026-10-23.md) (on its `main` branch). For ghost_tools it recorded: decision ACCEPT_UNVERIFIED (Warden exit 3), not ACCEPT. The loop converged and the finishing change stood against a green suite (2432 passed, 38 skipped, all skips because `gitleaks` was not installed there), but the committed `.ghost_baseline.json` hides one finding (`long_function` on `_build_parser`, see section 4b item 6), Warden counts that as a gap, and the Judge answered INSUFFICIENT with "these checks never ran: ghost_partial". The finishing change was put back and held. The record lists 7 declined checks in every run (mutate, kernel, structure, tests, project, secrets, correlate); every Warden run since ghost_tools 1.10.11 declines 8 (the same seven plus ledger), 10 gaps in this one, and 132 Ghost findings still standing at the end.
+This repository's scanner scans this repository on every push (CI job `self-scan`). That is not the same as the full circuit governing it. The full circuit as it was then (before the owner's ruling of 2026-10-29 released the Drafter, Burnish and WATCHER_MCU from it; the Warden seated the Drafter, Judge and Burnish around this scanner) was run over a fresh clone of this repository at commit `5a9154d3c76670f5bf1f46d845acadfed46d7bc8` (version 1.10.8) on 2026-10-22 and 2026-10-23, one run. The record is `docs/evidence/SELFHOSTING_2026-10-23.md` in the [CNS repository](https://github.com/wking53214/CNS/blob/main/docs/evidence/SELFHOSTING_2026-10-23.md) (on its `main` branch). For ghost_tools it recorded: decision ACCEPT_UNVERIFIED (Warden exit 3), not ACCEPT. The loop converged and the finishing change stood against a green suite (2432 passed, 38 skipped, all skips because `gitleaks` was not installed there), but the committed `.ghost_baseline.json` hides one finding (`long_function` on `_build_parser`, see section 4b item 6), Warden counts that as a gap, and the Judge answered INSUFFICIENT with "these checks never ran: ghost_partial". The finishing change was put back and held. The record lists 7 declined checks in every run (mutate, kernel, structure, tests, project, secrets, correlate), 10 gaps in this one, and 132 Ghost findings still standing at the end. Since ghost_tools 1.10.11 every Warden run declines 8 checks (the same seven plus ledger), so a record that says 7 describes an earlier run.
 
 What the record does not mean: an ACCEPT in that record (other repositories ended ACCEPT) still carries those 7 declined checks as gaps, so it does not mean there are no secrets, no weak tests and no structural problems. The record covers commit 5a9154d, not 1.10.9 or later, and this repository was not re-run after the finisher was fixed (Burnish 0.3.12, which stopped writing suite counts into READMEs; that fix mattered to SWIZZLE and JUDGE, not here). Nothing is claimed about a run on the current commit.
 
@@ -349,7 +333,7 @@ The static gates are `python -m ruff check .` (rules E, F, W, B) and `python -m 
 
 No test in the suite is marked expected-to-fail (`grep -rn "mark.xfail" Tests` finds only sample source text that the detector tests feed to the scanner).
 
-## 7. Stack Integration Topology
+## 7. Circuit and CNS connection
 
 The assurance circuit is five repositories, one loop (full description and loop diagram in [STACK.md](STACK.md)). Warden is the only part that writes, and nothing is written without a named human.
 
@@ -361,7 +345,15 @@ The assurance circuit is five repositories, one loop (full description and loop 
 | 4 | Governor | Warden | Applies, measures, refuses and puts the tree back; the only writer. |
 | 5 | Judge | Judge | Says ACCEPT, REJECT or INSUFFICIENT; Warden reports INSUFFICIENT as a hold. |
 
+What it receives: a checkout of the repository to scan, handed over by Warden (and, in CI, by the `swizzle-gate` job). What it hands on: findings with stable ids and the list of checks it did not run.
+
 Drafter, Burnish and WATCHER_MCU are released from the circuit. CNS holds the shared contracts and is not a seat.
+
+**CNS connection.** CNS is the shared contract layer the circuit's repositories use to exchange rows in one agreed shape.
+- This repository's side: `ghost_buster/cns_adapter.py`. It is optional (section 2b).
+- CNS's side: `contracts/warden-stack.json` in the CNS repository, listed as two-way in CNS's `contracts/cns-links.json` (checked against CNS commit 03eca66, 2026-11-10).
+- Built: yes. Tested: yes, by `Tests/test_cns_*.py` when `cns` is installed (section 2b).
+- Used by a normal scan: no. A scan never imports `cns`; only a caller that asks for the adapter does. `--kernel PATH` reads a CNS checkout you point it at.
 
 ```text
 composition-engine     ->  retired, folded into CNS (cns_composition.super_gate); GhostToolsAdapter now lives in cns_composition (one adapter, optional)
