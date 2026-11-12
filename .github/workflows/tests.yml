@@ -43,7 +43,7 @@ jobs:
           # ls-remote https://github.com/wking53214/CNS.git
           # 'refs/tags/vX.Y.Z^{}') and change the tag here, in pyproject.toml
           # and in Tests/test_cns_independence.py together.
-          python -m pip install "cns @ git+https://github.com/wking53214/CNS.git@v3.0.0"  # v3.0.0 = 31cb6f568219ef62cf3748701c895aa086abf1b8
+          python -m pip install "cns @ git+https://github.com/wking53214/CNS.git@v4.0.0"  # v4.0.0 = eabe6c72d71557b6327b80b42b0afab572acce80
       - name: Install gitleaks
         # Pinned exact version, same as ruff above. Tests/test_secrets*.py
         # skip themselves if this binary is absent; installed here so CI
