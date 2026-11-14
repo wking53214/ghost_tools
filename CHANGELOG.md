@@ -6,6 +6,9 @@ accepted by the publish workflow.
 
 ## Unreleased
 
+### Added
+- A scan that finds Rust (`.rs`) files now says they were not analysed. Ghost has no Rust analysis, so a scan of a Rust tree used to look clean when its Rust code was never checked. The report adds an `unmeasured` row (`check: "rust"`, `state: "not_analysed"`, `by_request: false`), `scan.rust_files_not_analysed` holds the count, and `status` is `"incomplete"`. Cargo's `target/` directory and the usual excluded directories are not counted. A Python-only scan is unchanged.
+
 ### Changed
 - The `--version` banner backronym reads "FFF: Founders' Favorite Fumbles" (owner decision, 2026-11-05); known defect 1 in the README is closed. No behaviour other than that text changes, and the circuit's pinned ghost_tools commit is unchanged until the next repin.
 

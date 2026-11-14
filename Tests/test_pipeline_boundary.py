@@ -205,7 +205,8 @@ def test_no_stage_reports_without_the_receipt_channel():
                          "_collect_files", "_collect", "_head_commit",
                          # collection and size helpers: pure, print nothing
                          "_collect_detail", "_walk_candidates", "_one_per_real_file",
-                         "_is_candidate", "_count_candidates", "render_skipped_dirs",
+                         "_is_candidate", "_count_candidates", "_count_rust_files",
+                         "render_skipped_dirs",
                          "_max_file_bytes", "parse_size", "_withhold_oversize",
                          "_unassessable", "_run_detectors",
                          # pure: records a reason in a dict, prints nothing
