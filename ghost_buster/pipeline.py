@@ -113,6 +113,9 @@ class Evidence:
     symlinked_dirs: List[tuple] = field(default_factory=list)
     #: The largest file read, in bytes (--max-file-size).
     max_file_bytes: int = 0
+    #: Rust (.rs) files under the root. Ghost has no Rust analysis, so none
+    #: of them was checked; the scan says so instead of reading as clean.
+    rust_files: int = 0
 
 
 _EXCLUDED_DIRS = frozenset({
@@ -151,6 +154,9 @@ class Collected:
     #: symlinked directories that were not walked into and whose files are
     #: not scanned under any other name.
     symlinked_dirs: List[tuple]
+    #: .rs files under the root (build output and excluded directories left
+    #: out). Counted only so the report can say they were not analysed.
+    rust_files: int = 0
 
 
 def _is_candidate(name: str) -> bool:
@@ -163,6 +169,21 @@ def _count_candidates(directory: str, limit: int = 200_000) -> int:
     total = 0
     for _dp, _dn, names in os.walk(directory, followlinks=False):
         total += sum(1 for n in names if _is_candidate(n))
+        if total >= limit:
+            break
+    return total
+
+
+def _count_rust_files(root: Path, excluded, limit: int = 200_000) -> int:
+    """.rs files under `root`, not following links. Ghost has no Rust
+    analysis; this count exists so a scan of a Rust tree says "not
+    analysed" instead of looking clean. Directories named `target` (Cargo's
+    build output) and the excluded names are not counted. Stops at `limit`."""
+    total = 0
+    for _dp, dirnames, names in os.walk(root, followlinks=False):
+        dirnames[:] = [d for d in dirnames
+                       if d not in excluded and d != "target" and not d.endswith(".egg-info")]
+        total += sum(1 for n in names if n.endswith(".rs") and not n.startswith("."))
         if total >= limit:
             break
     return total
@@ -213,7 +234,8 @@ def _collect_detail(root: Path, extra_excludes: Iterable[str] = ()) -> Collected
         return Collected([], len(candidates), skipped_dirs, symlinked)
     out = _one_per_real_file(candidates)
     total_candidates = len(candidates) + sum(r["files"] for r in skipped_dirs.values())
-    return Collected(out, total_candidates - len(out), skipped_dirs, symlinked)
+    return Collected(out, total_candidates - len(out), skipped_dirs, symlinked,
+                     _count_rust_files(root, excluded))
 
 
 def _one_per_real_file(candidates: List[Path]) -> List[Path]:
@@ -783,4 +805,5 @@ def _gather(args, say) -> Evidence:
                     profile_seconds=profile_seconds, reasons=reasons,
                     detector_failures=detector_failures, unparsable=unparsable,
                     files_skipped=files_skipped, skipped_dirs=found.skipped_dirs,
-                    symlinked_dirs=found.symlinked_dirs, max_file_bytes=limit)
+                    symlinked_dirs=found.symlinked_dirs, max_file_bytes=limit,
+                    rust_files=found.rust_files)

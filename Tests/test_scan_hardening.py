@@ -167,6 +167,28 @@ def test_a_scan_where_every_python_file_is_unparsable_is_not_ok(tmp_path, capsys
     assert any(u["check"] == "python" for u in env["unmeasured"])
 
 
+def test_a_scan_that_finds_rust_says_it_was_not_analysed(tmp_path, capsys):
+    (tmp_path / "ok.py").write_text("x = 1\n")
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "lib.rs").write_text("pub fn f() {}\n")
+    (tmp_path / "src" / "main.rs").write_text("fn main() {}\n")
+    (tmp_path / "target").mkdir()
+    (tmp_path / "target" / "built.rs").write_text("// build output\n")
+    rc, env, _ = _scan(tmp_path, capsys)
+    assert env["status"] == "incomplete"
+    row = next(u for u in env["unmeasured"] if u["check"] == "rust")
+    assert row["state"] == "not_analysed" and row["by_request"] is False
+    assert "2 Rust file(s)" in row["reason"] and "no Rust analysis" in row["reason"]
+    assert env["scan"]["rust_files_not_analysed"] == 2   # target/ is build output
+
+
+def test_a_python_only_scan_has_no_rust_row(tmp_path, capsys):
+    (tmp_path / "ok.py").write_text("x = 1\n")
+    rc, env, _ = _scan(tmp_path, capsys)
+    assert not any(u["check"] == "rust" for u in env["unmeasured"])
+    assert env["scan"]["rust_files_not_analysed"] == 0
+
+
 # -- 3. git hardening ------------------------------------------------------
 
 def _git(root, *args):

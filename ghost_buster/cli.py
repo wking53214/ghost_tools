@@ -135,7 +135,8 @@ def _envelope(status, exit_code, findings, evidence=None, error=None,
     is an `unmeasured` row and the status is "incomplete"."""
     scan = {"files_scanned": 0, "files_skipped": 0, "files_unparsable": 0, "unparsable": [],
             "skipped_dirs": [], "skipped_dirs_more": 0, "symlinked_dirs": [],
-            "symlinked_dirs_more": 0, "python_files_analysed": 0, "max_file_bytes": None}
+            "symlinked_dirs_more": 0, "python_files_analysed": 0, "rust_files_not_analysed": 0,
+            "max_file_bytes": None}
     unmeasured = []
     if evidence is not None:
         scan = {
@@ -163,6 +164,8 @@ def _envelope(status, exit_code, findings, evidence=None, error=None,
         py_total = sum(1 for f in evidence.files if f.suffix == ".py")
         analysed = py_total - sum(1 for f, _ in evidence.unparsable if f.endswith(".py"))
         scan["python_files_analysed"] = analysed
+        scan["rust_files_not_analysed"] = evidence.rust_files
+        unmeasured.extend(_rust_row(evidence))
         if analysed <= 0:
             unmeasured.append({
                 "check": "python", "state": "none_analysed", "by_request": False,
@@ -196,6 +199,20 @@ def _envelope(status, exit_code, findings, evidence=None, error=None,
     if extra:
         out.update(extra)
     return out
+
+
+def _rust_row(evidence) -> list:
+    """The `unmeasured` row for Rust files, or nothing. Ghost has no Rust
+    analysis, so a Rust file is never checked and a scan must not read as
+    clean for it."""
+    if not evidence.rust_files:
+        return []
+    return [{
+        "check": "rust", "state": "not_analysed", "by_request": False,
+        "reason": (f"{evidence.rust_files} Rust file(s) (.rs) were found, and Ghost has no "
+                   "Rust analysis, so none of them was checked; every code check is empty "
+                   "for them rather than clean"),
+    }]
 
 
 def _skip_listing(evidence) -> dict:
