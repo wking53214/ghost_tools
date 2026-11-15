@@ -30,7 +30,7 @@ import ast
 import hashlib
 import re
 from pathlib import Path
-from typing import Callable, Dict, Iterable, List, Optional, Set, Tuple, Union
+from typing import Callable, Dict, Iterable, Iterator, List, Optional, Set, Tuple, Union
 
 from . import corpus, forensics
 from .references import ReferenceIndex
@@ -144,6 +144,11 @@ def _is_route(node) -> bool:
     return False
 
 
+def _bare_name(node) -> str:
+    """`pkg.name` and `name` both answer "name"; anything else answers ""."""
+    return node.attr if isinstance(node, ast.Attribute) else getattr(node, "id", "")
+
+
 def _auth_names(node) -> List[str]:
     """Every way this handler says it needs a caller identity: a decorator,
     or a parameter default like `user = Depends(require_user)`."""
@@ -152,12 +157,12 @@ def _auth_names(node) -> List[str]:
     if args is not None:
         for default in list(args.defaults) + [d for d in args.kw_defaults if d]:
             call = default.func if isinstance(default, ast.Call) else default
-            name = call.attr if isinstance(call, ast.Attribute) else getattr(call, "id", "")
+            name = _bare_name(call)
             if name in _AUTH_MARKERS:
                 found.append(name)
             if isinstance(default, ast.Call):
                 for a in default.args:
-                    inner = a.attr if isinstance(a, ast.Attribute) else getattr(a, "id", "")
+                    inner = _bare_name(a)
                     if inner in _AUTH_MARKERS:
                         found.append(inner)
     return found
@@ -853,15 +858,23 @@ def _reachable_from_data(parsed, declared) -> Dict[str, Set[str]]:
                 enum, arg = members_mapping_of(node.func.value), node.args[0]
             if enum is None:
                 continue
-            if isinstance(arg, ast.Constant):
-                named = values[enum].get(arg.value)
-                if named is None and isinstance(arg.value, str) and arg.value in declared[enum]:
-                    named = arg.value
-                if named is not None:
-                    out[enum].add(named)
-            else:
-                out[enum] |= set(declared[enum])
+            out[enum] |= _members_arriving_as(arg, values[enum], declared[enum])
     return out
+
+
+def _members_arriving_as(arg, values, members) -> Set[str]:
+    """What building the enum from `arg` can produce: a literal names one
+    member, by value and else by name (or none, if it names nothing), and a
+    non-literal can be any of them."""
+    if isinstance(arg, ast.Constant):
+        named = values.get(arg.value)
+        if named is None and isinstance(arg.value, str) and arg.value in members:
+            named = arg.value
+        if named is not None:
+            return {named}
+        return set()
+    else:
+        return set(members)
 
 
 def _within(root: Path, path: Path) -> bool:
@@ -1077,17 +1090,8 @@ def _finding_unproduced(enum, member, path, line, live, only_tests, provenance,
     )
 
 
-@register("unreachable_declared_state")
-def detect_unreachable_declared_state(
-        files: List[Path], *, history: bool = True) -> List[Finding]:
-    """Enum members declared as states the code cannot reach.
-
-    `history` consults git to tell an oversight from a removal. It is a
-    parameter rather than an assumption so a caller that needs a pure
-    function of the files -- a test, a reproducible calibration run -- can
-    have one, and gets UNKNOWN provenance rather than a silently different
-    answer.
-    """
+def _parsed_python(files: List[Path]) -> Dict[Path, ast.AST]:
+    """Every .py file in `files` that parses, keyed by its path."""
     parsed = {}
     for path in files:
         if path.suffix != ".py":
@@ -1095,12 +1099,12 @@ def detect_unreachable_declared_state(
         tree = _parse(path)
         if tree is not None:
             parsed[path] = tree
+    return parsed
 
-    declared, docs = _declared_enum_members(parsed)
 
-    if not declared:
-        return []
-
+def _how_members_arrive(parsed, declared):
+    """(named anywhere, named by library code, reachable from data in
+    library code) -- the three ways a member can be shown to arrive."""
     # Two corpora, deliberately. A state only a TEST can create is still a
     # state the library cannot reach: the test constructs it artificially to
     # prove it is handled, which is not the same as something producing it.
@@ -1121,6 +1125,44 @@ def detect_unreachable_declared_state(
     # more typing than naming the member, and would clear the finding
     # outright rather than merely discount it.
     from_data = _reachable_from_data(library, declared)
+    return produced, in_library, from_data
+
+
+def _member_provenance(root, path, enum, member) -> "forensics.Provenance":
+    """Ask history why `enum.member` is never produced.
+
+    Only for a declaration that actually lives in the repository being
+    read. A scan can be handed files from more than one place -- `--join`
+    reads two repositories -- and asking THIS repository about a member
+    declared in another one gets a confident NEVER_PRODUCED off a search of
+    the wrong history. Not knowing is the correct answer there.
+    """
+    provenance = forensics.Provenance.UNKNOWN
+    if root is not None and _within(root, path):
+        provenance = forensics.provenance(
+            root, enum, member, analyse=_analyse_sources)
+    return provenance
+
+
+@register("unreachable_declared_state")
+def detect_unreachable_declared_state(
+        files: List[Path], *, history: bool = True) -> List[Finding]:
+    """Enum members declared as states the code cannot reach.
+
+    `history` consults git to tell an oversight from a removal. It is a
+    parameter rather than an assumption so a caller that needs a pure
+    function of the files -- a test, a reproducible calibration run -- can
+    have one, and gets UNKNOWN provenance rather than a silently different
+    answer.
+    """
+    parsed = _parsed_python(files)
+
+    declared, docs = _declared_enum_members(parsed)
+
+    if not declared:
+        return []
+
+    produced, in_library, from_data = _how_members_arrive(parsed, declared)
 
     root = forensics.repo_root(files) if history else None
 
@@ -1169,22 +1211,17 @@ def detect_unreachable_declared_state(
                 continue
 
             # No structure, no claim. Ask history why.
-            #
-            # Only for a declaration that actually lives in the repository
-            # being read. A scan can be handed files from more than one place
-            # -- `--join` reads two repositories -- and asking THIS repository
-            # about a member declared in another one gets a confident
-            # NEVER_PRODUCED off a search of the wrong history. Not knowing is
-            # the correct answer there.
-            provenance = forensics.Provenance.UNKNOWN
-            if root is not None and _within(root, path):
-                provenance = forensics.provenance(
-                    root, enum, member, analyse=_analyse_sources)
+            provenance = _member_provenance(root, path, enum, member)
             attributes["provenance"] = provenance.value
 
             out.append(_finding_unproduced(enum, member, path, line, live,
                                            only_tests, provenance, attributes))
     return out
+
+
+def _attribute_ids(node) -> Set[int]:
+    """The id() of every attribute access anywhere under `node`."""
+    return {id(sub) for sub in ast.walk(node) if isinstance(sub, ast.Attribute)}
 
 
 def _members_produced(parsed) -> Set[str]:
@@ -1223,9 +1260,7 @@ def _members_produced(parsed) -> Set[str]:
         for node in ast.walk(tree):
             if isinstance(node, ast.Compare):
                 for side in [node.left, *node.comparators]:
-                    for sub in ast.walk(side):
-                        if isinstance(sub, ast.Attribute):
-                            compared.add(id(sub))
+                    compared |= _attribute_ids(side)
         for node in tree.body:
             if not isinstance(node, ast.Assign):
                 continue
@@ -1234,9 +1269,7 @@ def _members_produced(parsed) -> Set[str]:
                 continue
             if not _is_collection(node.value):
                 continue
-            for sub in ast.walk(node.value):
-                if isinstance(sub, ast.Attribute):
-                    compared.add(id(sub))
+            compared |= _attribute_ids(node.value)
         for node in ast.walk(tree):
             if isinstance(node, ast.Attribute) and id(node) not in compared:
                 out.add(node.attr)
@@ -1443,20 +1476,6 @@ def detect_dead_code(files: List[Path]) -> List[Finding]:
       @register pattern is the concrete example -- it self-flags on
       ghost_buster's own codebase, see README) are still untraced.
     """
-    definitions: Dict[str, List[Path]] = {}
-    nodes: Dict[tuple, ast.AST] = {}
-    referenced_names: Set[str] = set()
-    exported_names: Set[str] = set()
-
-    def _is_protocol_or_abc(class_node: ast.ClassDef) -> bool:
-        for base in class_node.bases:
-            base_name = base.id if isinstance(base, ast.Name) else (
-                base.attr if isinstance(base, ast.Attribute) else None
-            )
-            if base_name in ("Protocol", "ABC"):
-                return True
-        return False
-
     parsed = {}
     for path in files:
         tree = _parse(path)
@@ -1467,12 +1486,45 @@ def detect_dead_code(files: List[Path]) -> List[Finding]:
     # What a scan for identifiers does not see (unreleased): `from x import y`,
     # `__all__` however it is built, names inside string annotations, and
     # the declared surface of sibling .pyi stubs. All of these are USES.
+    referenced_names: Set[str] = set()
+    exported_names: Set[str] = set()
     star_modules: Set[str] = set()
     for tree in parsed.values():
         referenced_names |= _uses_beyond_identifiers(tree, star_modules)
         exported_names |= _all_exports(tree)
     referenced_names |= _stub_uses(parsed)
 
+    definitions, nodes, star_used = _dead_code_candidates(parsed, star_modules)
+    referenced_names |= star_used
+    referenced_names |= _identifier_references(parsed)
+
+    dead = {n: ps for n, ps in definitions.items()
+            if n not in exported_names and n not in referenced_names}
+    index = ReferenceIndex(files, parsed, set(dead)) if dead else None
+
+    findings: List[Finding] = []
+    for name, def_paths in dead.items():
+        for path in def_paths:
+            findings.append(_dead_code_finding(name, path, nodes.get((name, path)), index))
+    return findings
+
+
+def _is_protocol_or_abc(class_node: ast.ClassDef) -> bool:
+    for base in class_node.bases:
+        base_name = base.id if isinstance(base, ast.Name) else (
+            base.attr if isinstance(base, ast.Attribute) else None
+        )
+        if base_name in ("Protocol", "ABC"):
+            return True
+    return False
+
+
+def _dead_code_candidates(parsed, star_modules: Set[str]):
+    """The module-level definitions dead_code may report, where each one is,
+    and the public names a `from module import *` already uses."""
+    definitions: Dict[str, List[Path]] = {}
+    nodes: Dict[tuple, ast.AST] = {}
+    star_used: Set[str] = set()
     for path, tree in parsed.items():
         module = Path(path)
         star_imported = (module.stem in star_modules
@@ -1487,10 +1539,16 @@ def detect_dead_code(files: List[Path]) -> List[Finding]:
                     continue
                 if not node.name.startswith("_") and star_imported:
                     # `from this_module import *` makes every public name a use.
-                    referenced_names.add(node.name)
+                    star_used.add(node.name)
                 definitions.setdefault(node.name, []).append(path)
                 nodes[(node.name, path)] = node
+    return definitions, nodes, star_used
 
+
+def _identifier_references(parsed) -> Set[str]:
+    """Every name the scanned trees use as an identifier, a string subscript
+    key, or a decorated definition."""
+    referenced_names: Set[str] = set()
     for tree in parsed.values():
         for node in ast.walk(tree):
             if isinstance(node, ast.Name):
@@ -1523,34 +1581,28 @@ def detect_dead_code(files: List[Path]) -> List[Finding]:
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef,
                                    ast.ClassDef)) and node.decorator_list:
                 referenced_names.add(node.name)
+    return referenced_names
 
-    dead = {n: ps for n, ps in definitions.items()
-            if n not in exported_names and n not in referenced_names}
-    index = ReferenceIndex(files, parsed, set(dead)) if dead else None
 
-    findings: List[Finding] = []
-    for name, def_paths in dead.items():
-        for path in def_paths:
-            findings.append(Finding(
-                detector="dead_code",
-                category=Category.DEAD_CODE,
-                layer=Layer.MECHANICAL,
-                severity=Severity.MINOR,
-                status=Status.CONFIRMED,
-                summary=f"'{name}' is defined but never referenced anywhere in the scanned set",
-                detail=(
-                    "No ast.Name, ast.Attribute, or string-subscript-key node "
-                    "anywhere in the scanned files resolves to this identifier. "
-                    "Scope limit: getattr-by-string and decorator-based "
-                    "registration are still not traced, so this can false-"
-                    "positive on names only reached that way -- confirm before "
-                    "deleting."
-                ),
-                evidence=Evidence(file=str(path), **_span(nodes.get((name, path)))),
-                attributes=_dead_code_facts(name, path, nodes.get((name, path)), index),
-            ))
-    return findings
-
+def _dead_code_finding(name: str, path: Path, node, index) -> Finding:
+    return Finding(
+        detector="dead_code",
+        category=Category.DEAD_CODE,
+        layer=Layer.MECHANICAL,
+        severity=Severity.MINOR,
+        status=Status.CONFIRMED,
+        summary=f"'{name}' is defined but never referenced anywhere in the scanned set",
+        detail=(
+            "No ast.Name, ast.Attribute, or string-subscript-key node "
+            "anywhere in the scanned files resolves to this identifier. "
+            "Scope limit: getattr-by-string and decorator-based "
+            "registration are still not traced, so this can false-"
+            "positive on names only reached that way -- confirm before "
+            "deleting."
+        ),
+        evidence=Evidence(file=str(path), **_span(node)),
+        attributes=_dead_code_facts(name, path, node, index),
+    )
 
 def _span(node) -> dict:
     """Where a definition sits, so a fixer need not re-parse the file."""
@@ -1787,6 +1839,35 @@ def detect_duplicate_files(files: List[Path]) -> List[Finding]:
     return findings
 
 
+def _without_identical_twins(files: List[Path]) -> List[Path]:
+    """`files` with every byte-identical copy after the first left out."""
+    seen_twins = set()
+    for _digest, group in _identical_file_groups(files):
+        for path in sorted(group)[1:]:
+            seen_twins.add(path)
+    representatives = [p for p in files if p not in seen_twins]
+    return representatives
+
+
+def _functions_by_fingerprint(paths: List[Path], min_lines: int) -> Dict[str, List[tuple]]:
+    """(path, node) for every function of at least `min_lines`, grouped by
+    structural fingerprint."""
+    by_fingerprint: Dict[str, List[tuple]] = {}
+    for path in paths:
+        tree = _parse(path)
+        if tree is None:
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if node.end_lineno is None:
+                    continue
+                if (node.end_lineno - node.lineno) < min_lines:
+                    continue
+                fp = _structural_fingerprint(node)
+                by_fingerprint.setdefault(fp, []).append((path, node))
+    return by_fingerprint
+
+
 @register("near_duplicate_function")
 def detect_near_duplicate_functions(files: List[Path], min_lines: int = 10) -> List[Finding]:
     """Groups functions by structural fingerprint; any group with 2+
@@ -1808,26 +1889,7 @@ def detect_near_duplicate_functions(files: List[Path], min_lines: int = 10) -> L
         suite looks like, and the README had already disclosed it as the
         detector's dominant noise. MAJOR findings went from 42 to 27.
     """
-    representatives: List[Path] = []
-    seen_twins = set()
-    for _digest, group in _identical_file_groups(files):
-        for path in sorted(group)[1:]:
-            seen_twins.add(path)
-    representatives = [p for p in files if p not in seen_twins]
-
-    by_fingerprint: Dict[str, List[tuple]] = {}
-    for path in representatives:
-        tree = _parse(path)
-        if tree is None:
-            continue
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                if node.end_lineno is None:
-                    continue
-                if (node.end_lineno - node.lineno) < min_lines:
-                    continue
-                fp = _structural_fingerprint(node)
-                by_fingerprint.setdefault(fp, []).append((path, node))
+    by_fingerprint = _functions_by_fingerprint(_without_identical_twins(files), min_lines)
 
     findings: List[Finding] = []
     for occurrences in by_fingerprint.values():
@@ -1976,6 +2038,45 @@ def _stmt_candidates(
                 yield block_index, [stmt]
 
 
+def _intra_duplicate_finding(path: Path, func_name: str,
+                             units: List[List[ast.stmt]], spans: List[str]) -> Finding:
+    first = units[0]
+    shape_note = (
+        "single statement" if len(first) == 1
+        else f"{len(first)}-statement block"
+    )
+    summary = (
+        f"'{func_name}' repeats the same {shape_note} "
+        f"{len(units)} times (lines {', '.join(spans)}): "
+        "same shape, names/literals differ"
+    )
+    return Finding(
+        detector="intra_function_duplicate_block",
+        category=Category.DUPLICATION,
+        layer=Layer.MECHANICAL,
+        severity=Severity.MAJOR if len(units) > 2 else Severity.MINOR,
+        status=Status.CONFIRMED,
+        summary=summary,
+        # The count and the line numbers are measurements: see `Finding.identity_key`.
+        identity_key=f"'{func_name}' repeats the same {shape_note}",
+        previous_key=summary,
+        detail=(
+            "Structural fingerprint match within one function, not a "
+            "whole-function match (near_duplicate_function's detection "
+            "is blind to this shape). Typical real cause: several "
+            "branches each hand-build the same kind of object or "
+            "perform the same sequence of calls -- worth a single "
+            "shared helper if the branches really are doing the same "
+            "thing, not just a coincidental resemblance."
+        ),
+        evidence=Evidence(
+            file=str(path), line_start=first[0].lineno,
+            line_end=first[-1].lineno,
+            related_files=[f"{path}:{s}" for s in spans[1:]],
+        ),
+    )
+
+
 @register("intra_function_duplicate_block")
 def detect_intra_function_duplicate_blocks(
     files: List[Path], min_statements: int = 3, min_complexity: int = 20
@@ -2044,41 +2145,7 @@ def detect_intra_function_duplicate_blocks(
                 if len(units[0]) == 1 and len(blocks_of[fp]) < 2:
                     continue  # one block repeating a statement is a list, not a ghost
                 spans = [f"{u[0].lineno}-{u[-1].lineno}" for u in units]
-                first = units[0]
-                shape_note = (
-                    "single statement" if len(first) == 1
-                    else f"{len(first)}-statement block"
-                )
-                summary = (
-                    f"'{func.name}' repeats the same {shape_note} "
-                    f"{len(units)} times (lines {', '.join(spans)}): "
-                    "same shape, names/literals differ"
-                )
-                findings.append(Finding(
-                    detector="intra_function_duplicate_block",
-                    category=Category.DUPLICATION,
-                    layer=Layer.MECHANICAL,
-                    severity=Severity.MAJOR if len(units) > 2 else Severity.MINOR,
-                    status=Status.CONFIRMED,
-                    summary=summary,
-                    # The count and the line numbers are measurements: see `Finding.identity_key`.
-                    identity_key=f"'{func.name}' repeats the same {shape_note}",
-                    previous_key=summary,
-                    detail=(
-                        "Structural fingerprint match within one function, not a "
-                        "whole-function match (near_duplicate_function's detection "
-                        "is blind to this shape). Typical real cause: several "
-                        "branches each hand-build the same kind of object or "
-                        "perform the same sequence of calls -- worth a single "
-                        "shared helper if the branches really are doing the same "
-                        "thing, not just a coincidental resemblance."
-                    ),
-                    evidence=Evidence(
-                        file=str(path), line_start=first[0].lineno,
-                        line_end=first[-1].lineno,
-                        related_files=[f"{path}:{s}" for s in spans[1:]],
-                    ),
-                ))
+                findings.append(_intra_duplicate_finding(path, func.name, units, spans))
     return findings
 
 
@@ -2374,6 +2441,31 @@ def _count_test_functions(files: List[Path]) -> int:
     return count
 
 
+def _count_drift_facts(path: Path, text: str, match, documented: int,
+                       actual: int, before: str) -> Dict[str, str]:
+    """The attributes of a doc_test_count_drift finding, including whether a
+    machine may rewrite the claim."""
+    refusal = why_not_writable(
+        path.name,
+        text[max(0, match.start() - _WRITABILITY_LOOKBACK):match.start()],
+        text[match.end():match.end() + _WRITABILITY_LOOKBACK],
+        # The top of the file, where a document says what it is.
+        text)
+    return {
+        "documented_count": str(documented),
+        "static_lower_bound": str(actual),
+        # Reported either way; rewritten only when this is "yes".
+        # See why_not_writable: a claim worth telling somebody
+        # about is not automatically one a machine may edit.
+        "writable": "no" if refusal else "yes",
+        "not_writable_because": refusal or "",
+        # The text this claim sits in, so a consumer can re-run
+        # claim_shape() itself instead of assuming the claim was
+        # already filtered. correlate.py does.
+        "claim_context": " ".join(before.split()),
+    }
+
+
 @register("doc_test_count_drift")
 def detect_doc_test_count_drift(
     files: List[Path], min_growth_ratio: float = 1.15, min_absolute_growth: int = 10
@@ -2419,12 +2511,6 @@ def detect_doc_test_count_drift(
             if actual - documented < min_absolute_growth:
                 continue
             line = text.count("\n", 0, match.start()) + 1
-            refusal = why_not_writable(
-                path.name,
-                text[max(0, match.start() - _WRITABILITY_LOOKBACK):match.start()],
-                text[match.end():match.end() + _WRITABILITY_LOOKBACK],
-                # The top of the file, where a document says what it is.
-                text)
             findings.append(Finding(
                 detector="doc_test_count_drift",
                 category=Category.DOC_DRIFT,
@@ -2449,19 +2535,7 @@ def detect_doc_test_count_drift(
                     "and update the claim, or remove the specific number if it "
                     "will keep going stale."
                 ),
-                attributes={
-                    "documented_count": str(documented),
-                    "static_lower_bound": str(actual),
-                    # Reported either way; rewritten only when this is "yes".
-                    # See why_not_writable: a claim worth telling somebody
-                    # about is not automatically one a machine may edit.
-                    "writable": "no" if refusal else "yes",
-                    "not_writable_because": refusal or "",
-                    # The text this claim sits in, so a consumer can re-run
-                    # claim_shape() itself instead of assuming the claim was
-                    # already filtered. correlate.py does.
-                    "claim_context": " ".join(before.split()),
-                },
+                attributes=_count_drift_facts(path, text, match, documented, actual, before),
                 evidence=Evidence(
                     file=str(path), line_start=line, line_end=line,
                     snippet=" ".join((before + match.group(0)).split())[-160:],
@@ -2486,6 +2560,27 @@ def _next_matching(lines: List[str], pattern: "re.Pattern[str]", start: int) -> 
     operation ("find the next line of this shape") against two different
     patterns, not two independent pieces of logic."""
     return next((j for j in range(start, len(lines)) if pattern.match(lines[j])), None)
+
+
+def _conflict_triplets(lines: List[str]) -> Iterator[Tuple[int, int]]:
+    """(ours, theirs) 0-based line indexes of each complete marker triplet,
+    in order; scanning resumes after the `>>>>>>>` of each one found."""
+    i = 0
+    while i < len(lines):
+        if not _CONFLICT_OURS.match(lines[i]):
+            i += 1
+            continue
+        ours_line = i
+        sep_line = _next_matching(lines, _CONFLICT_SEP, ours_line + 1)
+        theirs_line = (
+            _next_matching(lines, _CONFLICT_THEIRS, sep_line + 1)
+            if sep_line is not None else None
+        )
+        if sep_line is None or theirs_line is None:
+            i = ours_line + 1
+            continue
+        yield ours_line, theirs_line
+        i = theirs_line + 1
 
 
 @register("merge_conflict_marker")
@@ -2540,20 +2635,7 @@ def detect_merge_conflict_markers(files: List[Path]) -> List[Finding]:
         except (OSError, UnicodeDecodeError):
             continue
         lines = text.splitlines()
-        i = 0
-        while i < len(lines):
-            if not _CONFLICT_OURS.match(lines[i]):
-                i += 1
-                continue
-            ours_line = i
-            sep_line = _next_matching(lines, _CONFLICT_SEP, ours_line + 1)
-            theirs_line = (
-                _next_matching(lines, _CONFLICT_THEIRS, sep_line + 1)
-                if sep_line is not None else None
-            )
-            if sep_line is None or theirs_line is None:
-                i = ours_line + 1
-                continue
+        for ours_line, theirs_line in _conflict_triplets(lines):
             findings.append(Finding(
                 detector="merge_conflict_marker",
                 category=Category.MERGE_CONFLICT_MARKER,
@@ -2572,7 +2654,6 @@ def detect_merge_conflict_markers(files: List[Path]) -> List[Finding]:
                     snippet=lines[ours_line][:200],
                 ),
             ))
-            i = theirs_line + 1
     return findings
 
 
