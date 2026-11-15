@@ -130,28 +130,9 @@ def _debris_defines(item: NegativeEvidence) -> set[str]:
     return names
 
 
-def infer_usage_invariants(source: str, target: str) -> list[str]:
-    """Constraints the callers' own code forces on the missing thing.
-
-    Read carefully: these are constraints on the *interface*, derived from how
-    callers treat the values. `max(0.0, x)` proves the caller keeps the value
-    non-negative. It does not prove the missing object did.
-    """
-    invariants: list[str] = []
-    try:
-        tree = ast.parse(source)
-    except SyntaxError:
-        return invariants
-
-    seen: set[str] = set()
-
-    def note(text: str) -> None:
-        if text not in seen:
-            seen.add(text)
-            invariants.append(text)
-
-    # Local aliases: `vectors = SYSTEM_GLOBALS.current_trajectory_vectors`.
-    #
+def _single_assignment_aliases(tree: ast.AST, target: str) -> dict[str, str]:
+    """Locals bound exactly once to an attribute of `target`, mapped to that
+    attribute: `vectors = SYSTEM_GLOBALS.current_trajectory_vectors`."""
     # Without this the strongest constraints are invisible, because callers
     # almost never subscript an attribute in place -- they bind it to a local
     # first and work with that. Found on the real SYSTEM_GLOBALS void: the
@@ -180,6 +161,31 @@ def infer_usage_invariants(source: str, target: str) -> list[str]:
             rebound.add(tgt.id)
     for name in rebound:
         alias_to_attr.pop(name, None)
+    return alias_to_attr
+
+
+def infer_usage_invariants(source: str, target: str) -> list[str]:
+    """Constraints the callers' own code forces on the missing thing.
+
+    Read carefully: these are constraints on the *interface*, derived from how
+    callers treat the values. `max(0.0, x)` proves the caller keeps the value
+    non-negative. It does not prove the missing object did.
+    """
+    invariants: list[str] = []
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return invariants
+
+    seen: set[str] = set()
+
+    def note(text: str) -> None:
+        if text not in seen:
+            seen.add(text)
+            invariants.append(text)
+
+    # Local aliases: see _single_assignment_aliases.
+    alias_to_attr = _single_assignment_aliases(tree, target)
 
     def attr_of(node: ast.AST) -> str | None:
         """Which attribute of the missing thing this expression refers to,
@@ -232,45 +238,17 @@ def infer_usage_invariants(source: str, target: str) -> list[str]:
     return invariants
 
 
-def extrapolate(
+def _undeterminable(
     *,
-    summary: str,
     evidence: Sequence[NegativeEvidence],
-    anchors: Sequence[Anchor] = (),
-    kind: VoidKind = VoidKind.NEVER_BUILT,
-    target: str | None = None,
-    sources: Sequence[Path] = (),
-    also_referenced_elsewhere: bool = False,
-) -> Void:
-    """Build the outline of one absence.
-
-    `target` and `sources` are optional and only enable the invariant pass:
-    given the name of the missing thing and the files that reach for it, the
-    callers' own arithmetic and subscripting constrain its shape further.
-    """
-    reads, writes = _attributes_from_evidence(evidence)
-
-    invariants: list[str] = []
-    if target:
-        for path in sources:
-            try:
-                invariants.extend(
-                    infer_usage_invariants(path.read_text(errors="replace"), target))
-            except OSError:
-                continue
-    # de-duplicate while keeping order
-    invariants = list(dict.fromkeys(invariants))
-
-    recovered = _recovered_from_debris(evidence)
-    # Callers' attributes are sorted; recovered headers keep their token
-    # order, which is the only structure a flattened file has left.
-    must_define = tuple(sorted(reads | writes)) + tuple(
-        item for item in recovered if item not in reads and item not in writes)
-    must_accept = tuple(sorted(
-        item for anchor in anchors for item in anchor.provides))
-    must_return = tuple(sorted(
-        item for anchor in anchors for item in anchor.requires))
-
+    kind: VoidKind,
+    writes: set[str],
+    recovered: list[str],
+    must_define: tuple[str, ...],
+    invariants: list[str],
+) -> list[str]:
+    """What this outline cannot settle: the standing limits of every void,
+    plus the ones its own evidence raises."""
     undeterminable = list(_ALWAYS_UNDETERMINABLE)
     if writes:
         undeterminable.append(
@@ -316,6 +294,12 @@ def extrapolate(
             "not constrain its shape"
         )
 
+    return undeterminable
+
+
+def _shape_confidence(evidence: Sequence[NegativeEvidence],
+                      anchors: Sequence[Anchor], invariants: list[str]) -> float:
+    """How well the evidence pins the shape down, before rounding."""
     kinds_present = {item.kind for item in evidence}
     confidence = min(1.0, sum(_KIND_WEIGHT.get(k, 0.0) for k in kinds_present))
     if len(anchors) >= 2:
@@ -325,6 +309,52 @@ def extrapolate(
         confidence = min(1.0, confidence + 0.15)
     if invariants:
         confidence = min(1.0, confidence + 0.10)
+    return confidence
+
+
+def extrapolate(
+    *,
+    summary: str,
+    evidence: Sequence[NegativeEvidence],
+    anchors: Sequence[Anchor] = (),
+    kind: VoidKind = VoidKind.NEVER_BUILT,
+    target: str | None = None,
+    sources: Sequence[Path] = (),
+    also_referenced_elsewhere: bool = False,
+) -> Void:
+    """Build the outline of one absence.
+
+    `target` and `sources` are optional and only enable the invariant pass:
+    given the name of the missing thing and the files that reach for it, the
+    callers' own arithmetic and subscripting constrain its shape further.
+    """
+    reads, writes = _attributes_from_evidence(evidence)
+
+    invariants: list[str] = []
+    if target:
+        for path in sources:
+            try:
+                invariants.extend(
+                    infer_usage_invariants(path.read_text(errors="replace"), target))
+            except OSError:
+                continue
+    # de-duplicate while keeping order
+    invariants = list(dict.fromkeys(invariants))
+
+    recovered = _recovered_from_debris(evidence)
+    # Callers' attributes are sorted; recovered headers keep their token
+    # order, which is the only structure a flattened file has left.
+    must_define = tuple(sorted(reads | writes)) + tuple(
+        item for item in recovered if item not in reads and item not in writes)
+    must_accept = tuple(sorted(
+        item for anchor in anchors for item in anchor.provides))
+    must_return = tuple(sorted(
+        item for anchor in anchors for item in anchor.requires))
+
+    undeterminable = _undeterminable(
+        evidence=evidence, kind=kind, writes=writes, recovered=recovered,
+        must_define=must_define, invariants=invariants)
+    confidence = _shape_confidence(evidence, anchors, invariants)
 
     return Void(
         kind=kind,

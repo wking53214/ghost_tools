@@ -18,8 +18,10 @@ _R = "blackhole_extrapolator/reconstruct.py"
 MUTANTS = [
     # The heuristic must never touch a file the deterministic pass got right.
     ("the heuristic runs even after a program was recovered", _R,
-     "    if _parses(determined):\n        return Reconstruction(determined",
-     "    if False:\n        return Reconstruction(determined"),
+     # Exactly the old early-return removal: the program is no longer taken
+     # as parsed, so the heuristic always runs and its absence reads False.
+     "    result, parses = determined, _parses(determined)\n    if not parses:\n",
+     "    result, parses = determined, False\n    if True:\n"),
 
     # A guess that compiles is still a guess.
     ("a heuristic result that parses is called a program", _R,

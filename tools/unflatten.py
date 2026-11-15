@@ -137,12 +137,12 @@ def unswallow_comments(text, resumes=CODE_RESUMES):
             if nl != -1 and (not m or nl < m.start()):
                 # a newline survived (shape 1): the comment ends there and the
                 # next line keeps its own indentation
-                out.append(text[i:nl].rstrip() + "\n")
-                i = nl + 1
-                continue
-            end = m.start() if m else n
+                end, resume = nl, nl + 1
+            else:
+                end = m.start() if m else n
+                resume = end + 1 if m else n
             out.append(text[i:end].rstrip() + "\n")
-            i = end + 1 if m else n
+            i = resume
             continue
         out.append(ch)
         i += 1
@@ -315,13 +315,10 @@ def render(stmt):
     return out
 
 
-def reconstruct(text, top_names=()):
-    tokens = toks(text)
-    stmts = split_statements(tokens)
-    lines = [render(s) for s in stmts]
-    is_comment = [s[0].type == tokenize.COMMENT for s in stmts]
-    # lines that are not Python in any scope are kept as marked comments,
-    # and bare names beside them (fragments of the same paste) go with them
+def _mark_foreign(stmts, lines, is_comment):
+    """Lines that are not Python in any scope are kept as marked comments,
+    and bare names beside them (fragments of the same paste) go with them.
+    Rewrites `lines` and `is_comment` in place."""
     foreign = [not is_comment[i] and not compiles_alone(lines[i]) for i in range(len(lines))]
     bare = [all(t.type == tokenize.NAME and not keyword.iskeyword(t.string) for t in s) for s in stmts]
     changed = True
@@ -336,20 +333,53 @@ def reconstruct(text, top_names=()):
             lines[i] = FOREIGN + lines[i]
             is_comment[i] = True
     print(f"  {sum(foreign)} statements are not python; kept as marked comments", file=sys.stderr)
-    heads = [ln.rstrip().endswith(":") and not is_comment[i] for i, ln in enumerate(lines)]
-    firsts = [s[0].string for s in stmts]
-    defname = [s[1].string if len(s) > 1 and s[0].string in ("def", "class") else None for s in stmts]
-    takes_self = [len(s) > 3 and s[0].string == "def" and s[2].string == "(" and s[3].string in ("self", "cls")
-                  for s in stmts]
-    n = len(lines)
-    ambiguous = 0
-    indents = [0] * n
-    CONT = {"elif", "else", "except", "finally"}
-    def valid(k):
+
+
+def shallower_first(level):
+    """Every level below this one, nearest first, then this one last.
+
+    The ordering a statement gets when the evidence says it more likely
+    closes a block than continues one.
+    """
+    return list(range(level - 1, -1, -1)) + [level]
+
+
+def same_then_shallower(level):
+    """This level first, then every level below it, nearest first: the
+    ordering a statement gets when nothing says it closes a block."""
+    return [level] + list(range(level - 1, -1, -1))
+
+
+CONT = {"elif", "else", "except", "finally"}
+
+
+class _Indentation:
+    """The indentation search over one file's statements: the candidate
+    levels for each statement, the prefix validation, and the memoised
+    search that walks them."""
+
+    def __init__(self, stmts, lines, is_comment, top_names):
+        self.stmts = stmts
+        self.lines = lines
+        self.is_comment = is_comment
+        self.top_names = top_names
+        self.heads = [ln.rstrip().endswith(":") and not is_comment[i] for i, ln in enumerate(lines)]
+        self.firsts = [s[0].string for s in stmts]
+        self.defname = [s[1].string if len(s) > 1 and s[0].string in ("def", "class") else None for s in stmts]
+        self.takes_self = [len(s) > 3 and s[0].string == "def" and s[2].string == "(" and s[3].string in ("self", "cls")
+                           for s in stmts]
+        self.n = len(lines)
+        self.indents = [0] * self.n
+        self.steps = 0
+        self.heuristic = [False] * self.n
+        self.dead = set()
+
+    def valid(self, k):
+        indents, firsts, lines = self.indents, self.firsts, self.lines
         # every earlier prefix was validated, so only the current top-level
         # chunk (from the last column-0 statement that starts one) is compiled
         j = k - 1
-        while j > 0 and not (indents[j] == 0 and not is_comment[j] and firsts[j] not in CONT):
+        while j > 0 and not (indents[j] == 0 and not self.is_comment[j] and firsts[j] not in CONT):
             j -= 1
         while j > 0 and firsts[j - 1] == "@":      # a decorator belongs to the chunk it decorates
             j -= 1
@@ -359,26 +389,52 @@ def reconstruct(text, top_names=()):
             return True
         except (SyntaxError, OverflowError, ValueError):
             return False
-    steps = [0]
-    heuristic = [False] * n
 
-    def shallower_first(level):
-        """Every level below this one, nearest first, then this one last.
+    def def_candidates(self, k, cur):
+        """Where a `def` (or the decorator above one) can go."""
+        stmts, firsts, heads, is_comment = self.stmts, self.firsts, self.heads, self.is_comment
+        n, indents = self.n, self.indents
+        m = k
+        while m < n and firsts[m] == "@":
+            m += 1
+        if m < n and (firsts[m] == "class" or self.defname[m] in self.top_names):
+            return [0] + ([cur] if cur else [])
+        if k > 1 and heads[k - 2] and stmts[k - 1][0].type == tokenize.STRING and len(stmts[k - 1]) == 1:
+            return [cur]                        # header, docstring, def: a nested def or a method
+        # inside a class body a def is a method (same level); inside
+        # anything else it is most often a sibling of the block
+        # opener, then shallower, and a nested def last
+        def opener_of(c):
+            return next((j for j in range(k - 1, -1, -1)
+                         if not is_comment[j] and heads[j] and indents[j] == c - 1), None)
+        opener = opener_of(cur)
+        if cur == 0:
+            cands = [0]
+        elif opener is not None and firsts[opener] == "class":
+            cands = same_then_shallower(cur)
+        else:
+            cands = shallower_first(cur)
+        if self.takes_self[k]:
+            # a def whose first parameter is self is a method: put the
+            # levels whose enclosing block is a class first
+            in_class = [c for c in cands
+                        if c and (opener_of(c) is not None
+                                  and firsts[opener_of(c)] == "class")]
+            if in_class:
+                cands = in_class + [c for c in cands if c not in in_class]
+        return cands
 
-        The ordering a statement gets when the evidence says it more likely
-        closes a block than continues one.
-        """
-        return list(range(level - 1, -1, -1)) + [level]
-
-    def candidates(k, cur):
+    def candidates(self, k, cur):
+        stmts, firsts, heads, is_comment = self.stmts, self.firsts, self.heads, self.is_comment
+        indents, heuristic = self.indents, self.heuristic
         f = firsts[k]
         if f == "if" and len(stmts[k]) > 1 and stmts[k][1].string == "__name__":
             cands = [0]                        # the entry-point guard is always at column 0
         elif is_comment[k]:
             # a numbered or ruled section comment ("# 3. Data Alignment", "# ----") is a
             # top-level landmark far more often than a note inside a block
-            cands = ([0] + list(range(cur, 0, -1))) if SECTION.match(lines[k]) else (
-                [cur] + list(range(cur - 1, -1, -1)))
+            cands = ([0] + list(range(cur, 0, -1))) if SECTION.match(self.lines[k]) else (
+                same_then_shallower(cur))
             heuristic[k] = len(cands) > 1
         elif k > 0 and heads[k - 1]:
             cands = [cur + 1]
@@ -386,38 +442,10 @@ def reconstruct(text, top_names=()):
             cands = list(range(cur, -1, -1))
         elif k > 0 and firsts[k - 1] == "@":
             cands = [indents[k - 1]]                 # decorated: same indent as its decorator
-        elif f == "class" or (defname[k] in top_names):
+        elif f == "class" or (self.defname[k] in self.top_names):
             cands = [0] + ([cur] if cur else [])
         elif f in ("@", "def"):
-            m = k
-            while m < n and firsts[m] == "@":
-                m += 1
-            if m < n and (firsts[m] == "class" or defname[m] in top_names):
-                cands = [0] + ([cur] if cur else [])
-            elif k > 1 and heads[k - 2] and stmts[k - 1][0].type == tokenize.STRING and len(stmts[k - 1]) == 1:
-                cands = [cur]                        # header, docstring, def: a nested def or a method
-            else:
-                # inside a class body a def is a method (same level); inside
-                # anything else it is most often a sibling of the block
-                # opener, then shallower, and a nested def last
-                def opener_of(c):
-                    return next((j for j in range(k - 1, -1, -1)
-                                 if not is_comment[j] and heads[j] and indents[j] == c - 1), None)
-                opener = opener_of(cur)
-                if cur == 0:
-                    cands = [0]
-                elif opener is not None and firsts[opener] == "class":
-                    cands = [cur] + list(range(cur - 1, -1, -1))
-                else:
-                    cands = shallower_first(cur)
-                if takes_self[k]:
-                    # a def whose first parameter is self is a method: put the
-                    # levels whose enclosing block is a class first
-                    in_class = [c for c in cands
-                                if c and (opener_of(c) is not None
-                                          and firsts[opener_of(c)] == "class")]
-                    if in_class:
-                        cands = in_class + [c for c in cands if c not in in_class]
+            cands = self.def_candidates(k, cur)
         elif (f in ("if", "for", "while", "try", "with") and k > 1 and heads[k - 2] and not heads[k - 1]
               and not is_comment[k - 1] and indents[k - 1] == cur):
             # a compound statement right after a one-statement body is more
@@ -433,45 +461,58 @@ def reconstruct(text, top_names=()):
             cands = [cur - 1, cur] + list(range(cur - 2, -1, -1))
             heuristic[k] = True
         else:
-            cands = [cur] + list(range(cur - 1, -1, -1))
+            cands = same_then_shallower(cur)
         return cands
 
-    dead = set()
-
-    def solve(k, cur):
-        steps[0] += 1
-        if steps[0] > 2000000 or k == n:
+    def solve(self, k, cur):
+        n = self.n
+        self.steps += 1
+        if self.steps > 2000000 or k == n:
             return k == n
-        if steps[0] % 50000 == 0:
-            print(f"  step {steps[0]} at statement {k}/{n}", file=sys.stderr)
-        if (k, cur) in dead:
+        if self.steps % 50000 == 0:
+            print(f"  step {self.steps} at statement {k}/{n}", file=sys.stderr)
+        if (k, cur) in self.dead:
             return False
-        for c in candidates(k, cur):
-            indents[k] = c
-            if valid(k + 1) and solve(k + 1, c):
+        for c in self.candidates(k, cur):
+            self.indents[k] = c
+            if self.valid(k + 1) and self.solve(k + 1, c):
                 return True
-        dead.add((k, cur))
+        self.dead.add((k, cur))
         return False
-    sys.setrecursionlimit(max(10000, 4 * n + 100))
-    ok = solve(0, 0)
-    if not ok:
+
+    def place_greedily(self):
         # The exhaustive search ran out of budget. Place each statement by the
         # same ordered preferences, taking the first candidate the parser
         # accepts and never backtracking past it: bounded, and every line it
         # could not settle is counted.
+        indents = self.indents
         cur = 0
-        for k in range(n):
-            for c in candidates(k, cur):
+        for k in range(self.n):
+            for c in self.candidates(k, cur):
                 indents[k] = c
-                if valid(k + 1):
+                if self.valid(k + 1):
                     cur = c
                     break
             else:
-                indents[k] = cur = candidates(k, cur)[0]
-                heuristic[k] = True
-        print(f"  exhaustive search exhausted; placed {n} statements greedily", file=sys.stderr)
-    ambiguous += sum(heuristic)
-    src = "\n".join("    " * indents[i] + lines[i] for i in range(n)) + "\n"
+                indents[k] = cur = self.candidates(k, cur)[0]
+                self.heuristic[k] = True
+        print(f"  exhaustive search exhausted; placed {self.n} statements greedily", file=sys.stderr)
+
+
+def reconstruct(text, top_names=()):
+    tokens = toks(text)
+    stmts = split_statements(tokens)
+    lines = [render(s) for s in stmts]
+    is_comment = [s[0].type == tokenize.COMMENT for s in stmts]
+    _mark_foreign(stmts, lines, is_comment)
+    layout = _Indentation(stmts, lines, is_comment, top_names)
+    n = layout.n
+    sys.setrecursionlimit(max(10000, 4 * n + 100))
+    ok = layout.solve(0, 0)
+    if not ok:
+        layout.place_greedily()
+    ambiguous = sum(layout.heuristic)
+    src = "\n".join("    " * layout.indents[i] + lines[i] for i in range(n)) + "\n"
     return ok, src, n, ambiguous
 
 
