@@ -55,6 +55,7 @@ tool is designed not to repeat.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import unicodedata
 import json
@@ -253,10 +254,8 @@ def _portable_path(path: Union[str, "os.PathLike[str]"]) -> str:
     for marker in (".git", "pyproject.toml", "setup.py", "setup.cfg"):
         root = _project_root(path, marker)
         if root is not None:
-            try:
+            with contextlib.suppress(ValueError):
                 return pure.relative_to(root).as_posix()
-            except ValueError:
-                pass
     return PurePath(*parts[-2:]).as_posix() if len(parts) >= 2 else path
 
 
@@ -741,20 +740,21 @@ def disambiguate_ids(findings: List[Finding]) -> int:
         if len(distinct) < 2:
             continue
         for f in group:
-            where = "|".join(str(part) for part in place(f))
+            placed = place(f)
+            where = "|".join(str(part) for part in placed)
             f.id = f"{base}-{hashlib.sha256(where.encode('utf-8')).hexdigest()[:6]}"
             if f.legacy_id is not None and f._legacy_file is not None:
-                old_where = "|".join(str(part) for part in (_nfc(f._legacy_file),) + place(f)[1:])
+                old_where = "|".join(str(part) for part in (_nfc(f._legacy_file),) + placed[1:])
                 f.legacy_id = (f"{f.legacy_id}-"
                                f"{hashlib.sha256(old_where.encode('utf-8')).hexdigest()[:6]}")
             f._pre_nfc = [
                 (f"{pid}-" + hashlib.sha256(
-                    '|'.join(str(x) for x in (pfile,) + place(f)[1:]).encode('utf-8')).hexdigest()[:6],
+                    '|'.join(str(x) for x in (pfile,) + placed[1:]).encode('utf-8')).hexdigest()[:6],
                  pfile)
                 for pid, pfile in f._pre_nfc]
             # The suffix this scheme gave before the detail lost the scan folder (1.10.9): a baseline written
             # from the same folder under it still matches.
-            earlier = "|".join(str(part) for part in place(f)[:3] + (f.detail,))
+            earlier = "|".join(str(part) for part in placed[:3] + (f.detail,))
             earlier_id = f"{base}-{hashlib.sha256(earlier.encode('utf-8')).hexdigest()[:6]}"
             if earlier_id != f.id:
                 f._pre_nfc.append((earlier_id, f.evidence.file))

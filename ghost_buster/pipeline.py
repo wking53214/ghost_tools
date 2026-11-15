@@ -25,6 +25,7 @@ about arguments, the baseline diff, the report and the exit status.
 """
 from __future__ import annotations
 
+import contextlib
 import os
 import sys
 from dataclasses import dataclass, field
@@ -314,10 +315,8 @@ def _max_file_bytes(args) -> int:
     if value is None:
         env = os.environ.get("GHOST_MAX_FILE_BYTES", "").strip()
         if env:
-            try:
+            with contextlib.suppress(ValueError):
                 return parse_size(env)
-            except ValueError:
-                pass
         return corpus.DEFAULT_MAX_FILE_BYTES
     return int(value)
 

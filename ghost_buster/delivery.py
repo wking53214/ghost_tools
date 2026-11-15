@@ -33,6 +33,7 @@ program, a test) is not wrapped twice: the outer one owns the stream.
 """
 from __future__ import annotations
 
+import contextlib
 import errno
 import functools
 import os
@@ -127,15 +128,13 @@ def _silence_exit_flush(stream: Optional[TextIO]) -> None:
     real = sys.__stdout__
     if real is None or stream is not real:
         return
-    try:
+    with contextlib.suppress(OSError, ValueError):
         fd = real.fileno()
         null = os.open(os.devnull, os.O_WRONLY)
         try:
             os.dup2(null, fd)
         finally:
             os.close(null)
-    except (OSError, ValueError):
-        pass
 
 
 def _outcome(prog: str, guard: _GuardedStdout, code: int) -> int:

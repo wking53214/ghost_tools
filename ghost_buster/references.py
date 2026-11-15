@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import ast
 import configparser
+import contextlib
 import os
 import re
 import tomllib
@@ -196,10 +197,8 @@ class ReferenceIndex:
 
     def _rel(self, path: Path) -> str:
         if self.root is not None:
-            try:
+            with contextlib.suppress(ValueError):
                 return Path(os.path.abspath(str(path))).relative_to(self.root).as_posix()
-            except ValueError:
-                pass
         return Path(path).name
 
     def _modules(self, path: Path) -> Set[str]:
@@ -278,11 +277,11 @@ class ReferenceIndex:
     def _config_files(self, root: Path) -> List[Path]:
         out: List[Path] = []
 
-        def wanted(p: Path) -> bool:
-            n = p.name.lower()
+        def wanted(entry: Path) -> bool:
+            n = entry.name.lower()
             if "lock" in n or n in _STRUCTURED or n.startswith("requirements"):
                 return False
-            return p.suffix.lower() in _CONFIG_EXTS or n == ".env" or n.startswith(".env.")
+            return entry.suffix.lower() in _CONFIG_EXTS or n == ".env" or n.startswith(".env.")
 
         for entry in sorted(root.iterdir()):
             if entry.is_file() and wanted(entry):
@@ -291,10 +290,11 @@ class ReferenceIndex:
             if d.is_dir() and d.name.lower() in _CONFIG_DIRS and d.name not in _SKIP_DIRS:
                 base = len(d.parts)
                 for dirpath, dirs, names in os.walk(d):
+                    here = Path(dirpath)
                     dirs[:] = sorted(x for x in dirs if x not in _SKIP_DIRS)
-                    if len(Path(dirpath).parts) - base >= _MAX_DEPTH:
+                    if len(here.parts) - base >= _MAX_DEPTH:
                         dirs[:] = []
-                    out.extend(Path(dirpath) / n for n in sorted(names) if wanted(Path(dirpath) / n))
+                    out.extend(here / n for n in sorted(names) if wanted(here / n))
         return out
 
     def referenced_by(self, name: str, path: Path) -> List[str]:

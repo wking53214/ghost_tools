@@ -48,10 +48,8 @@ log = get_logger(__name__)
 def _emit(text: str) -> None:
     stream = _OUT["stream"] or sys.stdout
     print(text, file=stream)
-    try:
+    with contextlib.suppress(OSError, ValueError):
         stream.flush()
-    except (OSError, ValueError):
-        pass
 
 
 #: Exit codes. A caller must be able to tell "the scan ran and found
@@ -463,8 +461,8 @@ def _chain_result(args, code, status, message, extra=None) -> int:
     """--verify-chain's answer: text on stdout, or under --json the same
     envelope every other mode uses, with the chain verdict under `chain`."""
     if getattr(args, "json", False):
-        err = None if status != "error" else ("usage", message)
-        _emit(_dump(_envelope(status, code, [], error=err, extra={"chain": extra or {"report": message}})))
+        error = None if status != "error" else ("usage", message)
+        _emit(_dump(_envelope(status, code, [], error=error, extra={"chain": extra or {"report": message}})))
     elif status != "error":
         print(message)
     return code

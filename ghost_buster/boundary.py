@@ -96,10 +96,6 @@ class JoinedModel:
     unresolved: List[str] = field(default_factory=list)
 
 
-def _dotted(path: Path, root: Path) -> str:
-    return ".".join(path.relative_to(root).with_suffix("").parts)
-
-
 def guarded_imports(tree: ast.AST, repo: str, module: str) -> Tuple[List[GuardedImport], List[str]]:
     """Every import written with a fallback, plus notes on the ones whose
     target cannot be named."""

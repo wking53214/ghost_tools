@@ -767,6 +767,7 @@ def _declared_data_reachable(doc: str, members: Set[str]) -> Set[str]:
     if not doc:
         return set()
     claimed: Set[str] = set()
+    all_members = set(members)
     for line in doc.splitlines():
         if not _CLAIMS_FROM_DATA.search(line):
             continue
@@ -775,7 +776,7 @@ def _declared_data_reachable(doc: str, members: Set[str]) -> Set[str]:
         if named:
             claimed |= named
         elif _BLANKET_MEMBER.search(line):
-            claimed |= set(members)
+            claimed |= all_members
     return claimed
 
 
@@ -1473,6 +1474,9 @@ def detect_dead_code(files: List[Path]) -> List[Finding]:
     referenced_names |= _stub_uses(parsed)
 
     for path, tree in parsed.items():
+        module = Path(path)
+        star_imported = (module.stem in star_modules
+                         or (module.stem == "__init__" and module.parent.name in star_modules))
         for node in tree.body:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 if node.name.startswith("__") and node.name.endswith("__"):
@@ -1481,9 +1485,7 @@ def detect_dead_code(files: List[Path]) -> List[Finding]:
                     continue
                 if isinstance(node, ast.ClassDef) and _is_protocol_or_abc(node):
                     continue
-                if (not node.name.startswith("_")
-                        and (Path(path).stem in star_modules
-                             or (Path(path).stem == "__init__" and Path(path).parent.name in star_modules))):
+                if not node.name.startswith("_") and star_imported:
                     # `from this_module import *` makes every public name a use.
                     referenced_names.add(node.name)
                 definitions.setdefault(node.name, []).append(path)

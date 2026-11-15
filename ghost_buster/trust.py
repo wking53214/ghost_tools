@@ -68,6 +68,7 @@ executes nothing regardless of consent.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import subprocess
@@ -108,13 +109,11 @@ def _normalise_remote(url: str) -> str:
 def identity(root: Path) -> str:
     """What consent is recorded against: the origin remote, normalised, or
     the resolved path when there is none."""
-    try:
+    with contextlib.suppress(OSError, subprocess.SubprocessError):
         r = gitsafe.run(["remote", "get-url", "origin"], root=root,
                         capture_output=True, text=True, timeout=10)
         if r.returncode == 0 and r.stdout.strip():
             return _normalise_remote(r.stdout)
-    except (OSError, subprocess.SubprocessError):
-        pass
     return str(Path(root).resolve())
 
 

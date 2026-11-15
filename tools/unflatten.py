@@ -504,7 +504,7 @@ def restore_indented_lines(text):
             line_indent = L - 1
             out.append("\n" + " " * line_indent)
         elif L >= 5:
-            k = next(k for k in range(2, 6) if (L - k) % 4 == 0)   # newlines in the run
+            k = next(k for k in (2, 3, 4, 5) if (L - k) % 4 == 0)   # newlines in the run
             header = text[:m.start()].rstrip().endswith(":")
             # after a header the next line is one level deeper; otherwise it
             # cannot be deeper than the line the run ends. Within that, an

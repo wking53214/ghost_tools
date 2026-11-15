@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import ast
 import builtins
+import contextlib
 import importlib.util
 import sys
 import re
@@ -152,11 +153,9 @@ def resolution(name: str) -> str | None:
         return "typing"
     if name in _BUILTINS:
         return "builtins"
-    try:
+    with contextlib.suppress(ImportError, ValueError, ModuleNotFoundError):
         if importlib.util.find_spec(name) is not None:
             return "installed in this environment"
-    except (ImportError, ValueError, ModuleNotFoundError):
-        pass
     return None
 
 
@@ -175,7 +174,7 @@ _IMPORT_ALIASES = {
 }
 
 
-def _import_names(dist: str) -> set[str]:  # ghost_buster: name-disagreement -- `dist` is `token` at every call site
+def _import_names(dist: str) -> set[str]:
     """Top-level module names a declared distribution plausibly provides."""
     name = _normalise_dist(dist)
     return {name, name.split("_", 1)[0], _IMPORT_ALIASES.get(name, name)}
@@ -213,9 +212,9 @@ def _declared_dependencies(root: Path) -> set[str]:
             # sentinel_os pins with a comment read as its one void.
             if line.startswith(("-", "git+", "http://", "https://")):
                 continue
-            token = re.split(r"[<>=!~;\[\s]", line, maxsplit=1)[0]
-            if token:
-                names |= _import_names(token)  # ghost_buster: name-disagreement -- `token` is `dist` in the signature
+            dist = re.split(r"[<>=!~;\[\s]", line, maxsplit=1)[0]
+            if dist:
+                names |= _import_names(dist)
     pyproject = root / "pyproject.toml"
     if pyproject.is_file():
         text = pyproject.read_text(errors="replace")
@@ -226,8 +225,8 @@ def _declared_dependencies(root: Path) -> set[str]:
         if optional:
             blocks += re.findall(r"=\s*\[(.*?)\]", optional.group(1), re.S)
         for block in blocks:
-            for token in re.findall(r"[\"']([A-Za-z0-9_.\-]+)", block):
-                names |= _import_names(token)  # ghost_buster: name-disagreement -- `token` is `dist` in the signature
+            for dist in re.findall(r"[\"']([A-Za-z0-9_.\-]+)", block):
+                names |= _import_names(dist)
     return names
 
 
@@ -750,7 +749,7 @@ def detect_debris_structure(path: Path, source: str | None = None
     )
     companion = _companion(path)
     if companion is not None:
-        try:
+        with contextlib.suppress(SyntaxError, OSError):
             tree = ast.parse(companion.read_text(errors="replace"))
             their = {n.name for n in ast.walk(tree) if isinstance(n, ast.ClassDef)}
             shared = sorted(set(classes) & their)
@@ -762,8 +761,6 @@ def detect_debris_structure(path: Path, source: str | None = None
                    "for it, not a lost dependency" if not shared else
                    ": the same names survive there, so compare before treating this as lost")
             )
-        except (SyntaxError, OSError):
-            pass
     yield NegativeEvidence(
         kind=EvidenceKind.DEBRIS_STRUCTURE, detail=detail, file=str(path),
         observed=f"{len(structure)} header tokens in order",
@@ -846,11 +843,9 @@ def detect_dangling_in_debris(path: Path, source: str | None = None
     and this would be strictly worse.
     """
     text = source if source is not None else path.read_text(errors="replace")
-    try:
+    with contextlib.suppress(SyntaxError):
         ast.parse(text)
         return
-    except SyntaxError:
-        pass
 
     # Defined here, or imported here. Counting only class definitions reported
     # every imported type as missing code: the first real specimen this ran on

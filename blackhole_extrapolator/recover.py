@@ -64,6 +64,7 @@ whitespace or this module has nothing to say.
 from __future__ import annotations
 
 import ast
+import contextlib
 import hashlib
 import html
 import json
@@ -458,15 +459,12 @@ def recovered_name(path: Path, root: Path | None = None) -> str:
     """
     path = Path(path)
     if root is not None:
-        try:
+        with contextlib.suppress(ValueError):
             relative = path.resolve().relative_to(Path(root).resolve())
             return relative.with_suffix("").as_posix().replace("/", "__") + ".recovered.py"
-        except ValueError:
-            pass
     return path.stem + ".recovered.py"
 
 
-# ghost_buster: name-disagreement -- `recovery` is `result` at every call site
 def write_recovery(recovery: Recovery, into: Path, root: Path | None = None) -> Path:
     """Write one recovered original under `into`, verbatim.
 

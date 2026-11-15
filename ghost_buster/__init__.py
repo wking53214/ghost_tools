@@ -11,6 +11,7 @@ holds the two in agreement either way.
 """
 from __future__ import annotations
 
+import contextlib
 import tomllib
 from importlib.metadata import PackageNotFoundError, version as _installed_version
 from pathlib import Path
@@ -45,11 +46,9 @@ def _read_version() -> str:
     else is running.
     """
     pyproject = Path(__file__).resolve().parent.parent / "pyproject.toml"
-    try:
+    with contextlib.suppress(OSError, KeyError, TypeError, tomllib.TOMLDecodeError):
         with pyproject.open("rb") as fh:
             return str(tomllib.load(fh)["project"]["version"])
-    except (OSError, KeyError, TypeError, tomllib.TOMLDecodeError):
-        pass
     try:
         return _installed_version(_DISTRIBUTION)
     except PackageNotFoundError:

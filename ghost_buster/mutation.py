@@ -37,6 +37,7 @@ Stdlib only, like the rest of the mechanical layer.
 from __future__ import annotations
 
 import ast
+import contextlib
 import os
 import shutil
 import subprocess
@@ -265,9 +266,8 @@ def _import_map(module: ast.Module) -> Dict[str, Tuple[str, Optional[str]]]:
     return out
 
 
-# ghost_buster: name-disagreement -- `dotted` is `mod` at every call site
-def _module_file(root: Path, dotted: str) -> Optional[Path]:
-    rel = Path(*dotted.split("."))
+def _module_file(root: Path, mod: str) -> Optional[Path]:
+    rel = Path(*mod.split("."))
     for candidate in (root / rel.with_suffix(".py"), root / rel / "__init__.py"):
         if candidate.exists():
             return candidate
@@ -334,7 +334,7 @@ def _resolve_targets(root: Path, test_file: Path, module: ast.Module, func: ast.
         f = n.func
         if isinstance(f, ast.Name) and f.id in imports:
             mod, attr = imports[f.id]
-            file = _module_file(root, mod)  # ghost_buster: name-disagreement -- `mod` is `dotted` in the signature
+            file = _module_file(root, mod)
             if file and attr:
                 add(file, attr)
         elif isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name):
@@ -342,18 +342,16 @@ def _resolve_targets(root: Path, test_file: Path, module: ast.Module, func: ast.
             if base in imports:
                 mod, attr = imports[base]
                 if attr is None:                       # import mod; mod.func()
-                    # ghost_buster: name-disagreement -- `mod` is `dotted` in the signature
                     file = _module_file(root, mod)
                     if file:
                         add(file, f.attr)
                 else:                                  # from mod import Cls; Cls.method()
-                    # ghost_buster: name-disagreement -- `mod` is `dotted` in the signature
                     file = _module_file(root, mod)
                     if file:
                         add(file, f"{attr}.{f.attr}")
             elif base in instance_of and instance_of[base] in imports:
                 mod, attr = imports[instance_of[base]]
-                file = _module_file(root, mod)  # ghost_buster: name-disagreement -- `mod` is `dotted` in the signature
+                file = _module_file(root, mod)
                 if file and attr:
                     add(file, f"{attr}.{f.attr}")
             else:
@@ -364,7 +362,6 @@ def _resolve_targets(root: Path, test_file: Path, module: ast.Module, func: ast.
                 for (mod, attr) in imports.values():
                     if attr is None:
                         continue
-                    # ghost_buster: name-disagreement -- `mod` is `dotted` in the signature
                     file = _module_file(root, mod)
                     if file is None:
                         continue
@@ -583,10 +580,8 @@ class _Scratch:
         if link_siblings:
             for sibling in self.root.parent.iterdir():
                 if sibling.is_dir() and sibling != self.root and not (self.tmp / sibling.name).exists():
-                    try:
+                    with contextlib.suppress(OSError):
                         os.symlink(sibling, self.tmp / sibling.name)
-                    except OSError:
-                        pass
 
     def path_for(self, original: Path) -> Path:
         return self.copy / Path(original).resolve().relative_to(self.root)
@@ -658,7 +653,6 @@ def run_mutations(
                 run.unjudged.append((cand, f"test does not pass unmutated ({outcome}): {tail[-120:]}"))
                 continue
 
-            # ghost_buster: name-disagreement -- `max_mutants_per_candidate` is `cap` in the signature
             mutants = _plan_mutants(cand, root, file_list, operators, max_mutants_per_candidate)
             if not mutants:
                 reason = (
@@ -713,8 +707,8 @@ def run_mutations(
     return run
 
 
-# ghost_buster: name-disagreement -- `cap` is `max_mutants_per_candidate` at every call site
-def _plan_mutants(cand: Candidate, root: Path, files: List[Path], operators: Sequence[str], cap: int) -> List[Mutant]:
+def _plan_mutants(cand: Candidate, root: Path, files: List[Path], operators: Sequence[str],
+                  max_mutants_per_candidate: int) -> List[Mutant]:
     plans: List[Mutant] = []
     if cand.shape == "guarded_assertion":
         for index in range(cand.guard_count):
@@ -728,7 +722,7 @@ def _plan_mutants(cand: Candidate, root: Path, files: List[Path], operators: Seq
     for target_file, qual in cand.targets:
         for op in operators:
             plans.append(Mutant(cand, op, target_file, qual, ""))
-            if len(plans) >= cap:
+            if len(plans) >= max_mutants_per_candidate:
                 return plans
     return plans
 

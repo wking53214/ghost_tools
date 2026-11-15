@@ -38,6 +38,7 @@ the silence problem wearing a different hat.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import subprocess
@@ -373,10 +374,8 @@ class Ledger:
                 fh.write(payload)
             os.replace(tmp, self.path)
         except BaseException:
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(tmp)
-            except OSError:
-                pass
             raise
 
     def _follow_renames(self, findings: Sequence[Finding], seen_now: set,
