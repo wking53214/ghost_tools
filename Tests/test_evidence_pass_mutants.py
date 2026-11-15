@@ -47,8 +47,8 @@ MUTANTS = [
      "        for f in authoritative(findings):\n",
      "        for f in findings:\n"),
     ("installed metadata answers first again", _I,
-     "    pyproject = Path(__file__).resolve().parent.parent / \"pyproject.toml\"\n    try:\n        with pyproject.open(\"rb\") as fh:\n",
-     "    try:\n        return _installed_version(_DISTRIBUTION)\n    except PackageNotFoundError:\n        pass\n    pyproject = Path(__file__).resolve().parent.parent / \"pyproject.toml\"\n    try:\n        with pyproject.open(\"rb\") as fh:\n"),
+     "    pyproject = Path(__file__).resolve().parent.parent / \"pyproject.toml\"\n    with contextlib.suppress(OSError, KeyError, TypeError, tomllib.TOMLDecodeError):\n        with pyproject.open(\"rb\") as fh:\n",
+     "    try:\n        return _installed_version(_DISTRIBUTION)\n    except PackageNotFoundError:\n        pass\n    pyproject = Path(__file__).resolve().parent.parent / \"pyproject.toml\"\n    with contextlib.suppress(OSError, KeyError, TypeError, tomllib.TOMLDecodeError):\n        with pyproject.open(\"rb\") as fh:\n"),
 ]
 
 CENSUS_MUTANTS = [
