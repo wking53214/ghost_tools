@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from ghost_buster.pipeline import _collect_files
 from ghost_buster.structure import build_model, render_model
 
@@ -28,31 +30,34 @@ def _module(model, dotted):
     return next(m for m in model.modules if m.dotted == dotted)
 
 
-def test_each_raise_statement_is_one_site(tmp_path):
-    model = _model_for(
-        tmp_path,
+_RAISE_SITES = [
+    pytest.param(
         "def f(x):\n"
         "    if x < 0:\n"
         "        raise ValueError('negative')\n"
         "    if x > 9:\n"
         "        raise ValueError('large')\n"
         "    raise KeyError\n",
-    )
-
-    assert _module(model, "demo.core").raise_sites == 3
-
-
-def test_a_bare_reraise_is_not_a_site(tmp_path):
-    model = _model_for(
-        tmp_path,
+        3,
+        id="each_raise_statement_is_one_site",
+    ),
+    pytest.param(
         "def f():\n"
         "    try:\n"
         "        return 1\n"
         "    except OSError:\n"
         "        raise\n",
-    )
+        0,
+        id="a_bare_reraise_is_not_a_site",
+    ),
+]
 
-    assert _module(model, "demo.core").raise_sites == 0
+
+@pytest.mark.parametrize("source,sites", _RAISE_SITES)
+def test_raise_sites_are_counted(tmp_path, source, sites):
+    model = _model_for(tmp_path, source)
+
+    assert _module(model, "demo.core").raise_sites == sites
 
 
 def test_lines_count_the_physical_lines_of_the_file(tmp_path):

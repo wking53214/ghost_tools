@@ -794,14 +794,26 @@ def test_doc_test_count_drift_still_flags_an_ordinary_live_claim(tmp_path):
     assert len(detect_doc_test_count_drift([readme, _twenty_tests(tmp_path)])) == 1
 
 
-def test_doc_test_count_drift_ignores_claims_within_tolerance(tmp_path):
-    """A doc that's merely a commit or two behind (small natural lag) is
-    not a ghost -- both min_growth_ratio and min_absolute_growth must be
-    cleared before this fires."""
-    readme = _write(tmp_path, "README.md", "18 tests passing.\n")
+_NOT_DRIFT = [
+    # A doc that's merely a commit or two behind (small natural lag) is
+    # not a ghost -- both min_growth_ratio and min_absolute_growth must be
+    # cleared before this fires.
+    pytest.param("18 tests passing.\n", 20,
+                 id="doc_test_count_drift_ignores_claims_within_tolerance"),
+    # A version number or an unrelated count sitting near the word
+    # 'test' in different phrasing must not be mistaken for a test-count
+    # claim (e.g. calibration set size, phrased as 'cases' not 'tests').
+    pytest.param("Version 0.15.22. The starter set is 24 cases, each with a reason.\n", 50,
+                 id="doc_test_count_drift_ignores_unrelated_numbers"),
+]
+
+
+@pytest.mark.parametrize("readme_text,test_count", _NOT_DRIFT)
+def test_doc_test_count_drift_stays_quiet(tmp_path, readme_text, test_count):
+    readme = _write(tmp_path, "README.md", readme_text)
     test_file = _write(
         tmp_path, "test_things.py",
-        "\n".join(f"def test_case_{i}():\n    assert True\n" for i in range(20)),
+        "\n".join(f"def test_case_{i}():\n    assert True\n" for i in range(test_count)),
     )
     findings = detect_doc_test_count_drift([readme, test_file])
     assert findings == []
@@ -814,22 +826,6 @@ def test_doc_test_count_drift_does_not_flag_an_overcount_claim(tmp_path):
     be flagged."""
     readme = _write(tmp_path, "README.md", "500 tests passing.\n")
     test_file = _write(tmp_path, "test_things.py", "def test_one():\n    assert True\n")
-    findings = detect_doc_test_count_drift([readme, test_file])
-    assert findings == []
-
-
-def test_doc_test_count_drift_ignores_unrelated_numbers(tmp_path):
-    """A version number or an unrelated count sitting near the word
-    'test' in different phrasing must not be mistaken for a test-count
-    claim (e.g. calibration set size, phrased as 'cases' not 'tests')."""
-    readme = _write(
-        tmp_path, "README.md",
-        "Version 0.15.22. The starter set is 24 cases, each with a reason.\n",
-    )
-    test_file = _write(
-        tmp_path, "test_things.py",
-        "\n".join(f"def test_case_{i}():\n    assert True\n" for i in range(50)),
-    )
     findings = detect_doc_test_count_drift([readme, test_file])
     assert findings == []
 

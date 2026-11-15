@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import textwrap
 
+import pytest
 
 from ghost_buster.mechanical import detect_unreachable_declared_state
 from ghost_buster.schema import Severity
@@ -511,11 +512,11 @@ def test_a_claim_alone_never_suppresses(tmp_path):
     assert claimed[0].severity is Severity.CRITICAL
 
 
-def test_a_literal_argument_only_accounts_for_its_own_member(tmp_path):
-    """`Phase("middle")` accounts for MIDDLE and says nothing about BETWEEN.
-    Treating every construction as a blanket data path would suppress real
-    findings wherever anyone wrote one literal."""
-    found = _scan(tmp_path, m='''
+_ONE_LITERAL_ONE_MEMBER = [
+    # `Phase("middle")` accounts for MIDDLE and says nothing about BETWEEN.
+    # Treating every construction as a blanket data path would suppress real
+    # findings wherever anyone wrote one literal.
+    pytest.param('''
         from enum import Enum
 
         class Phase(Enum):
@@ -528,10 +529,35 @@ def test_a_literal_argument_only_accounts_for_its_own_member(tmp_path):
 
         def middle():
             return Phase("middle")
-    ''')
+    ''', {"MIDDLE": "yes", "BETWEEN": "no"},
+        id="a_literal_argument_only_accounts_for_its_own_member"),
+    # `Verdict.__members__["ALLOW"]` names one member, exactly as
+    # `Verdict["ALLOW"]` does. A blanket reading would suppress a real finding
+    # wherever anyone wrote one literal lookup.
+    pytest.param('''
+        from enum import Enum
+
+        class Verdict(Enum):
+            ALLOW = "allow"
+            THROTTLE = "throttle"
+            HALT = "halt"
+
+        def allow():
+            return Verdict.ALLOW
+
+        def throttle():
+            return Verdict.__members__["THROTTLE"]
+    ''', {"THROTTLE": "yes", "HALT": "no"},
+        id="a_literal_members_lookup_only_accounts_for_its_own_member"),
+]
+
+
+@pytest.mark.parametrize("source,expected", _ONE_LITERAL_ONE_MEMBER)
+def test_a_literal_only_accounts_for_its_own_member(tmp_path, source, expected):
+    found = _scan(tmp_path, m=source)
     reach = {f.attributes["member"]: f.attributes["reachable_from_data"]
              for f in found}
-    assert reach == {"MIDDLE": "yes", "BETWEEN": "no"}
+    assert reach == expected
 
 
 def test_mentioning_a_member_is_not_a_claim_about_it(tmp_path):
@@ -753,29 +779,6 @@ def test_a_documented_members_path_is_silent(tmp_path):
     assert _scan(tmp_path, m=documented) == []
 
 
-def test_a_literal_members_lookup_only_accounts_for_its_own_member(tmp_path):
-    """`Verdict.__members__["ALLOW"]` names one member, exactly as
-    `Verdict["ALLOW"]` does. A blanket reading would suppress a real finding
-    wherever anyone wrote one literal lookup."""
-    found = _scan(tmp_path, m='''
-        from enum import Enum
-
-        class Verdict(Enum):
-            ALLOW = "allow"
-            THROTTLE = "throttle"
-            HALT = "halt"
-
-        def allow():
-            return Verdict.ALLOW
-
-        def throttle():
-            return Verdict.__members__["THROTTLE"]
-    ''')
-    reach = {f.attributes["member"]: f.attributes["reachable_from_data"]
-             for f in found}
-    assert reach == {"THROTTLE": "yes", "HALT": "no"}
-
-
 def test_iterating_the_mapping_is_not_a_data_path(tmp_path):
     """Reading no name out of a record reconstructs nothing. Iterating an
     enum yields every member because that is what iterating an enum does,
@@ -797,10 +800,10 @@ def test_iterating_the_mapping_is_not_a_data_path(tmp_path):
     assert found[0].attributes["reachable_from_data"] == "no"
 
 
-def test_a_members_path_on_another_enum_says_nothing_about_this_one(tmp_path):
-    """The mapping is reached through the enum's own name, so the lookup must
-    not answer for a different enum that happens to be in scope."""
-    found = _scan(tmp_path, m='''
+_NOT_THIS_ENUMS_MEMBERS = [
+    # The mapping is reached through the enum's own name, so the lookup must
+    # not answer for a different enum that happens to be in scope.
+    pytest.param('''
         from enum import Enum
 
         class Verdict(Enum):
@@ -815,17 +818,12 @@ def test_a_members_path_on_another_enum_says_nothing_about_this_one(tmp_path):
 
         def parse(name):
             return Other.__members__.get(name)
-    ''')
-    assert [f.attributes["member"] for f in found] == ["HALT"]
-    assert found[0].attributes["reachable_from_data"] == "no"
-
-
-def test_a_members_mapping_on_something_that_is_not_an_enum_is_not_a_path(tmp_path):
-    """`__members__` is an ordinary attribute name that anything may define.
-    The lookup counts only when the mapping belongs to an enum this scan
-    declared, or every class exposing a mapping under that name would answer
-    for every enum in the file."""
-    found = _scan(tmp_path, m='''
+    ''', id="a_members_path_on_another_enum_says_nothing_about_this_one"),
+    # `__members__` is an ordinary attribute name that anything may define.
+    # The lookup counts only when the mapping belongs to an enum this scan
+    # declared, or every class exposing a mapping under that name would answer
+    # for every enum in the file.
+    pytest.param('''
         from enum import Enum
 
         class Verdict(Enum):
@@ -840,6 +838,12 @@ def test_a_members_mapping_on_something_that_is_not_an_enum_is_not_a_path(tmp_pa
 
         def parse(name):
             return Registry.__members__.get(name)
-    ''')
+    ''', id="a_members_mapping_on_something_that_is_not_an_enum_is_not_a_path"),
+]
+
+
+@pytest.mark.parametrize("source", _NOT_THIS_ENUMS_MEMBERS)
+def test_a_members_mapping_answers_only_for_its_own_enum(tmp_path, source):
+    found = _scan(tmp_path, m=source)
     assert [f.attributes["member"] for f in found] == ["HALT"]
     assert found[0].attributes["reachable_from_data"] == "no"

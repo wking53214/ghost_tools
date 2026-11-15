@@ -4,6 +4,8 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
+import pytest
+
 from ghost_buster import corpus
 from ghost_buster.mechanical import registered_detectors
 from ghost_buster.schema import Category, Severity, Status
@@ -46,8 +48,8 @@ def test_a_stub_test_is_major_and_an_assertless_one_is_minor(tmp_path):
                      ("test_runs", "assertless", Severity.MINOR)]
 
 
-def test_every_way_of_asserting_counts(tmp_path):
-    found = _shapes(tmp_path, '''\
+_NOTHING_TO_REPORT = [
+    pytest.param('''\
         import pytest
         import unittest
 
@@ -98,7 +100,26 @@ def test_every_way_of_asserting_counts(tmp_path):
         class TestUnit(unittest.TestCase):
             def test_method(self):
                 self.assertEqual(1, 1)
-    ''')
+    ''', id="every_way_of_asserting_counts"),
+    pytest.param('''\
+        import pytest
+
+
+        @pytest.mark.xfail(reason="known")
+        def test_later():
+            pass
+
+
+        @pytest.mark.skip
+        def test_never():
+            pass
+    ''', id="xfail_and_skip_are_left_alone"),
+]
+
+
+@pytest.mark.parametrize("body", _NOTHING_TO_REPORT)
+def test_nothing_is_reported(tmp_path, body):
+    found = _shapes(tmp_path, body)
     assert found == []
 
 
@@ -150,23 +171,6 @@ def test_mock_only_is_named_and_a_real_assertion_beside_it_clears_it(tmp_path):
             assert result == "ok"
     ''')
     assert found == [("test_sends", "mock_only", Severity.MINOR)]
-
-
-def test_xfail_and_skip_are_left_alone(tmp_path):
-    found = _shapes(tmp_path, '''\
-        import pytest
-
-
-        @pytest.mark.xfail(reason="known")
-        def test_later():
-            pass
-
-
-        @pytest.mark.skip
-        def test_never():
-            pass
-    ''')
-    assert found == []
 
 
 def test_only_test_files_are_read(tmp_path):

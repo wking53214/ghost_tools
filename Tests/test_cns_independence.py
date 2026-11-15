@@ -13,6 +13,8 @@ import sys
 import textwrap
 import tomllib
 
+import pytest
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 CONFIG = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
@@ -101,8 +103,8 @@ def test_ghost_still_does_its_job_with_cns_blocked(tmp_path):
     _ok(done)
 
 
-def test_the_existing_adapter_still_answers_with_cns_blocked():
-    done = _run(
+_BLOCKED_SCRIPTS = [
+    pytest.param(
         """
         from ghost_buster import cns_adapter
         from ghost_buster.schema import Status
@@ -111,13 +113,10 @@ def test_the_existing_adapter_still_answers_with_cns_blocked():
         assert r.translation.authority == "advisory_only" and r.gate_result is None
         assert r.translation.cns_outcome is None
         print('ok')
-        """
-    )
-    _ok(done)
-
-
-def test_each_cns_backed_function_says_what_is_missing_when_cns_is_blocked():
-    done = _run(
+        """,
+        id="the_existing_adapter_still_answers_with_cns_blocked",
+    ),
+    pytest.param(
         """
         from ghost_buster.cns_adapter import CnsNotInstalled, FindingGate, check_report, cns_chain
         for call in (FindingGate, cns_chain, lambda: check_report([])):
@@ -129,22 +128,25 @@ def test_each_cns_backed_function_says_what_is_missing_when_cns_is_blocked():
             else:
                 raise SystemExit("did not raise")
         print('ok')
-        """
-    )
-    _ok(done)
-
-
-def test_constructing_a_gate_fails_at_construction_not_at_first_use():
-    done = _run(
+        """,
+        id="each_cns_backed_function_says_what_is_missing_when_cns_is_blocked",
+    ),
+    pytest.param(
         """
         from ghost_buster.cns_adapter import CnsNotInstalled, FindingGate
         try:
             FindingGate()
         except CnsNotInstalled:
             print('ok')
-        """
-    )
-    _ok(done)
+        """,
+        id="constructing_a_gate_fails_at_construction_not_at_first_use",
+    ),
+]
+
+
+@pytest.mark.parametrize("script", _BLOCKED_SCRIPTS)
+def test_with_cns_blocked(script):
+    _ok(_run(script))
 
 
 def _imports_of(path: pathlib.Path) -> list[str]:
