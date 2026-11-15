@@ -10,6 +10,8 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
+import pytest
+
 from ghost_buster.deadend import (
     DETECTOR,
     DOCSTRING_ONLY,
@@ -132,39 +134,24 @@ def test_the_finding_refuses_to_claim_never(tmp_path):
 
 # ------------------------------------------------ a seam declares itself
 
-def test_an_abstract_base_is_a_seam(tmp_path):
-    files = _tree(tmp_path, {
-        "core.py": '''\
+_SEAM_CORES = [
+    pytest.param('''\
             from abc import ABC
 
 
             class UniversalAdapter(ABC):
                 def execute(self, request):
                     raise NotImplementedError
-        ''',
-        "runner.py": "def run(a, r):\n    return a.execute(r)\n",
-    })
-    assert find_dead_ends(files) == []
-
-
-def test_a_protocol_is_a_seam(tmp_path):
-    files = _tree(tmp_path, {
-        "core.py": '''\
+        ''', id="an_abstract_base_is_a_seam"),
+    pytest.param('''\
             from typing import Protocol
 
 
             class Adapter(Protocol):
                 def execute(self, request):
                     ...
-        ''',
-        "runner.py": "def run(a, r):\n    return a.execute(r)\n",
-    })
-    assert find_dead_ends(files) == []
-
-
-def test_an_abstractmethod_decorator_is_a_seam(tmp_path):
-    files = _tree(tmp_path, {
-        "core.py": '''\
+        ''', id="a_protocol_is_a_seam"),
+    pytest.param('''\
             from abc import abstractmethod
 
 
@@ -172,7 +159,14 @@ def test_an_abstractmethod_decorator_is_a_seam(tmp_path):
                 @abstractmethod
                 def execute(self, request):
                     raise NotImplementedError
-        ''',
+        ''', id="an_abstractmethod_decorator_is_a_seam"),
+]
+
+
+@pytest.mark.parametrize("core", _SEAM_CORES)
+def test_a_declared_seam_is_not_a_dead_end(tmp_path, core):
+    files = _tree(tmp_path, {
+        "core.py": core,
         "runner.py": "def run(a, r):\n    return a.execute(r)\n",
     })
     assert find_dead_ends(files) == []
@@ -259,22 +253,39 @@ def test_a_no_op_span_is_not_a_dead_end(tmp_path):
     assert find_dead_ends(files) == []
 
 
-def test_a_stateless_init_is_not_a_dead_end(tmp_path):
-    """Measured false positive: ATS's AuditReportValidator.__init__.
-
-    `__init__` reaches the `called` set only through an explicit
-    `super().__init__()` somewhere, never through construction, so the
-    unrelated class below is what makes this test test anything. Its first
-    version constructed the validator instead and passed because the name
-    was never called at all, which a mutant caught.
-    """
-    files = _tree(tmp_path, {
+_NOT_DEAD_ENDS = [
+    # Measured false positive: ATS's AuditReportValidator.__init__.
+    #
+    # `__init__` reaches the `called` set only through an explicit
+    # `super().__init__()` somewhere, never through construction, so the
+    # unrelated class below is what makes this test test anything. Its first
+    # version constructed the validator instead and passed because the name
+    # was never called at all, which a mutant caught.
+    pytest.param({
         "v.py": "class AuditReportValidator:\n"
                 "    def __init__(self):\n        pass\n\n\n"
                 "class Unrelated:\n"
                 "    def __init__(self):\n        super().__init__()\n",
-    })
-    assert find_dead_ends(files) == []
+    }, id="a_stateless_init_is_not_a_dead_end"),
+    # Measured false positives: _FakeClient.close, _FakeConn.close,
+    # NoneReturningDecider.safety_check, RangePublishingIndex.add.
+    pytest.param({
+        "tests/test_thing.py": '''\
+            class _FakeConn:
+                def close(self):
+                    pass
+
+
+            def test_it():
+                _FakeConn().close()
+        ''',
+    }, id="a_test_double_is_not_a_dead_end"),
+]
+
+
+@pytest.mark.parametrize("sources", _NOT_DEAD_ENDS)
+def test_an_empty_body_that_is_the_implementation(tmp_path, sources):
+    assert find_dead_ends(_tree(tmp_path, sources)) == []
 
 
 def test_a_word_that_merely_starts_with_null_is_still_checked(tmp_path):
@@ -289,21 +300,9 @@ def test_a_word_that_merely_starts_with_null_is_still_checked(tmp_path):
 
 # --------------------------------------------------------------- test code
 
-def test_a_test_double_is_not_a_dead_end(tmp_path):
-    """Measured false positives: _FakeClient.close, _FakeConn.close,
-    NoneReturningDecider.safety_check, RangePublishingIndex.add."""
-    files = _tree(tmp_path, {
-        "tests/test_thing.py": '''\
-            class _FakeConn:
-                def close(self):
-                    pass
-
-
-            def test_it():
-                _FakeConn().close()
-        ''',
-    })
-    assert find_dead_ends(files) == []
+# A test double is the test-code case of an empty body that is the
+# implementation; it is checked with the stateless __init__ above, in
+# test_an_empty_body_that_is_the_implementation.
 
 
 def test_a_stub_defined_in_a_test_file_is_not_reported(tmp_path):

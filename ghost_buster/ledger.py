@@ -38,6 +38,7 @@ the silence problem wearing a different hat.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import subprocess
@@ -367,16 +368,14 @@ class Ledger:
         if create_dirs:
             self.path.parent.mkdir(parents=True, exist_ok=True)
         payload = json.dumps(self.to_dict(), indent=2, sort_keys=False) + "\n"
-        fd, tmp = tempfile.mkstemp(dir=str(self.path.parent), prefix=".ghost_ledger.", suffix=".tmp")
+        fd, staging = tempfile.mkstemp(dir=str(self.path.parent), prefix=".ghost_ledger.", suffix=".tmp")
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as fh:
                 fh.write(payload)
-            os.replace(tmp, self.path)
+            os.replace(staging, self.path)
         except BaseException:
-            try:
-                os.unlink(tmp)
-            except OSError:
-                pass
+            with contextlib.suppress(OSError):
+                os.unlink(staging)
             raise
 
     def _follow_renames(self, findings: Sequence[Finding], seen_now: set,
@@ -498,6 +497,26 @@ class Ledger:
         if scanned is not None:
             run.counts["scanned"] = int(scanned)
 
+        self._carry_previous_ids(findings)
+
+        seen_now = {f.id for f in findings}
+        by_id = {f.id: f for f in findings}
+
+        # A file that moved is not a defect that was fixed. Run BEFORE the
+        # absence loop below: it re-keys a carried history onto the id the
+        # finding has now, which is in `seen_now`, so the loop passes over
+        # it and the streak is never broken.
+        self._follow_renames(findings, seen_now, commit, root)
+
+        self._mark_absent(seen_now)
+        for fid in sorted(seen_now):
+            self._fold_sighting(by_id[fid], at, commit)
+
+        self._append_run(run)
+        return run
+
+    def _carry_previous_ids(self, findings: Sequence[Finding]) -> None:
+        """Re-key histories recorded under an id a finding no longer has."""
         # A history recorded under the id a finding had before ids were
         # relative to the scan root is the same finding's history: carry it
         # onto the current id, so the change of spelling is not read as one
@@ -509,15 +528,8 @@ class Ledger:
                     hist.finding_id = f.id
                     self.findings[f.id] = hist
 
-        seen_now = {f.id for f in findings}
-        by_id = {f.id: f for f in findings}
-
-        # A file that moved is not a defect that was fixed. Run BEFORE the
-        # absence loop below: it re-keys a carried history onto the id the
-        # finding has now, which is in `seen_now`, so the loop passes over
-        # it and the streak is never broken.
-        self._follow_renames(findings, seen_now, commit, root)
-
+    def _mark_absent(self, seen_now: set) -> None:
+        """Break the streak of every remembered finding this run did not see."""
         for fid, hist in self.findings.items():
             if fid in seen_now:
                 continue
@@ -526,32 +538,35 @@ class Ledger:
             hist.consecutive = 0
             hist.absent_last_run = True
 
-        for fid in sorted(seen_now):
-            f = by_id[fid]
-            seen = self.findings.get(fid)
-            if seen is None:
-                seen = FindingHistory(finding_id=fid, first_seen=at, first_commit=commit)
-                self.findings[fid] = seen
-            elif seen.absent_last_run:
-                # It was gone and it is back. This is the fact the baseline
-                # structurally cannot hold: to a set of ids, a return and a
-                # first sighting are the same event.
-                seen.returns += 1
-            seen.detector = f.detector
-            seen.file = f.evidence.file
-            seen.summary = f.summary
-            seen.severity = f.severity.value if hasattr(f.severity, "value") else str(f.severity)
-            seen.last_seen = at
-            seen.last_commit = commit
-            seen.runs_seen += 1
-            seen.consecutive += 1
-            seen.absent_last_run = False
-            if f.disposition:
-                seen.dispositions.append({
-                    "at": at, "state": str(f.disposition),
-                    "note": f.disposition_note or "",
-                })
+    def _fold_sighting(self, f: Finding, at: str, commit: str) -> None:
+        """Fold one finding seen this run into its history."""
+        fid = f.id
+        seen = self.findings.get(fid)
+        if seen is None:
+            seen = FindingHistory(finding_id=fid, first_seen=at, first_commit=commit)
+            self.findings[fid] = seen
+        elif seen.absent_last_run:
+            # It was gone and it is back. This is the fact the baseline
+            # structurally cannot hold: to a set of ids, a return and a
+            # first sighting are the same event.
+            seen.returns += 1
+        seen.detector = f.detector
+        seen.file = f.evidence.file
+        seen.summary = f.summary
+        seen.severity = f.severity.value if hasattr(f.severity, "value") else str(f.severity)
+        seen.last_seen = at
+        seen.last_commit = commit
+        seen.runs_seen += 1
+        seen.consecutive += 1
+        seen.absent_last_run = False
+        if f.disposition:
+            seen.dispositions.append({
+                "at": at, "state": str(f.disposition),
+                "note": f.disposition_note or "",
+            })
 
+    def _append_run(self, run: RunRecord) -> None:
+        """Close the chain over `run`, keep it, and age out what the cap drops."""
         # The link is computed LAST, over the run exactly as it will be
         # written: every count is set by now. Computing it at construction
         # meant the stored link described a run that no longer existed by
@@ -568,7 +583,6 @@ class Ledger:
                     key = f"check.{name}.{state}"
                     self.totals[key] = self.totals.get(key, 0) + 1
             self.runs = self.runs[-MAX_RUNS_KEPT:]
-        return run
 
     # ------------------------------------------------------------- derive
 

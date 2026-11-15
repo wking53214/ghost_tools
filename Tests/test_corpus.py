@@ -124,7 +124,9 @@ def test_the_same_tree_object_is_shared(tmp_path):
     makes the read-only contract matter."""
     files = _tree(tmp_path, {"a.py": GOOD})
     corpus.reset()
-    assert corpus.parse(files[0]) is corpus.parse(files[0])
+    first = corpus.parse(files[0])
+    second = corpus.parse(files[0])
+    assert first is second
 
 
 def test_fresh_is_never_the_shared_tree(tmp_path):

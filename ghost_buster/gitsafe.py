@@ -62,12 +62,12 @@ HARDENING: List[str] = [
 #: Sub-commands that take the diff-driver switches.
 _DIFF_LIKE = frozenset({"diff", "show", "log"})
 
-_DROP_ENV = (
+_DROP_ENV = frozenset({
     "GIT_EXTERNAL_DIFF", "GIT_SSH", "GIT_SSH_COMMAND", "GIT_PROXY_COMMAND",
     "GIT_ASKPASS", "GIT_PAGER", "GIT_EDITOR", "GIT_SEQUENCE_EDITOR",
     "GIT_CONFIG_COUNT", "GIT_CONFIG_PARAMETERS", "GIT_DIR", "GIT_WORK_TREE",
     "GIT_INDEX_FILE", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-)
+})
 
 
 def env(base: Optional[Dict[str, str]] = None) -> Dict[str, str]:

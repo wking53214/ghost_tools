@@ -100,4 +100,6 @@ def test_duplicate_candidates_are_collapsed_the_same_way_in_every_process(tmp_pa
 
 def test_lone_surrogates_in_json_do_not_crash_dedup(tmp_path):
     (tmp_path / "s.json").write_text('{"text": "def f():\\n    return \\ud800\\n    x = 1\\n    y = 2\\n"}')
-    harvest([tmp_path])  # must not raise
+    sources = harvest([tmp_path])
+    assert len(sources) == 1
+    assert sources[0].text.startswith("def f():")

@@ -65,7 +65,6 @@ class DetectorPriors:
                 "notes": list(self.notes)}
 
 
-# ghost_buster: name-disagreement -- `later_cases` is `later` at every call site
 def _verdict(case, later_cases, ledger: Optional[Ledger]) -> str:
     """Did this decision hold? See the module docstring."""
     if not case.finding_id or not case.decision:
@@ -95,9 +94,8 @@ def build(casefile: Casefile, ledger: Optional[Ledger]) -> List[DetectorPriors]:
         row = by_detector.setdefault(c.detector, DetectorPriors(c.detector))
         row.outcomes[c.outcome] = row.outcomes.get(c.outcome, 0) + 1
         if c.outcome in ("real", "false"):
-            later = [o for o in by_finding.get(c.finding_id, []) if o.when > c.when] if c.finding_id else []
-            # ghost_buster: name-disagreement -- `later` is `later_cases` in the signature
-            v = _verdict(c, later, ledger)
+            later_cases = [o for o in by_finding.get(c.finding_id, []) if o.when > c.when] if c.finding_id else []
+            v = _verdict(c, later_cases, ledger)
             row.verdicts[v] = row.verdicts.get(v, 0) + 1
         if c.note:
             row.notes.insert(0, c.note)

@@ -11,6 +11,8 @@ import ast
 import textwrap
 from pathlib import Path
 
+import pytest
+
 from ghost_buster import corpus
 from ghost_buster.schema import Category, Layer, Severity, Status
 from ghost_buster.speed import (
@@ -50,20 +52,6 @@ def test_a_list_membership_inside_a_loop_is_a_pitstop(tmp_path):
     assert found[0].line == 7
 
 
-def test_membership_against_a_set_is_not(tmp_path):
-    """The tree KNOWS the container is a list only when it saw the literal.
-    A set, or a name it cannot see bound, is left alone."""
-    files = _tree(tmp_path, {"m.py": '''\
-        BLOCKED = {"a", "b", "c", "d", "e", "f", "g", "h", "i", "j"}
-        OTHER = load()
-
-
-        def scan(items):
-            return sum(1 for i in items if i in BLOCKED or i in OTHER)
-    '''})
-    assert find_pitstops(files) == []
-
-
 def test_a_call_whose_arguments_never_change_is_a_pitstop(tmp_path):
     files = _tree(tmp_path, {"m.py": '''\
         def scan(items, root):
@@ -76,20 +64,6 @@ def test_a_call_whose_arguments_never_change_is_a_pitstop(tmp_path):
     found = find_pitstops(files)
     assert [p.kind for p in found] == [INVARIANT_CALL]
     assert "load(...)" in found[0].what
-
-
-def test_a_call_whose_argument_another_call_receives_is_not_invariant(tmp_path):
-    """operate.py: `remedy(root, files)` then `rescan(files)`. The remedy
-    edited what `files` names, so the rescan is not the same work twice.
-    The first serum reported it; this is that lesson."""
-    files = _tree(tmp_path, {"m.py": '''\
-        def operate(root, files, remedies):
-            for remedy in remedies:
-                remedy(root, files)
-                after = rescan(files)
-                commit(root, "cut")
-    '''})
-    assert find_pitstops(files) == []
 
 
 def test_a_method_called_on_the_argument_is_a_change(tmp_path):
@@ -127,67 +101,6 @@ def test_reads_through_cheap_builtins_and_constructors_do_not_count(tmp_path):
     assert "portable(...)" in found[0].what
 
 
-def test_membership_against_a_tiny_constant_is_not_a_pitstop(tmp_path):
-    """`name in ("self", "cls")` costs what a set costs. The first serum
-    reported three of these; hoisting them changed nothing measurable."""
-    files = _tree(tmp_path, {"m.py": '''\
-        SELF = ("self", "cls")
-        BIG = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l"]
-
-        def go(names):
-            out = []
-            for n in names:
-                if n in SELF:
-                    continue
-                if n in BIG:
-                    out.append(n)
-            return out
-    '''})
-    found = find_pitstops(files)
-    assert [p.what for p in found] == ["`in BIG`, a module-level list"]
-
-
-def test_a_memo_computed_once_behind_a_none_check_is_not_a_pitstop(tmp_path):
-    """`if x is None: x = f(root)` inside a loop runs f once, not once per
-    pass. The last pitstop the first serum left on ghost_tools was exactly
-    this shape in detect_missing_imports."""
-    files = _tree(tmp_path, {"m.py": '''\
-        def scan(root, nodes):
-            declares = None
-            out = []
-            for node in nodes:
-                if declares is None:
-                    declares = manifest(root)
-                out.append((node, declares))
-            return out
-    '''})
-    assert find_pitstops(files) == []
-
-
-def test_a_container_built_fresh_and_filled_each_pass_is_not_a_pitstop(tmp_path):
-    """cns_map.py: `all_hashes = defaultdict(set)` at the top of each pass,
-    then `all_hashes[h].add(repo)`. The argument never changes; the
-    contents do, every pass. Hoisting it would share one container across
-    passes. The third serum reported two of these."""
-    files = _tree(tmp_path, {"m.py": '''\
-        def group(records, root, base):
-            for name, recs in records.items():
-                by_hash = defaultdict(set)
-                for x in recs:
-                    by_hash[x["hash"]].add(x["repo"])
-                kinds = defaultdict(int)
-                for x in recs:
-                    kinds[x["kind"]] += 1
-                bucket = make_bucket(root)
-                bucket.append(recs)
-                index = make_index(base)
-                for x in recs:
-                    index[x["id"]] = x
-                yield by_hash, kinds, bucket, index
-    '''})
-    assert find_pitstops(files) == []
-
-
 def test_a_call_whose_result_is_only_read_is_still_a_pitstop(tmp_path):
     """The accumulator rule is about filling, not binding. A result that is
     bound and then read stays the same work every pass."""
@@ -201,43 +114,6 @@ def test_a_call_whose_result_is_only_read_is_still_a_pitstop(tmp_path):
     '''})
     found = find_pitstops(files)
     assert [p.kind for p in found] == [INVARIANT_CALL]
-
-
-def test_a_name_bound_inside_the_loop_varies(tmp_path):
-    """The first version checked only the loop target and reported 295
-    invariant calls against ghost_tools, the first of them
-    `_identifiers(tree)` inside `for path in paths: tree = _parse(path)`.
-    `tree` is stored in the body, so it changes every pass."""
-    files = _tree(tmp_path, {"m.py": '''\
-        def scan(paths):
-            out = []
-            for path in paths:
-                tree = parse(path)
-                out.extend(identifiers(tree))
-            return out
-    '''})
-    assert find_pitstops(files) == []
-
-
-def test_a_constant_time_builtin_is_not_worth_hoisting(tmp_path):
-    """55 of 67 survivors on ghost_tools were str/len/type. Invariant, and
-    not worth a line in anyone's report."""
-    files = _tree(tmp_path, {"m.py": '''\
-        def cheap(items, label):
-            out = []
-            for item in items:
-                out.append((str(label), len(label)))
-            return out
-
-
-        def real(items, label):
-            out = []
-            for item in items:
-                out.append(sorted(label))
-            return out
-    '''})
-    found = find_pitstops(files)
-    assert [p.what for p in found] == ["`sorted(...)` with arguments the loop never changes"]
 
 
 def test_a_call_that_uses_the_loop_variable_is_not(tmp_path):
@@ -310,6 +186,121 @@ def test_the_finding_is_minor_and_says_why(tmp_path):
     assert f.severity is Severity.MINOR
     assert "four million" in f.detail
     assert "--profile" in f.detail
+
+
+_NOT_PITSTOPS = [
+    # The tree KNOWS the container is a list only when it saw the literal.
+    # A set, or a name it cannot see bound, is left alone.
+    pytest.param('''\
+        BLOCKED = {"a", "b", "c", "d", "e", "f", "g", "h", "i", "j"}
+        OTHER = load()
+
+
+        def scan(items):
+            return sum(1 for i in items if i in BLOCKED or i in OTHER)
+    ''', id="membership_against_a_set_is_not"),
+    # operate.py: `remedy(root, files)` then `rescan(files)`. The remedy
+    # edited what `files` names, so the rescan is not the same work twice.
+    # The first serum reported it; this is that lesson.
+    pytest.param('''\
+        def operate(root, files, remedies):
+            for remedy in remedies:
+                remedy(root, files)
+                after = rescan(files)
+                commit(root, "cut")
+    ''', id="a_call_whose_argument_another_call_receives_is_not_invariant"),
+    # `if x is None: x = f(root)` inside a loop runs f once, not once per
+    # pass. The last pitstop the first serum left on ghost_tools was exactly
+    # this shape in detect_missing_imports.
+    pytest.param('''\
+        def scan(root, nodes):
+            declares = None
+            out = []
+            for node in nodes:
+                if declares is None:
+                    declares = manifest(root)
+                out.append((node, declares))
+            return out
+    ''', id="a_memo_computed_once_behind_a_none_check_is_not_a_pitstop"),
+    # cns_map.py: `all_hashes = defaultdict(set)` at the top of each pass,
+    # then `all_hashes[h].add(repo)`. The argument never changes; the
+    # contents do, every pass. Hoisting it would share one container across
+    # passes. The third serum reported two of these.
+    pytest.param('''\
+        def group(records, root, base):
+            for name, recs in records.items():
+                by_hash = defaultdict(set)
+                for x in recs:
+                    by_hash[x["hash"]].add(x["repo"])
+                kinds = defaultdict(int)
+                for x in recs:
+                    kinds[x["kind"]] += 1
+                bucket = make_bucket(root)
+                bucket.append(recs)
+                index = make_index(base)
+                for x in recs:
+                    index[x["id"]] = x
+                yield by_hash, kinds, bucket, index
+    ''', id="a_container_built_fresh_and_filled_each_pass_is_not_a_pitstop"),
+    # The first version checked only the loop target and reported 295
+    # invariant calls against ghost_tools, the first of them
+    # `_identifiers(tree)` inside `for path in paths: tree = _parse(path)`.
+    # `tree` is stored in the body, so it changes every pass.
+    pytest.param('''\
+        def scan(paths):
+            out = []
+            for path in paths:
+                tree = parse(path)
+                out.extend(identifiers(tree))
+            return out
+    ''', id="a_name_bound_inside_the_loop_varies"),
+]
+
+
+@pytest.mark.parametrize("source", _NOT_PITSTOPS)
+def test_no_pitstop_is_reported(tmp_path, source):
+    assert find_pitstops(_tree(tmp_path, {"m.py": source})) == []
+
+
+_ONLY_THE_REAL_PITSTOP = [
+    # `name in ("self", "cls")` costs what a set costs. The first serum
+    # reported three of these; hoisting them changed nothing measurable.
+    pytest.param('''\
+        SELF = ("self", "cls")
+        BIG = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l"]
+
+        def go(names):
+            out = []
+            for n in names:
+                if n in SELF:
+                    continue
+                if n in BIG:
+                    out.append(n)
+            return out
+    ''', "`in BIG`, a module-level list", id="membership_against_a_tiny_constant_is_not_a_pitstop"),
+    # 55 of 67 survivors on ghost_tools were str/len/type. Invariant, and
+    # not worth a line in anyone's report.
+    pytest.param('''\
+        def cheap(items, label):
+            out = []
+            for item in items:
+                out.append((str(label), len(label)))
+            return out
+
+
+        def real(items, label):
+            out = []
+            for item in items:
+                out.append(sorted(label))
+            return out
+    ''', "`sorted(...)` with arguments the loop never changes", id="a_constant_time_builtin_is_not_worth_hoisting"),
+]
+
+
+@pytest.mark.parametrize("source,expected", _ONLY_THE_REAL_PITSTOP)
+def test_only_the_costly_one_is_reported(tmp_path, source, expected):
+    found = find_pitstops(_tree(tmp_path, {"m.py": source}))
+    assert [p.what for p in found] == [expected]
 
 
 # ----------------------------------------------------------- measured

@@ -115,7 +115,9 @@ def test_rank_does_not_change_the_findings_it_reads(stack):
 
 def test_the_ranking_is_the_same_on_every_run(stack):
     reports = {"core": {"findings": [_finding(str(i), "liba/work.py", "major") for i in range(5)]}}
-    assert [r.id for r in c.rank(stack, reports)] == [r.id for r in c.rank(stack, reports)]
+    first = [r.id for r in c.rank(stack, reports)]
+    second = [r.id for r in c.rank(stack, reports)]
+    assert first == second
 
 
 def test_a_symlinked_folder_is_not_followed(tmp_path):

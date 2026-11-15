@@ -453,15 +453,19 @@ def _is_mutable_literal(node) -> bool:
                              ast.DictComp, ast.SetComp))
 
 
+def _terminal_name(node: ast.AST) -> str:
+    """The last name in a reference: `Base` for `Base`, `Base` for
+    `models.Base`, empty for anything that is not a name or attribute."""
+    return node.attr if isinstance(node, ast.Attribute) else getattr(node, "id", "")
+
+
 def _model_kind(node: ast.ClassDef) -> bool:
     for base in node.bases:
-        name = base.attr if isinstance(base, ast.Attribute) else getattr(base, "id", "")
-        if name in _DATA_MODEL_BASES:
+        if _terminal_name(base) in _DATA_MODEL_BASES:
             return True
     for dec in node.decorator_list:
         target = dec.func if isinstance(dec, ast.Call) else dec
-        name = target.attr if isinstance(target, ast.Attribute) else getattr(target, "id", "")
-        if name in _DATA_MODEL_DECORATORS:
+        if _terminal_name(target) in _DATA_MODEL_DECORATORS:
             return True
     return False
 
@@ -479,7 +483,22 @@ def analyse_module(path: Path, root: Path, package_roots: Set[str]) -> Optional[
     text = corpus.text(path)
     facts.lines = 0 if text is None else len(text.splitlines())
 
-    node: ast.AST  # one name for the statement loop below and the walks after it
+    _collect_top_level(facts, tree, dotted)
+    _collect_guarded(facts, tree)
+    _collect_walked(facts, tree, dotted, package_roots)
+
+    facts.boundaries = sorted(set(facts.boundaries))
+    facts.bindings = sorted(set(facts.bindings))
+    facts.guarded = sorted(set(facts.guarded))
+    facts.imports_internal = sorted(set(facts.imports_internal))
+    facts.imports_external = sorted(set(facts.imports_external))
+    facts.unresolved = sorted(set(facts.unresolved))
+    return facts
+
+
+def _collect_top_level(facts: ModuleFacts, tree: ast.Module, dotted: str) -> None:
+    """What the module's own top-level statements declare: its public
+    surface, bindings, settings, re-exports, definitions and entry points."""
     for node in tree.body:
         # __all__ is the only DECLARED public surface. Everything else is
         # inference from a leading underscore, which is a convention.
@@ -540,6 +559,8 @@ def analyse_module(path: Path, root: Path, package_roots: Set[str]) -> Optional[
             if node.name == "main":
                 facts.entry_points.append(f"{dotted}:main")
 
+
+def _collect_guarded(facts: ModuleFacts, tree: ast.Module) -> None:
     # An import written with a fallback is a boundary its author declared,
     # not a name that might be invented. Recorded here so the slopsquat
     # check can tell the two apart -- see derive_findings.
@@ -552,6 +573,11 @@ def analyse_module(path: Path, root: Path, package_roots: Set[str]) -> Optional[
                 elif isinstance(inner, ast.ImportFrom) and inner.module and not inner.level:
                     facts.guarded.append(inner.module.split(".", 1)[0])
 
+
+def _collect_walked(facts: ModuleFacts, tree: ast.Module, dotted: str,
+                    package_roots: Set[str]) -> None:
+    """What any statement anywhere in the module does: imports, raises,
+    boundary calls, dynamic lookups and `__main__` guards."""
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
@@ -564,7 +590,7 @@ def analyse_module(path: Path, root: Path, package_roots: Set[str]) -> Optional[
         elif isinstance(node, ast.Raise) and node.exc is not None:
             facts.raise_sites += 1
             exc = node.exc.func if isinstance(node.exc, ast.Call) else node.exc
-            name = exc.attr if isinstance(exc, ast.Attribute) else getattr(exc, "id", "")
+            name = _terminal_name(exc)
             if name and name not in facts.raises:
                 facts.raises.append(name)
         elif isinstance(node, ast.Call):
@@ -593,14 +619,6 @@ def analyse_module(path: Path, root: Path, package_roots: Set[str]) -> Optional[
             if (isinstance(test, ast.Compare) and isinstance(test.left, ast.Name)
                     and test.left.id == "__name__"):
                 facts.entry_points.append(f"{dotted}:__main__ guard")
-
-    facts.boundaries = sorted(set(facts.boundaries))
-    facts.bindings = sorted(set(facts.bindings))
-    facts.guarded = sorted(set(facts.guarded))
-    facts.imports_internal = sorted(set(facts.imports_internal))
-    facts.imports_external = sorted(set(facts.imports_external))
-    facts.unresolved = sorted(set(facts.unresolved))
-    return facts
 
 
 def _catches_import(handler: ast.ExceptHandler) -> bool:
@@ -871,6 +889,22 @@ def derive_findings(model: StructuralModel) -> List[Finding]:
             "usage could not be checked"
         )
         return out
+    out.extend(_entry_point_findings(model))
+
+    # 2. Imported and never declared.
+    declared = set(model.declared_dependencies)
+    stdlib = _stdlib_names()
+    imported = _external_imports(model, stdlib)
+
+    mapping = _import_to_distribution()
+
+    out.extend(_unresolvable_findings(model, imported, declared, mapping))
+    out.extend(_undeclared_findings(model, imported, declared, mapping))
+    return out
+
+
+def _entry_point_findings(model: StructuralModel) -> List[Finding]:
+    out: List[Finding] = []
     by_dotted = {m.dotted: m for m in model.modules}
 
     # 1. A console script whose target does not exist.
@@ -896,14 +930,12 @@ def derive_findings(model: StructuralModel) -> List[Finding]:
             "would look identical. Check before deleting the declaration.",
             {"script": script, "target": target},
         ))
+    return out
 
-    # 2. Imported and never declared.
-    declared = set(model.declared_dependencies)
-    stdlib = _stdlib_names()
-    imported = _external_imports(model, stdlib)
 
-    mapping = _import_to_distribution()
-
+def _unresolvable_findings(model: StructuralModel, imported: Dict[str, List[str]],
+                           declared: Set[str], mapping: Dict[str, str]) -> List[Finding]:
+    out: List[Finding] = []
     # 3. A name that refers to nothing real -- the slopsquat surface.
     #
     # The 2026 attack, and the one this toolkit was closest to catching
@@ -975,7 +1007,12 @@ def derive_findings(model: StructuralModel) -> List[Finding]:
                   "imported_by": ", ".join(sorted(imported[package])[:5])},
                  **({"commented_out_at": parked} if parked else {})),
         ))
+    return out
 
+
+def _undeclared_findings(model: StructuralModel, imported: Dict[str, List[str]],
+                         declared: Set[str], mapping: Dict[str, str]) -> List[Finding]:
+    out: List[Finding] = []
     if model.dependency_sources:
         for package, users in sorted(imported.items()):
             if package in declared:
@@ -1056,7 +1093,21 @@ def render_model(model: StructuralModel) -> str:
     if not model.ran:
         return f"structural model did not run: {model.reason}"
     L = [f"STRUCTURAL MODEL -- {model.root}", "=" * 72, ""]
+    L.extend(_render_observed(model))
+    L.extend(_render_measured(model))
+    return "\n".join(L)
 
+
+def _listed(items: List[str], lead: str, placeholder: str) -> List[str]:
+    """One line per item, prefixed with `lead` unless the item already
+    carries its own indentation; `placeholder` when there are none."""
+    return [item if item.startswith(" ") else f"{lead}{item}"
+            for item in items or [placeholder]]
+
+
+def _render_observed(model: StructuralModel) -> List[str]:
+    """Packaging, entry points, boundaries, module state and settings."""
+    L: List[str] = []
     L.append("PACKAGING")
     L.append(f"  distribution      : {model.distribution or '(none declared)'}")
     L.append(f"  importable roots  : {', '.join(model.packages) or '(none)'}")
@@ -1065,8 +1116,7 @@ def render_model(model: StructuralModel) -> str:
     L.append("")
 
     L.append("EXECUTION ENTRY POINTS")
-    for ep in model.entry_points or ["  (none found)"]:
-        L.append(f"  {ep}" if not ep.startswith(" ") else ep)
+    L.extend(_listed(model.entry_points, "  ", "  (none found)"))
     L.append("")
 
     L.append("EXTERNAL BOUNDARIES CROSSED")
@@ -1095,7 +1145,13 @@ def render_model(model: StructuralModel) -> str:
     if not with_settings:
         L.append("  (none observed)")
     L.append("")
+    return L
 
+
+def _render_measured(model: StructuralModel) -> List[str]:
+    """Interface surface, maturity, what was unresolved and what is not
+    answered on purpose."""
+    L: List[str] = []
     declared_public = [m for m in model.modules if m.public_names]
     L.append("INTERFACE SURFACE")
     L.append(f"  modules             : {len(model.modules)}")
@@ -1119,8 +1175,7 @@ def render_model(model: StructuralModel) -> str:
     L.append(f"UNRESOLVED ({len(model.unresolved)})")
     L.append("  Recorded rather than guessed. A model that omits what it could")
     L.append("  not follow reads like a model of a system with no dynamic behaviour.")
-    for note in model.unresolved[:12] or ["  (nothing dynamic observed)"]:
-        L.append(f"  - {note}" if not note.startswith(" ") else note)
+    L.extend(_listed(model.unresolved[:12], "  - ", "  (nothing dynamic observed)"))
     if len(model.unresolved) > 12:
         L.append(f"  ... and {len(model.unresolved) - 12} more")
     L.append("")
@@ -1132,7 +1187,7 @@ def render_model(model: StructuralModel) -> str:
     L.append("  way to reach them is the directory name, and a name is a claim its")
     L.append("  author made -- not a fact about the code, and precisely the thing")
     L.append("  worth checking this model against.")
-    return "\n".join(L)
+    return L
 
 
 def render_report(model: StructuralModel, findings: List[Finding]) -> str:

@@ -16,6 +16,8 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
+import pytest
+
 from ghost_buster.naming import (
     DISAGREEMENT_DETECTOR,
     MINIMUM_CASSETTES,
@@ -253,32 +255,33 @@ def test_the_same_name_on_both_sides_is_not_a_disagreement(tmp_path):
     assert detect_name_disagreements(files) == []
 
 
-def test_a_parameter_taking_several_variables_is_doing_its_job(tmp_path):
-    """Not a disagreement. Renaming `dest` after either caller's local would
-    be wrong for the other one."""
-    files = _tree(tmp_path, {
+_NOT_RENAMABLE = [
+    # Not a disagreement. Renaming `dest` after either caller's local would
+    # be wrong for the other one.
+    pytest.param({
         "sink.py": "def deliver(dest):\n    return dest\n",
         "caller.py":
             "def one(alpha):\n"
             "    return deliver(alpha)\n"
             "def two(beta):\n"
             "    return deliver(beta)\n",
-    })
-    assert detect_name_disagreements(files) == []
-
-
-def test_a_variable_reaching_several_parameters_is_not_renamable(tmp_path):
-    """`token` is one name in the caller and two names in the callees.
-    Renaming it would have to pick one and collide with the other."""
-    files = _tree(tmp_path, {
+    }, id="a_parameter_taking_several_variables_is_doing_its_job"),
+    # `token` is one name in the caller and two names in the callees.
+    # Renaming it would have to pick one and collide with the other.
+    pytest.param({
         "sink.py":
             "def left(dest):\n    return dest\n"
             "def right(origin):\n    return origin\n",
         "caller.py":
             "def send(token):\n"
             "    return (left(token), right(token))\n",
-    })
-    assert detect_name_disagreements(files) == []
+    }, id="a_variable_reaching_several_parameters_is_not_renamable"),
+]
+
+
+@pytest.mark.parametrize("sources", _NOT_RENAMABLE)
+def test_a_name_used_for_several_others_is_not_a_disagreement(tmp_path, sources):
+    assert detect_name_disagreements(_tree(tmp_path, sources)) == []
 
 
 def test_a_function_this_scan_never_saw_is_left_alone(tmp_path):

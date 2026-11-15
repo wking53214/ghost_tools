@@ -42,11 +42,11 @@ MUTANTS = [
      "    unexamined = max(errored, blocked)",
      "    unexamined = errored + blocked"),
     ("a suite with a file that never ran is still filed as minor", _C,
-     "            severity=(Severity.MINOR if not_passing == 0 and not unexamined"
-     "\n                      else Severity.MAJOR),",
-     "            severity=Severity.MINOR if not_passing == 0 else Severity.MAJOR,"),
+     "        severity=(Severity.MINOR if not_passing == 0 and not unexamined"
+     "\n                  else Severity.MAJOR),",
+     "        severity=Severity.MINOR if not_passing == 0 else Severity.MAJOR,"),
     ("the attribute the remedy reads is never published", _C,
-     '                "unexamined": str(unexamined),\n',
+     '            "unexamined": str(unexamined),\n',
      ""),
     # --- the join itself ---
     ("file join loosened to a shared suffix (a file matches its own vendored copy)", _C,
@@ -122,9 +122,9 @@ MUTANTS = [
      '    collected = int(getattr(report, "static_lower_bound", 0) or 0)\n'),
     # Re-pointed in 1.7.3: the severity learned about files that never ran.
     ("a suite with failures still reads as MINOR doc drift", _C,
-     "            severity=(Severity.MINOR if not_passing == 0 and not unexamined\n"
-     "                      else Severity.MAJOR),\n",
-     "            severity=Severity.MINOR,\n"),
+     "        severity=(Severity.MINOR if not_passing == 0 and not unexamined\n"
+     "                  else Severity.MAJOR),\n",
+     "        severity=Severity.MINOR,\n"),
 
     # --- provenance and plumbing ---
     ("correlations stop naming the findings they were built from", _C,

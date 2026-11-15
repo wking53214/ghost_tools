@@ -5,21 +5,120 @@
       "shape": "long_function",
       "outcome": "real",
       "note": "_build_parser is the flag inventory, one add_argument per flag with its default and help beside it; splitting it would hide the one table the README's defaults test reads against",
-      "when": "2026-09-11T08:27:35.111115+00:00"
+      "when": "2026-09-11T08:27:35.111115+00:00",
+      "finding_id": "",
+      "file": "",
+      "decision": ""
     },
     {
       "detector": "long_function",
       "shape": "long_function",
       "outcome": "real",
       "note": "main was the scan pipeline in the order it runs, each check followed by its receipt line, and this note argued the length was the number of checks. An external review disagreed, and in 1.6.0 the gathering moved to pipeline.py: the order is still one readable sequence, now of four named stages rather than every statement inline. The finding was real and is closed by the split, not by this note; the record stays because the judgement was made",
-      "when": "2026-09-11T08:27:35.111127+00:00"
+      "when": "2026-09-11T08:27:35.111127+00:00",
+      "finding_id": "",
+      "file": "",
+      "decision": ""
     },
     {
       "detector": "intra_function_duplicate_block",
       "shape": "intra_function_duplicate_block",
       "outcome": "real",
       "note": "readiness.assess states the six criteria one Criterion(...) per line on purpose: the list is the specification, and a loop over a table would make it harder to read than the finding it produces",
-      "when": "2026-09-11T08:27:35.111132+00:00"
+      "when": "2026-09-11T08:27:35.111132+00:00",
+      "finding_id": "",
+      "file": "",
+      "decision": ""
+    },
+    {
+      "detector": "unreachable_declared_state",
+      "shape": "unreachable_declared_state|declared_members=13&documented_as_from_data=no&enum=EvidenceKind&member=DOCUMENTED_NOT_IMPLEMENTED&produced_by_tests_only=no&produced_members=9&provenance=never_produced&reachable_from_data=no",
+      "outcome": "real",
+      "note": "planned evidence kind with a weight in extrapolate.py and no producing detector yet; kept as vocabulary rather than removed, because removing a declared kind is the mistake made in TIE (2026-09-20), where a removed enum value had to come back",
+      "when": "2026-11-15T15:21:53.015744+00:00",
+      "finding_id": "ghost-a226ddce4d8f",
+      "file": "blackhole_extrapolator/schema.py",
+      "decision": "document"
+    },
+    {
+      "detector": "unreachable_declared_state",
+      "shape": "unreachable_declared_state|declared_members=13&documented_as_from_data=no&enum=EvidenceKind&member=SHAPE_COMPLEMENTARITY&produced_by_tests_only=yes&produced_members=9&provenance=never_produced&reachable_from_data=no",
+      "outcome": "real",
+      "note": "planned evidence kind with a weight in extrapolate.py and no producing detector yet; kept as vocabulary rather than removed, because removing a declared kind is the mistake made in TIE (2026-09-20), where a removed enum value had to come back; test code constructs it",
+      "when": "2026-11-15T15:21:53.015763+00:00",
+      "finding_id": "ghost-1229478b7444",
+      "file": "blackhole_extrapolator/schema.py",
+      "decision": "document"
+    },
+    {
+      "detector": "unreachable_declared_state",
+      "shape": "unreachable_declared_state|declared_members=13&documented_as_from_data=no&enum=EvidenceKind&member=UNCONSUMED_OUTPUT&produced_by_tests_only=no&produced_members=9&provenance=never_produced&reachable_from_data=no",
+      "outcome": "real",
+      "note": "planned evidence kind with a weight in extrapolate.py and no producing detector yet; kept as vocabulary rather than removed, because removing a declared kind is the mistake made in TIE (2026-09-20), where a removed enum value had to come back",
+      "when": "2026-11-15T15:21:53.015772+00:00",
+      "finding_id": "ghost-2b5b46fb98a4",
+      "file": "blackhole_extrapolator/schema.py",
+      "decision": "document"
+    },
+    {
+      "detector": "unreachable_declared_state",
+      "shape": "unreachable_declared_state|declared_members=13&documented_as_from_data=no&enum=EvidenceKind&member=UNSATISFIED_REQUIREMENT&produced_by_tests_only=no&produced_members=9&provenance=never_produced&reachable_from_data=no",
+      "outcome": "real",
+      "note": "planned evidence kind with a weight in extrapolate.py and no producing detector yet; kept as vocabulary rather than removed, because removing a declared kind is the mistake made in TIE (2026-09-20), where a removed enum value had to come back",
+      "when": "2026-11-15T15:21:53.015777+00:00",
+      "finding_id": "ghost-372a68d3c1c4",
+      "file": "blackhole_extrapolator/schema.py",
+      "decision": "document"
+    },
+    {
+      "detector": "unreachable_declared_state",
+      "shape": "unreachable_declared_state|declared_members=3&documented_as_from_data=no&enum=VoidKind&member=UNREALISED&produced_by_tests_only=yes&produced_members=2&provenance=never_produced&reachable_from_data=no",
+      "outcome": "real",
+      "note": "planned void kind with no producing path yet; test code constructs it; kept as vocabulary rather than removed (see the TIE enum removal, 2026-09-20)",
+      "when": "2026-11-15T15:21:53.015785+00:00",
+      "finding_id": "ghost-9dccda72cac0",
+      "file": "blackhole_extrapolator/schema.py",
+      "decision": "document"
+    },
+    {
+      "detector": "dead_code",
+      "shape": "dead_code|dynamic_lookup_count=15&dynamic_lookup_possible=yes&framework_hook=no&kind=function&line_end=154&line_start=143&name=translate_finding",
+      "outcome": "false",
+      "note": "library API of the optional CNS adapter, documented in README section 2b; callers live in other repositories, so nothing in this scan references it",
+      "when": "2026-11-15T15:21:53.015791+00:00",
+      "finding_id": "ghost-5018899d1d82",
+      "file": "ghost_buster/cns_adapter.py",
+      "decision": "suppress"
+    },
+    {
+      "detector": "dead_code",
+      "shape": "dead_code|dynamic_lookup_count=15&dynamic_lookup_possible=yes&framework_hook=yes&kind=class&line_end=117&line_start=93&name=AnthropicModelClient&referenced_by=named as a string in .ghost_ledger.json",
+      "outcome": "false",
+      "note": "the semantic layer's client, a library on purpose: cli.py says semantic is available as a library and NOT wired, so nothing in the scanned set constructs it",
+      "when": "2026-11-15T15:21:53.015798+00:00",
+      "finding_id": "ghost-4408077823d3",
+      "file": "ghost_buster/semantic.py",
+      "decision": "suppress"
+    },
+    {
+      "detector": "doc_test_count_drift",
+      "shape": "doc_test_count_drift|claim_context=naming the missing import, and then its count remedy wrote \"The test suite has&documented_count=30&not_writable_because=not a current-state document&static_lower_bound=1495&writable=no",
+      "outcome": "false",
+      "note": "the 30 is a quotation of what the count remedy once wrote into a README, inside the account of that incident; it is history, not a claim about this suite",
+      "when": "2026-11-15T15:21:53.015807+00:00",
+      "finding_id": "ghost-244516d19aa3",
+      "file": "CHANGELOG.md",
+      "decision": "suppress"
+    },
+    {
+      "detector": "unverified_status_claim",
+      "shape": "unverified_status_claim|kind=production_ready&phrase=production-ready&test_files_seen=153",
+      "outcome": "false",
+      "note": "production-ready describes ASSAY specimen 3.7 (a README calling itself production-ready beside no code), not this repository",
+      "when": "2026-11-15T15:21:53.015813+00:00",
+      "finding_id": "ghost-db9b1913b752",
+      "file": "docs/FAILURE_MODES.md",
+      "decision": "suppress"
     }
   ]
 }

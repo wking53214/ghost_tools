@@ -29,7 +29,7 @@ MUTANTS = [
      "            hist.consecutive = 0\n            hist.absent_last_run = True\n",
      "            hist.consecutive = 0\n"),
     ("a return is not counted (a regression reads as business as usual)", _L,
-     "                seen.returns += 1\n", "                pass\n"),
+     "            seen.returns += 1\n", "            pass\n"),
     ("the run counter stops advancing", _L,
      '        self.totals["runs"] = self.run_count + 1\n', "        pass\n"),
     ("a corrupt ledger silently starts over, erasing the record", _L,
@@ -62,7 +62,7 @@ MUTANTS = [
     ("the run cap drops runs from the count as well as the list", _L,
      "        if len(self.runs) > MAX_RUNS_KEPT:\n", "        if False:\n"),
     ("a failed write leaves its temp file behind", _L,
-     "            os.replace(tmp, self.path)\n", "            pass\n"),
+     "            os.replace(staging, self.path)\n", "            pass\n"),
 
     # --- subtracting: the thing it must never do ---
     # Re-pointed in 1.4.0: the self-exclusion and the status filter became

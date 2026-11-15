@@ -363,14 +363,14 @@ class _PytestRunner:
         self.root = root
         self.python = python
         self.timeout = timeout
-        self._tmp = tempfile.TemporaryDirectory(prefix="ghost_tests_")
-        self.tmpdir = Path(self._tmp.name)
+        self._plugin_dir = tempfile.TemporaryDirectory(prefix="ghost_tests_")
+        self.tmpdir = Path(self._plugin_dir.name)
         (self.tmpdir / f"{_PLUGIN_MODULE}.py").write_text(_PLUGIN_SOURCE, encoding="utf-8")
         self._n = 0
         self._local_modules: Optional[Dict[str, str]] = None
 
     def close(self) -> None:
-        self._tmp.cleanup()
+        self._plugin_dir.cleanup()
 
     def local_module_path(self, name: str) -> Optional[str]:
         """Where a top-level module of that name lives inside the scanned
@@ -597,16 +597,15 @@ def _evidence(root: Path, outcome: TestOutcome) -> Evidence:
                     snippet=outcome.nodeid)
 
 
-# ghost_buster: name-disagreement -- `summary` is `phase` at every call site
 def _finding(root: Path, outcome: TestOutcome, kind: str, severity: Severity,
-             summary: str, detail: str) -> Finding:
+             phase: str, detail: str) -> Finding:
     return Finding(
         detector=DETECTOR,
         category=Category.TEST_STATUS,
         layer=Layer.MECHANICAL,
         severity=severity,
         status=Status.CONFIRMED,
-        summary=f"{kind}: {outcome.nodeid} {summary}".rstrip(),
+        summary=f"{kind}: {outcome.nodeid} {phase}".rstrip(),
         detail=detail,
         # Join keys for correlate.py: `kind` is the classification this
         # module made ("failing test", "flaky test", ...), `phase` is which
@@ -743,7 +742,7 @@ def _classify_failure(root: Path, outcome: TestOutcome, runner: _PytestRunner,
             + _excerpt(outcome.text),
         )
     if outcome.when == "collect":
-        return _finding(  # ghost_buster: name-disagreement -- `phase` is `summary` in the signature
+        return _finding(
             root, outcome, "failing test", Severity.MAJOR, phase,
             "The test module raised during collection, so none of its tests ran. "
             "Not rerun: a collection error is not intermittent.\n\n" + _excerpt(outcome.text),
@@ -783,7 +782,7 @@ def _classify_failure(root: Path, outcome: TestOutcome, runner: _PytestRunner,
             )
     rerun_note = (f"Rerun alone {attempts} time(s) and failed every time." if attempts
                   else "Not rerun (reruns=0).")
-    return _finding(  # ghost_buster: name-disagreement -- `phase` is `summary` in the signature
+    return _finding(
         root, outcome, "failing test", Severity.MAJOR, phase,
         rerun_note + " The failure text names no external dependency, so this reads as a "
         "genuine failure.\n\n" + _excerpt(outcome.text),

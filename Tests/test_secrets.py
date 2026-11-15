@@ -331,31 +331,29 @@ def test_gitleaks_non_zero_exit_does_not_read_as_a_clean_scan(tmp_path):
     assert "internal boom" in report.reason
 
 
-def test_gitleaks_exiting_clean_with_no_report_file_does_not_read_as_a_clean_scan(tmp_path):
+_UNREADABLE_REPORTS = [
     # A real gitleaks always writes --report-path on a normal exit; this
     # proves the wrapper does not just trust a zero exit code.
-    repo = _init_repo(tmp_path / "repo")
-    fake = _fake_binary(tmp_path / "fake-gitleaks", "#!/bin/sh\nexit 0\n")
-
-    findings, report = scan(repo, gitleaks_path=fake)
-
-    assert findings == []
-    assert report.ran is False
-    assert "no report file" in report.reason
-
-
-def test_invalid_json_report_does_not_read_as_a_clean_scan(tmp_path):
-    repo = _init_repo(tmp_path / "repo")
-    fake = _fake_binary(
-        tmp_path / "fake-gitleaks",
+    pytest.param("#!/bin/sh\nexit 0\n", "no report file",
+                 id="gitleaks_exiting_clean_with_no_report_file_does_not_read_as_a_clean_scan"),
+    pytest.param(
         "#!/usr/bin/env python3\n"
         "import sys\n"
         "path = sys.argv[sys.argv.index('--report-path') + 1]\n"
         "open(path, 'w').write('not valid json{')\n",
-    )
+        "not valid JSON",
+        id="invalid_json_report_does_not_read_as_a_clean_scan",
+    ),
+]
+
+
+@pytest.mark.parametrize("script,reason", _UNREADABLE_REPORTS)
+def test_an_unreadable_report_does_not_read_as_a_clean_scan(tmp_path, script, reason):
+    repo = _init_repo(tmp_path / "repo")
+    fake = _fake_binary(tmp_path / "fake-gitleaks", script)
 
     findings, report = scan(repo, gitleaks_path=fake)
 
     assert findings == []
     assert report.ran is False
-    assert "not valid JSON" in report.reason
+    assert reason in report.reason

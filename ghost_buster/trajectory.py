@@ -229,6 +229,36 @@ def assess(runs: Sequence) -> Assessment:
     return Assessment(True, "", len(series), density, kf.rate, z_score)
 
 
+@dataclass(frozen=True)
+class _Trend:
+    """How a direction past the threshold is reported."""
+    direction: str
+    severity: Severity
+    kind: str
+    detail: str
+
+
+_RISING = _Trend(
+    "rising", Severity.MINOR, "deteriorating_trend",
+    "Not a defect, and not a claim that any particular finding is "
+    "wrong -- a claim about DIRECTION, which no single run can make. "
+    "The series is findings per file scanned, so ordinary growth is "
+    "already divided out: this rises only when findings are "
+    "outpacing the code they are found in.\n\n"
+    "Only runs measured the same way are compared. A run with a "
+    "different set of checks, or none recorded, is excluded rather "
+    "than folded in, because comparing them would measure the flags "
+    "instead of the code.",
+)
+_FALLING = _Trend(
+    "falling", Severity.INFORMATIONAL, "improving_trend",
+    "Recorded because evidence of improvement is evidence. A tool "
+    "that only ever reports decay teaches its reader that its "
+    "silence is the good news, and silence is the one thing this "
+    "project refuses to let carry meaning.",
+)
+
+
 def derive(runs: Sequence, root_label: str = ".") -> List[Finding]:
     """Findings for a direction worth knowing about. Additive only."""
     result = assess(runs)
@@ -243,39 +273,20 @@ def derive(runs: Sequence, root_label: str = ".") -> List[Finding]:
         "velocity_per_run": f"{result.velocity:+.5f}",
     }
 
+    trend: Optional[_Trend] = None
     threshold = adverse_rate_for(result.density)
     if result.velocity >= threshold:
-        out.append(Finding(
-            detector=DETECTOR, category=Category.HISTORY, layer=Layer.MECHANICAL,
-            severity=Severity.MINOR, status=Status.CONFIRMED,
-            summary=(f"finding density is rising: {result.velocity:+.4f} per file per run "
-                     f"over {result.comparable_runs} comparable run(s)"),
-            detail=(
-                "Not a defect, and not a claim that any particular finding is "
-                "wrong -- a claim about DIRECTION, which no single run can make. "
-                "The series is findings per file scanned, so ordinary growth is "
-                "already divided out: this rises only when findings are "
-                "outpacing the code they are found in.\n\n"
-                "Only runs measured the same way are compared. A run with a "
-                "different set of checks, or none recorded, is excluded rather "
-                "than folded in, because comparing them would measure the flags "
-                "instead of the code."
-            ),
-            evidence=evidence, attributes=dict(shared, kind="deteriorating_trend"),
-        ))
+        trend = _RISING
     elif result.velocity <= -threshold:
+        trend = _FALLING
+    if trend is not None:
         out.append(Finding(
             detector=DETECTOR, category=Category.HISTORY, layer=Layer.MECHANICAL,
-            severity=Severity.INFORMATIONAL, status=Status.CONFIRMED,
-            summary=(f"finding density is falling: {result.velocity:+.4f} per file per run "
+            severity=trend.severity, status=Status.CONFIRMED,
+            summary=(f"finding density is {trend.direction}: {result.velocity:+.4f} per file per run "
                      f"over {result.comparable_runs} comparable run(s)"),
-            detail=(
-                "Recorded because evidence of improvement is evidence. A tool "
-                "that only ever reports decay teaches its reader that its "
-                "silence is the good news, and silence is the one thing this "
-                "project refuses to let carry meaning."
-            ),
-            evidence=evidence, attributes=dict(shared, kind="improving_trend"),
+            detail=trend.detail,
+            evidence=evidence, attributes=dict(shared, kind=trend.kind),
         ))
 
     if result.surprise_z >= SURPRISE_Z:

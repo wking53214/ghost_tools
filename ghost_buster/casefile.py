@@ -55,7 +55,7 @@ from collections import Counter
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional
+from typing import Callable, Dict, Iterable, List, Optional
 
 from .schema import Finding
 
@@ -172,11 +172,14 @@ class Casefile:
         A shape nobody has seen falls back to the detector: rare shapes are
         conservative, not silent."""
         if shape is not None:
-            matching = [c for c in self.cases if c.shape == shape]
+            matching = self._tally(lambda c: c.shape == shape)
             if matching:
-                return Prior(detector, shape, dict(Counter(c.outcome for c in matching)))
-        matching = [c for c in self.cases if c.detector == detector]
-        return Prior(detector, None, dict(Counter(c.outcome for c in matching)))
+                return Prior(detector, shape, matching)
+        return Prior(detector, None, self._tally(lambda c: c.detector == detector))
+
+    def _tally(self, keep: Callable[[Case], bool]) -> Dict[str, int]:
+        """outcome -> how many of the cases `keep` selects ended that way."""
+        return dict(Counter(c.outcome for c in self.cases if keep(c)))
 
     def annotate(self, findings: Iterable[Finding]) -> Dict[str, Prior]:
         """finding id -> the prior that applies to it. Nothing is hidden."""

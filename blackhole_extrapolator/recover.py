@@ -64,6 +64,7 @@ whitespace or this module has nothing to say.
 from __future__ import annotations
 
 import ast
+import contextlib
 import hashlib
 import html
 import json
@@ -376,10 +377,7 @@ class Corpus:
 
         for source, collapsed, ids in self.entries:
             if collapsed == target:
-                text, repairs = repair(source.text)
-                return Recovery(path=path, verdict=IDENTICAL, text=text,
-                                origin=source.origin, label=source.label,
-                                overlap=1.0, repairs=repairs)
+                return _recovered(path, IDENTICAL, source, source.text)
             if contained is None:
                 start = bounded_find(collapsed, target)
                 if start != -1:
@@ -391,14 +389,20 @@ class Corpus:
 
         if contained is not None:
             source, start = contained
-            text, repairs = repair(_span(source.text, target, start))
-            return Recovery(path=path, verdict=CONTAINED, text=text,
-                            origin=source.origin, label=source.label,
-                            overlap=1.0, repairs=repairs)
+            return _recovered(path, CONTAINED, source, _span(source.text, target, start))
         if best_source is not None and best_score >= RELATED_OVERLAP:
             return Recovery(path=path, verdict=RELATED, origin=best_source.origin,
                             label=best_source.label, overlap=best_score)
         return Recovery(path=path, verdict=NONE, overlap=best_score)
+
+
+def _recovered(path: Path, verdict: str, source: Source, original: str) -> Recovery:
+    """A recovery of `original`, bytes taken from `source`, repaired only
+    where a repair demonstrably helps."""
+    text, repairs = repair(original)
+    return Recovery(path=path, verdict=verdict, text=text,
+                    origin=source.origin, label=source.label,
+                    overlap=1.0, repairs=repairs)
 
 
 def bounded_find(collapsed: str, target: str) -> int:
@@ -458,15 +462,12 @@ def recovered_name(path: Path, root: Path | None = None) -> str:
     """
     path = Path(path)
     if root is not None:
-        try:
+        with contextlib.suppress(ValueError):
             relative = path.resolve().relative_to(Path(root).resolve())
             return relative.with_suffix("").as_posix().replace("/", "__") + ".recovered.py"
-        except ValueError:
-            pass
     return path.stem + ".recovered.py"
 
 
-# ghost_buster: name-disagreement -- `recovery` is `result` at every call site
 def write_recovery(recovery: Recovery, into: Path, root: Path | None = None) -> Path:
     """Write one recovered original under `into`, verbatim.
 

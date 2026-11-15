@@ -37,6 +37,7 @@ Stdlib only, like the rest of the mechanical layer.
 from __future__ import annotations
 
 import ast
+import contextlib
 import os
 import shutil
 import subprocess
@@ -44,7 +45,7 @@ import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Union
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Type, Union
 
 from . import corpus
 from .schema import Category, Evidence, Finding, Layer, Severity, Status
@@ -265,9 +266,8 @@ def _import_map(module: ast.Module) -> Dict[str, Tuple[str, Optional[str]]]:
     return out
 
 
-# ghost_buster: name-disagreement -- `dotted` is `mod` at every call site
-def _module_file(root: Path, dotted: str) -> Optional[Path]:
-    rel = Path(*dotted.split("."))
+def _module_file(root: Path, mod: str) -> Optional[Path]:
+    rel = Path(*mod.split("."))
     for candidate in (root / rel.with_suffix(".py"), root / rel / "__init__.py"):
         if candidate.exists():
             return candidate
@@ -334,7 +334,7 @@ def _resolve_targets(root: Path, test_file: Path, module: ast.Module, func: ast.
         f = n.func
         if isinstance(f, ast.Name) and f.id in imports:
             mod, attr = imports[f.id]
-            file = _module_file(root, mod)  # ghost_buster: name-disagreement -- `mod` is `dotted` in the signature
+            file = _module_file(root, mod)
             if file and attr:
                 add(file, attr)
         elif isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name):
@@ -342,18 +342,16 @@ def _resolve_targets(root: Path, test_file: Path, module: ast.Module, func: ast.
             if base in imports:
                 mod, attr = imports[base]
                 if attr is None:                       # import mod; mod.func()
-                    # ghost_buster: name-disagreement -- `mod` is `dotted` in the signature
                     file = _module_file(root, mod)
                     if file:
                         add(file, f.attr)
                 else:                                  # from mod import Cls; Cls.method()
-                    # ghost_buster: name-disagreement -- `mod` is `dotted` in the signature
                     file = _module_file(root, mod)
                     if file:
                         add(file, f"{attr}.{f.attr}")
             elif base in instance_of and instance_of[base] in imports:
                 mod, attr = imports[instance_of[base]]
-                file = _module_file(root, mod)  # ghost_buster: name-disagreement -- `mod` is `dotted` in the signature
+                file = _module_file(root, mod)
                 if file and attr:
                     add(file, f"{attr}.{f.attr}")
             else:
@@ -364,7 +362,6 @@ def _resolve_targets(root: Path, test_file: Path, module: ast.Module, func: ast.
                 for (mod, attr) in imports.values():
                     if attr is None:
                         continue
-                    # ghost_buster: name-disagreement -- `mod` is `dotted` in the signature
                     file = _module_file(root, mod)
                     if file is None:
                         continue
@@ -468,6 +465,14 @@ class _BumpConstants(ast.NodeTransformer):
         return ast.copy_location(ast.Constant(value=node.value + 100), node)
 
 
+#: The operators that rewrite every matching node and count what they changed:
+#: operator -> (transformer, what the count measures).
+_COUNTING_OPERATORS: Dict[str, Tuple[Type[Union[_FlipCompare, _BumpConstants]], str]] = {
+    "flip_compare": (_FlipCompare, "comparison(s) in {qualname} inverted"),
+    "bump_constants": (_BumpConstants, "numeric constant(s) in {qualname} moved by +100"),
+}
+
+
 def _mutate_function(tree: ast.Module, qualname: str, operator: str) -> Tuple[bool, str]:
     func = _find_function(tree, qualname)
     if func is None:
@@ -478,14 +483,11 @@ def _mutate_function(tree: ast.Module, qualname: str, operator: str) -> Tuple[bo
             return False, "no value-returning statement"
         _ReturnNone().visit(func)
         return True, f"every `return <value>` in {qualname} replaced with `return None`"
-    if operator == "flip_compare":
-        t = _FlipCompare()
-        t.visit(func)
-        return (t.changed > 0), f"{t.changed} comparison(s) in {qualname} inverted"
-    if operator == "bump_constants":
-        bump = _BumpConstants()
-        bump.visit(func)
-        return (bump.changed > 0), f"{bump.changed} numeric constant(s) in {qualname} moved by +100"
+    if operator in _COUNTING_OPERATORS:
+        transformer_class, what_changed = _COUNTING_OPERATORS[operator]
+        transformer = transformer_class()
+        transformer.visit(func)
+        return (transformer.changed > 0), f"{transformer.changed} {what_changed.format(qualname=qualname)}"
     if operator == "drop_body":
         func.body = [ast.Pass()]
         return True, f"body of {qualname} replaced with `pass`"
@@ -577,16 +579,14 @@ class _Scratch:
 
     def __init__(self, root: Path, link_siblings: bool = True):
         self.root = Path(root).resolve()
-        self.tmp = Path(tempfile.mkdtemp(prefix="ghost_mutate_"))
-        self.copy = self.tmp / self.root.name
+        self.workspace = Path(tempfile.mkdtemp(prefix="ghost_mutate_"))
+        self.copy = self.workspace / self.root.name
         shutil.copytree(self.root, self.copy, ignore=_COPY_IGNORE, symlinks=True)
         if link_siblings:
             for sibling in self.root.parent.iterdir():
-                if sibling.is_dir() and sibling != self.root and not (self.tmp / sibling.name).exists():
-                    try:
-                        os.symlink(sibling, self.tmp / sibling.name)
-                    except OSError:
-                        pass
+                if sibling.is_dir() and sibling != self.root and not (self.workspace / sibling.name).exists():
+                    with contextlib.suppress(OSError):
+                        os.symlink(sibling, self.workspace / sibling.name)
 
     def path_for(self, original: Path) -> Path:
         return self.copy / Path(original).resolve().relative_to(self.root)
@@ -595,7 +595,7 @@ class _Scratch:
         shutil.copy2(original, self.path_for(original))
 
     def close(self) -> None:
-        shutil.rmtree(self.tmp, ignore_errors=True)
+        shutil.rmtree(self.workspace, ignore_errors=True)
 
 
 def _run_test(scratch: _Scratch, candidate: Candidate, timeout: float) -> Tuple[str, str]:
@@ -658,7 +658,6 @@ def run_mutations(
                 run.unjudged.append((cand, f"test does not pass unmutated ({outcome}): {tail[-120:]}"))
                 continue
 
-            # ghost_buster: name-disagreement -- `max_mutants_per_candidate` is `cap` in the signature
             mutants = _plan_mutants(cand, root, file_list, operators, max_mutants_per_candidate)
             if not mutants:
                 reason = (
@@ -670,40 +669,8 @@ def run_mutations(
                 continue
 
             for mutant in mutants:
-                original = mutant.target_file if mutant.target_file else cand.test_file
-                tree = _safe_parse(original)
-                if tree is None:
-                    mutant.outcome = "error"
-                    mutant.output_tail = "could not parse target"
-                    run.mutants.append(mutant)
-                    continue
-                applied, description = _apply(mutant, tree)
-                if not applied:
+                if not _judge_mutant(scratch, cand, mutant, timeout):
                     continue          # operator did not apply to this target; not a mutant
-                mutant.description = description
-                _write_tree(scratch.path_for(original), tree)
-                try:
-                    outcome, tail = _run_test(scratch, cand, timeout)
-                finally:
-                    scratch.restore(original)
-                mutant.output_tail = tail
-                if cand.shape == "guarded_assertion":
-                    # The instrumented test fails with the marker only when the
-                    # guarded assertions never ran. Any other failure is noise.
-                    # For a parametrized test the marker fires per case; the
-                    # guard counts as never taken only if NO case took it,
-                    # which pytest's summary shows as no "passed" at all.
-                    some_case_passed = (
-                        " passed" in (mutant.output_tail or "").splitlines()[-1:][0] if mutant.output_tail else False)
-                    if outcome == "failed" and GUARD_MARKER in (mutant.output_tail or "") and not some_case_passed:
-                        mutant.outcome = "survived"
-                    elif outcome in ("passed", "failed"):
-                        mutant.outcome = "killed"
-                    else:
-                        mutant.outcome = "error"
-                else:
-                    mutant.outcome = ("survived" if outcome == "passed"
-                                      else ("killed" if outcome == "failed" else "error"))
                 run.mutants.append(mutant)
                 if mutant.outcome == "survived":
                     run.findings.append(_finding_for(root, mutant))
@@ -713,8 +680,48 @@ def run_mutations(
     return run
 
 
-# ghost_buster: name-disagreement -- `cap` is `max_mutants_per_candidate` at every call site
-def _plan_mutants(cand: Candidate, root: Path, files: List[Path], operators: Sequence[str], cap: int) -> List[Mutant]:
+def _judge_mutant(scratch: _Scratch, cand: Candidate, mutant: Mutant, timeout: float) -> bool:
+    """Apply `mutant` in the scratch copy, run the candidate's test against it
+    and set its outcome. False when the operator did not apply to the target,
+    which makes it no mutant at all; the scratch copy is restored either way."""
+    original = mutant.target_file if mutant.target_file else cand.test_file
+    tree = _safe_parse(original)
+    if tree is None:
+        mutant.outcome = "error"
+        mutant.output_tail = "could not parse target"
+        return True
+    applied, description = _apply(mutant, tree)
+    if not applied:
+        return False
+    mutant.description = description
+    _write_tree(scratch.path_for(original), tree)
+    try:
+        outcome, tail = _run_test(scratch, cand, timeout)
+    finally:
+        scratch.restore(original)
+    mutant.output_tail = tail
+    if cand.shape == "guarded_assertion":
+        # The instrumented test fails with the marker only when the
+        # guarded assertions never ran. Any other failure is noise.
+        # For a parametrized test the marker fires per case; the
+        # guard counts as never taken only if NO case took it,
+        # which pytest's summary shows as no "passed" at all.
+        some_case_passed = (
+            " passed" in (mutant.output_tail or "").splitlines()[-1:][0] if mutant.output_tail else False)
+        if outcome == "failed" and GUARD_MARKER in (mutant.output_tail or "") and not some_case_passed:
+            mutant.outcome = "survived"
+        elif outcome in ("passed", "failed"):
+            mutant.outcome = "killed"
+        else:
+            mutant.outcome = "error"
+    else:
+        mutant.outcome = ("survived" if outcome == "passed"
+                          else ("killed" if outcome == "failed" else "error"))
+    return True
+
+
+def _plan_mutants(cand: Candidate, root: Path, files: List[Path], operators: Sequence[str],
+                  max_mutants_per_candidate: int) -> List[Mutant]:
     plans: List[Mutant] = []
     if cand.shape == "guarded_assertion":
         for index in range(cand.guard_count):
@@ -728,7 +735,7 @@ def _plan_mutants(cand: Candidate, root: Path, files: List[Path], operators: Seq
     for target_file, qual in cand.targets:
         for op in operators:
             plans.append(Mutant(cand, op, target_file, qual, ""))
-            if len(plans) >= cap:
+            if len(plans) >= max_mutants_per_candidate:
                 return plans
     return plans
 

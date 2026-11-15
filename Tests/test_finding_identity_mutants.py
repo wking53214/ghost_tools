@@ -40,7 +40,7 @@ MUTANTS = [
      "        identity_key=kind,\n",
      ""),
     ("the correlation puts the measurement back in its identity", _CORR,
-     '            identity_key=f"claims {documented} test(s), contradicted by the run",\n',
+     '        identity_key=f"claims {documented} test(s), contradicted by the run",\n',
      ""),
 ]
 

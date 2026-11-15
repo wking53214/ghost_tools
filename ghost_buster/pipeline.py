@@ -25,6 +25,7 @@ about arguments, the baseline diff, the report and the exit status.
 """
 from __future__ import annotations
 
+import contextlib
 import os
 import sys
 from dataclasses import dataclass, field
@@ -314,10 +315,8 @@ def _max_file_bytes(args) -> int:
     if value is None:
         env = os.environ.get("GHOST_MAX_FILE_BYTES", "").strip()
         if env:
-            try:
+            with contextlib.suppress(ValueError):
                 return parse_size(env)
-            except ValueError:
-                pass
         return corpus.DEFAULT_MAX_FILE_BYTES
     return int(value)
 
@@ -451,6 +450,14 @@ def _declined(checks: dict, reasons: dict, key: str, label: str, flag: str, say)
     reasons[key] = f"skipped at your request ({flag})"
 
 
+def _not_requested(checks: dict, reasons: dict, key: str, label: str, flag: str, say) -> None:
+    """Record an opt-in check nobody asked for: announce it, and keep the state
+    and the reason in step so --json says the same thing the output did."""
+    checks[key] = NOT_RUN
+    reasons[key] = f"opt-in and not requested ({flag})"
+    say(f"ghost_buster: {label} NOT RUN (opt-in: {flag})")
+
+
 def _note_if_not_run(checks: dict, reasons: dict, key: str, report, fallback: str) -> None:
     """When a check did not run, keep the reason it gave, or the fallback."""
     if checks[key] != RAN:
@@ -549,24 +556,19 @@ def _run_opt_in_analyses(args, files, findings, checks, say, reasons=None):
         findings.extend(mutation_run.findings)
         checks["mutate"] = RAN
     else:
-        checks["mutate"] = NOT_RUN
-        reasons["mutate"] = "opt-in and not requested (--mutate)"
         # Opt-in on cost (one pytest process per mutant), not because it
         # matters less -- so it is named on every run rather than simply
         # being absent.
-        say("ghost_buster: mutation analysis NOT RUN (opt-in: --mutate)")
+        _not_requested(checks, reasons, "mutate", "mutation analysis", "--mutate", say)
 
     if args.kernel:
         kernel_findings, kernel_report = check_kernel(files, args.kernel)
         say(render_kernel_report(kernel_report))
         findings.extend(kernel_findings)
         checks["kernel"] = RAN if kernel_report.ran else COULD_NOT_RUN
-        if not kernel_report.ran:
-            reasons["kernel"] = getattr(kernel_report, "reason", "") or "kernel check did not run"
+        _note_if_not_run(checks, reasons, "kernel", kernel_report, "kernel check did not run")
     else:
-        checks["kernel"] = NOT_RUN
-        reasons["kernel"] = "opt-in and not requested (--kernel PATH)"
-        say("ghost_buster: kernel check NOT RUN (opt-in: --kernel PATH)")
+        _not_requested(checks, reasons, "kernel", "kernel check", "--kernel PATH", say)
     return mutation_run
 
 
@@ -588,8 +590,7 @@ def _run_model_checks(args, files, findings, checks, say, reasons=None) -> None:
         say(render_boundary_report(joined, boundary_findings))
         findings.extend(boundary_findings)
         checks["boundary"] = RAN if joined.ran else COULD_NOT_RUN
-        if not joined.ran:
-            reasons["boundary"] = getattr(joined, "reason", "") or "boundary scan did not run"
+        _note_if_not_run(checks, reasons, "boundary", joined, "boundary scan did not run")
     else:
         # Which of the two it is, the notice already decides: it is written
         # when this repository reaches for a package it does not provide or
@@ -616,8 +617,7 @@ def _run_model_checks(args, files, findings, checks, say, reasons=None) -> None:
         say(render_structure_report(model, structure_findings))
         findings.extend(structure_findings)
         checks["structure"] = RAN if model.ran else COULD_NOT_RUN
-        if not model.ran:
-            reasons["structure"] = getattr(model, "reason", "") or "structure scan did not run"
+        _note_if_not_run(checks, reasons, "structure", model, "structure scan did not run")
         if args.structure_out:
             try:
                 args.structure_out.write_text(model.to_json(), encoding="utf-8")

@@ -261,14 +261,13 @@ def _recover_flattened(root: Path, corpora: List[Path], into: Path) -> int:
     results = recover(flattened, corpus)
 
     written, refused = [], []
-    for result in results:
-        if not result.is_recovered:
+    for recovery in results:
+        if not recovery.is_recovered:
             continue
         try:
-            # ghost_buster: name-disagreement -- `result` is `recovery` in the signature
-            written.append((result, write_recovery(result, into, root)))
+            written.append((recovery, write_recovery(recovery, into, root)))
         except (FileExistsError, ValueError) as e:
-            refused.append((result, str(e)))
+            refused.append((recovery, str(e)))
 
     manifest = write_manifest(results, into, root)
     counts = Counter(r.verdict for r in results)

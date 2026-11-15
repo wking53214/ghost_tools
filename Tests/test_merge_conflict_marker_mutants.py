@@ -51,12 +51,12 @@ MUTANTS = [
     ("theirs pattern matches nothing", _M,
      'r"^>{7}(?:\\s.*)?$"', 'r"^ZZZZZZZ(?:\\s.*)?$"'),
     ("missing triplet treated as a finding anyway", _M,
-     '            if sep_line is None or theirs_line is None:\n'
-     '                i = ours_line + 1\n                continue\n',
-     '            if False:\n                i = ours_line + 1\n                continue\n'),
+     '        if sep_line is None or theirs_line is None:\n'
+     '            i = ours_line + 1\n            continue\n',
+     '        if False:\n            i = ours_line + 1\n            continue\n'),
     ("scan does not resume after a found triplet (double-counts a nested marker)", _M,
-     '            i = theirs_line + 1\n    return findings\n',
-     '            i = ours_line + 1\n    return findings\n'),
+     '        yield ours_line, theirs_line\n        i = theirs_line + 1\n',
+     '        yield ours_line, theirs_line\n        i = ours_line + 1\n'),
     # Anchored on the preceding line as well. A bare
     # '                severity=Severity.CRITICAL,' is a SUBSTRING of the
     # more deeply indented one that unreachable_declared_state grew in 1.7.8,

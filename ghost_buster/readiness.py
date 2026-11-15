@@ -156,6 +156,11 @@ def _count(findings: Iterable[Finding], detector: str,
                if f.detector == detector and (severity is None or f.severity is severity))
 
 
+def _not_run(name: str, check: str, checks: Dict[str, str]) -> Criterion:
+    """A criterion whose check did not run is unknown, not met or failed."""
+    return Criterion(name, None, f"{check} {checks.get(check, 'not run')}; run with --{check}")
+
+
 def assess(findings: Iterable[Finding], checks: Dict[str, str],
            retired: Optional[Set[str]] = None,
            carried: Iterable[str] = ()) -> Readiness:
@@ -186,7 +191,7 @@ def assess(findings: Iterable[Finding], checks: Dict[str, str],
                                   "suite ran clean" if n == 0
                                   else f"{n} failing or flaky test(s): {_name_tests(bad)}"))
     else:
-        criteria.append(Criterion(TESTS, None, f"tests {checks.get('tests', 'not run')}; run with --tests"))
+        criteria.append(_not_run(TESTS, "tests", checks))
 
     if checks.get("secrets") == RAN:
         established = _count(findings, "committed_secret", Severity.CRITICAL)
@@ -203,7 +208,7 @@ def assess(findings: Iterable[Finding], checks: Dict[str, str],
                            if len(unread) < len(candidates) else ""))
         criteria.append(Criterion(SECRETS, established == 0, evidence))
     else:
-        criteria.append(Criterion(SECRETS, None, f"secrets {checks.get('secrets', 'not run')}; run with --secrets"))
+        criteria.append(_not_run(SECRETS, "secrets", checks))
 
     n = _count(findings, "drifted_copy", Severity.MAJOR)
     criteria.append(Criterion(COPIES, n == 0,

@@ -155,17 +155,13 @@ def reconstruct(text: str, source: str = "") -> Reconstruction:
     determined = _INDENT_RUN.sub(lambda m: "\n" + m.group(0)[1:], text)
     passes = ["indent-runs"]
 
-    if _parses(determined):
-        return Reconstruction(determined, determined.count("\n") + 1, True,
-                              passes, source)
-
-    split = _SPLIT_BEFORE.sub("\n", determined)
-    if split.count("\n") > determined.count("\n"):
-        passes.append("heuristic-split")
-        return Reconstruction(split, split.count("\n") + 1, _parses(split),
-                              passes, source)
-    return Reconstruction(determined, determined.count("\n") + 1, False,
-                          passes, source)
+    result, parses = determined, _parses(determined)
+    if not parses:
+        split = _SPLIT_BEFORE.sub("\n", determined)
+        if split.count("\n") > determined.count("\n"):
+            passes.append("heuristic-split")
+            result, parses = split, _parses(split)
+    return Reconstruction(result, result.count("\n") + 1, parses, passes, source)
 
 
 def write_proposal(path: Path, into: Path, text: str | None = None) -> Path:

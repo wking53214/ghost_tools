@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import ast
 import configparser
+import contextlib
 import os
 import re
 import tomllib
@@ -56,19 +57,21 @@ def _is_namespace(node) -> bool:
 def _constant_prefix(key) -> str:
     """The literal text a computed key starts with, or ''."""
     if isinstance(key, ast.BinOp) and isinstance(key.op, (ast.Add, ast.Mod)):
-        left = key.left
-        if isinstance(left, ast.Constant) and isinstance(left.value, str):
-            return left.value.split("%")[0]
-        return _constant_prefix(left)
+        text = _string_literal(key.left)
+        return _constant_prefix(key.left) if text is None else text.split("%")[0]
     if isinstance(key, ast.JoinedStr) and key.values:
-        first = key.values[0]
-        if isinstance(first, ast.Constant) and isinstance(first.value, str):
-            return first.value
+        return _string_literal(key.values[0]) or ""
     if isinstance(key, ast.Call) and isinstance(key.func, ast.Attribute) and key.func.attr == "format":
-        base = key.func.value
-        if isinstance(base, ast.Constant) and isinstance(base.value, str):
-            return base.value.split("{")[0]
+        text = _string_literal(key.func.value)
+        return "" if text is None else text.split("{")[0]
     return ""
+
+
+def _string_literal(node) -> Optional[str]:
+    """The text of a string literal, or None for anything else."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return None
 
 
 def find_repo_root(files: Iterable[Path]) -> Optional[Path]:
@@ -112,6 +115,11 @@ def entry_points(root: Path) -> Tuple[Dict[Tuple[str, str], str], List[str]]:
         if isinstance(value, str) and (t := _split_target(value)):
             found.setdefault(t, label)
 
+    def add_grouped(groups, kind):
+        for group, table in (groups or {}).items():
+            for k, v in (table or {}).items():
+                add(v, f"pyproject.toml {kind} '{k}' in group '{group}'")
+
     pp = root / "pyproject.toml"
     if pp.is_file():
         try:
@@ -125,14 +133,10 @@ def entry_points(root: Path) -> Tuple[Dict[Tuple[str, str], str], List[str]]:
         for key, kind in (("scripts", "console script"), ("gui-scripts", "gui script")):
             for k, v in (project.get(key) or {}).items():
                 add(v, f"pyproject.toml {kind} '{k}'")
-        for group, table in (project.get("entry-points") or {}).items():
-            for k, v in (table or {}).items():
-                add(v, f"pyproject.toml plugin entry point '{k}' in group '{group}'")
+        add_grouped(project.get("entry-points"), "plugin entry point")
         for k, v in (poetry.get("scripts") or {}).items():
             add(v, f"pyproject.toml poetry script '{k}'")
-        for group, table in (poetry.get("plugins") or {}).items():
-            for k, v in (table or {}).items():
-                add(v, f"pyproject.toml poetry plugin '{k}' in group '{group}'")
+        add_grouped(poetry.get("plugins"), "poetry plugin")
 
     cfg = root / "setup.cfg"
     if cfg.is_file() and (text := _read(cfg)) is not None:
@@ -196,10 +200,8 @@ class ReferenceIndex:
 
     def _rel(self, path: Path) -> str:
         if self.root is not None:
-            try:
+            with contextlib.suppress(ValueError):
                 return Path(os.path.abspath(str(path))).relative_to(self.root).as_posix()
-            except ValueError:
-                pass
         return Path(path).name
 
     def _modules(self, path: Path) -> Set[str]:
@@ -278,11 +280,11 @@ class ReferenceIndex:
     def _config_files(self, root: Path) -> List[Path]:
         out: List[Path] = []
 
-        def wanted(p: Path) -> bool:
-            n = p.name.lower()
+        def wanted(entry: Path) -> bool:
+            n = entry.name.lower()
             if "lock" in n or n in _STRUCTURED or n.startswith("requirements"):
                 return False
-            return p.suffix.lower() in _CONFIG_EXTS or n == ".env" or n.startswith(".env.")
+            return entry.suffix.lower() in _CONFIG_EXTS or n == ".env" or n.startswith(".env.")
 
         for entry in sorted(root.iterdir()):
             if entry.is_file() and wanted(entry):
@@ -291,10 +293,11 @@ class ReferenceIndex:
             if d.is_dir() and d.name.lower() in _CONFIG_DIRS and d.name not in _SKIP_DIRS:
                 base = len(d.parts)
                 for dirpath, dirs, names in os.walk(d):
+                    here = Path(dirpath)
                     dirs[:] = sorted(x for x in dirs if x not in _SKIP_DIRS)
-                    if len(Path(dirpath).parts) - base >= _MAX_DEPTH:
+                    if len(here.parts) - base >= _MAX_DEPTH:
                         dirs[:] = []
-                    out.extend(Path(dirpath) / n for n in sorted(names) if wanted(Path(dirpath) / n))
+                    out.extend(here / n for n in sorted(names) if wanted(here / n))
         return out
 
     def referenced_by(self, name: str, path: Path) -> List[str]:
