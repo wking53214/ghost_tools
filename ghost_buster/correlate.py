@@ -74,7 +74,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import PurePath
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, List, NamedTuple, Optional, Sequence, Tuple
 
 from .mechanical import claim_shape
 from .schema import Category, Evidence, Finding, Layer, Severity, Status
@@ -291,40 +291,45 @@ def correlate_secret_across_repositories(data: CorrelationInput) -> List[Finding
                     break
         if not elsewhere:
             continue
-        labels = ", ".join(label for label, _ in elsewhere)
-        out.append(Finding(
-            detector="secret_in_multiple_repositories",
-            category=Category.COMMITTED_SECRET,
-            layer=Layer.MECHANICAL,
-            severity=Severity.CRITICAL,
-            status=Status.CONFIRMED,
-            summary=(
-                f"the '{secret.attributes.get('rule', 'unknown-rule')}' secret in "
-                f"{secret.evidence.file} is the same leak as one in: {labels}"
-            ),
-            detail=(
-                "Matched on gitleaks' own fingerprint (commit:file:rule:line), so this "
-                "is the same commit carrying the same secret in more than one "
-                "repository -- a fork, a vendored copy, or a directory copied with its "
-                "history. A single-repository scan cannot see this: each repository "
-                "reports its own leak with nothing to say they are one credential. "
-                "Rotate once; purge history in every repository listed, or the "
-                "rotation is the only thing that happened.\n"
-                f"Fingerprint: {fingerprint}\n"
-                f"Built from findings: {_ids([secret] + [f for _, f in elsewhere])}."
-            ),
-            attributes={
-                "fingerprint": fingerprint,
-                "repositories": str(len(elsewhere) + 1),
-                "also_in": labels,
-            },
-            evidence=Evidence(
-                file=secret.evidence.absolute_file or secret.evidence.file,
-                line_start=secret.evidence.line_start,
-                line_end=secret.evidence.line_end,
-            ),
-        ))
+        out.append(_secret_elsewhere_finding(secret, fingerprint, elsewhere))
     return out
+
+
+def _secret_elsewhere_finding(secret: Finding, fingerprint: str,
+                              elsewhere: List[Tuple[str, Finding]]) -> Finding:
+    labels = ", ".join(label for label, _ in elsewhere)
+    return Finding(
+        detector="secret_in_multiple_repositories",
+        category=Category.COMMITTED_SECRET,
+        layer=Layer.MECHANICAL,
+        severity=Severity.CRITICAL,
+        status=Status.CONFIRMED,
+        summary=(
+            f"the '{secret.attributes.get('rule', 'unknown-rule')}' secret in "
+            f"{secret.evidence.file} is the same leak as one in: {labels}"
+        ),
+        detail=(
+            "Matched on gitleaks' own fingerprint (commit:file:rule:line), so this "
+            "is the same commit carrying the same secret in more than one "
+            "repository -- a fork, a vendored copy, or a directory copied with its "
+            "history. A single-repository scan cannot see this: each repository "
+            "reports its own leak with nothing to say they are one credential. "
+            "Rotate once; purge history in every repository listed, or the "
+            "rotation is the only thing that happened.\n"
+            f"Fingerprint: {fingerprint}\n"
+            f"Built from findings: {_ids([secret] + [f for _, f in elsewhere])}."
+        ),
+        attributes={
+            "fingerprint": fingerprint,
+            "repositories": str(len(elsewhere) + 1),
+            "also_in": labels,
+        },
+        evidence=Evidence(
+            file=secret.evidence.absolute_file or secret.evidence.file,
+            line_start=secret.evidence.line_start,
+            line_end=secret.evidence.line_end,
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -457,6 +462,7 @@ def correlate_doc_count_against_run(data: CorrelationInput) -> List[Finding]:
     errored = int(getattr(report, "errored", 0) or 0)
     blocked = int(getattr(report, "blocked", 0) or 0)
     unexamined = max(errored, blocked)
+    counts = _SuiteCounts(collected, passed, not_passing, unexamined, errored, blocked)
 
     out: List[Finding] = []
     for drift in drifts:
@@ -479,69 +485,86 @@ def correlate_doc_count_against_run(data: CorrelationInput) -> List[Finding]:
         shape = claim_shape(drift.attributes.get("claim_context", ""))
         if shape is not None:
             continue
-        out.append(Finding(
-            detector="doc_count_contradicted_by_run",
-            category=Category.DOC_DRIFT,
-            layer=Layer.MECHANICAL,
-            severity=(Severity.MINOR if not_passing == 0 and not unexamined
-                      else Severity.MAJOR),
-            status=Status.CONFIRMED,
-            summary=(
-                f"'{drift.evidence.file}' claims {documented} test(s); the suite "
-                f"actually collects {collected} and {passed} pass"
-                + ("" if not_passing == 0 else f" ({not_passing} do not)")
-                + ("" if not unexamined
-                   else f"; {unexamined} test file(s) did not run at all")
-            ),
-            detail=(
-                "The static count is a lower bound and says so; this is the measured "
-                f"number from the run that just happened. Write {collected} into the "
-                "doc, not the static bound of "
-                f"{static or 'the AST scan'}."
-                + ("" if not_passing == 0 else
-                   f" Note also that {not_passing} collected test(s) did not pass, so a "
-                   "sentence claiming this suite is green is wrong independently of the "
-                   "number.")
-                + ("" if not unexamined else
-                   f" And {unexamined} test file(s) could not be collected, so "
-                   "neither number describes the whole suite: what never ran is "
-                   "absent from the collected count and from the passed count "
-                   "alike, which is why subtracting one from the other says "
-                   "green. Nothing may be written into a document from this "
-                   "run until the suite runs.")
-                + f"\nBuilt from findings: {_ids([drift])} plus the --tests run."
-            ),
-            # Everything measured is excluded. `collected`, `passed` and
-            # `unexamined` all move with the suite while the claim being
-            # contradicted stays exactly as wrong as it was. See
-            # `Finding.identity_key`.
-            identity_key=f"claims {documented} test(s), contradicted by the run",
-            attributes={
-                "drift_finding": drift.id,
-                "documented_count": documented,
-                "collected": str(collected),
-                "passed": str(passed),
-                # The part of the suite that produced no result either way.
-                # A remedy that writes a measured total into somebody's
-                # document has to be able to see that the measurement is
-                # incomplete, and `collected - passed` structurally cannot
-                # show it.
-                "unexamined": str(unexamined),
-                "errored": str(errored),
-                "blocked": str(blocked),
-                # Carried, not recomputed: the verdict needs the document's
-                # name and the text around the claim, and this connector has
-                # neither. The detector read both and said so.
-                "writable": drift.attributes.get("writable", "no"),
-                "not_writable_because": drift.attributes.get("not_writable_because", ""),
-            },
-            evidence=Evidence(
-                file=drift.evidence.absolute_file or drift.evidence.file,
-                line_start=drift.evidence.line_start,
-                line_end=drift.evidence.line_end,
-            ),
-        ))
+        out.append(_doc_count_finding(drift, documented, static, counts))
     return out
+
+
+class _SuiteCounts(NamedTuple):
+    """What the --tests run measured, as correlate_doc_count_against_run
+    derived it."""
+    collected: int
+    passed: int
+    not_passing: int
+    unexamined: int
+    errored: int
+    blocked: int
+
+
+def _doc_count_finding(drift: Finding, documented: str, static: str,
+                       counts: _SuiteCounts) -> Finding:
+    collected, passed, not_passing, unexamined, errored, blocked = counts
+    return Finding(
+        detector="doc_count_contradicted_by_run",
+        category=Category.DOC_DRIFT,
+        layer=Layer.MECHANICAL,
+        severity=(Severity.MINOR if not_passing == 0 and not unexamined
+                  else Severity.MAJOR),
+        status=Status.CONFIRMED,
+        summary=(
+            f"'{drift.evidence.file}' claims {documented} test(s); the suite "
+            f"actually collects {collected} and {passed} pass"
+            + ("" if not_passing == 0 else f" ({not_passing} do not)")
+            + ("" if not unexamined
+               else f"; {unexamined} test file(s) did not run at all")
+        ),
+        detail=(
+            "The static count is a lower bound and says so; this is the measured "
+            f"number from the run that just happened. Write {collected} into the "
+            "doc, not the static bound of "
+            f"{static or 'the AST scan'}."
+            + ("" if not_passing == 0 else
+               f" Note also that {not_passing} collected test(s) did not pass, so a "
+               "sentence claiming this suite is green is wrong independently of the "
+               "number.")
+            + ("" if not unexamined else
+               f" And {unexamined} test file(s) could not be collected, so "
+               "neither number describes the whole suite: what never ran is "
+               "absent from the collected count and from the passed count "
+               "alike, which is why subtracting one from the other says "
+               "green. Nothing may be written into a document from this "
+               "run until the suite runs.")
+            + f"\nBuilt from findings: {_ids([drift])} plus the --tests run."
+        ),
+        # Everything measured is excluded. `collected`, `passed` and
+        # `unexamined` all move with the suite while the claim being
+        # contradicted stays exactly as wrong as it was. See
+        # `Finding.identity_key`.
+        identity_key=f"claims {documented} test(s), contradicted by the run",
+        attributes={
+            "drift_finding": drift.id,
+            "documented_count": documented,
+            "collected": str(collected),
+            "passed": str(passed),
+            # The part of the suite that produced no result either way.
+            # A remedy that writes a measured total into somebody's
+            # document has to be able to see that the measurement is
+            # incomplete, and `collected - passed` structurally cannot
+            # show it.
+            "unexamined": str(unexamined),
+            "errored": str(errored),
+            "blocked": str(blocked),
+            # Carried, not recomputed: the verdict needs the document's
+            # name and the text around the claim, and this connector has
+            # neither. The detector read both and said so.
+            "writable": drift.attributes.get("writable", "no"),
+            "not_writable_because": drift.attributes.get("not_writable_because", ""),
+        },
+        evidence=Evidence(
+            file=drift.evidence.absolute_file or drift.evidence.file,
+            line_start=drift.evidence.line_start,
+            line_end=drift.evidence.line_end,
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------

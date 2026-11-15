@@ -186,6 +186,26 @@ def build_joined_model(roots: Sequence, files_by_root: Dict[str, List[Path]]) ->
         files = files_by_root.get(root, [])
         models[root] = build_model(root, files)
 
+    _record_provides(joined, models)
+
+    # What each repository REACHES FOR.
+    for root, model in models.items():
+        root_path = Path(root)
+        for m in model.modules:
+            path = root_path / m.path
+            tree = corpus.parse(path)
+            if tree is None:
+                continue
+            imports, notes = guarded_imports(tree, root, m.dotted)
+            joined.reaches.extend(i for i in imports if not _is_stdlib(i.package))
+            joined.unresolved.extend(notes)
+            joined.dormant_tests.extend(dormant_tests(tree, root, m.dotted))
+
+    joined.unresolved = sorted(set(joined.unresolved))
+    return joined
+
+
+def _record_provides(joined: JoinedModel, models: Dict[str, StructuralModel]) -> None:
     # What each repository PROVIDES: its importable top-level packages and,
     # for each, every top-level name any of its modules exports.
     # A MODULE UNDER src/ STILL BELONGS TO ITS PACKAGE. `packages` reports
@@ -259,22 +279,6 @@ def build_joined_model(roots: Sequence, files_by_root: Dict[str, List[Path]]) ->
 
     joined.opaque_modules = opaque
 
-    # What each repository REACHES FOR.
-    for root, model in models.items():
-        root_path = Path(root)
-        for m in model.modules:
-            path = root_path / m.path
-            tree = corpus.parse(path)
-            if tree is None:
-                continue
-            imports, notes = guarded_imports(tree, root, m.dotted)
-            joined.reaches.extend(i for i in imports if not _is_stdlib(i.package))
-            joined.unresolved.extend(notes)
-            joined.dormant_tests.extend(dormant_tests(tree, root, m.dotted))
-
-    joined.unresolved = sorted(set(joined.unresolved))
-    return joined
-
 
 def _finding(kind: str, severity: Severity, file: str, summary: str,
              detail: str, attributes: dict, line=None) -> Finding:
@@ -307,6 +311,11 @@ def _test_corpus(files_by_root: Dict[str, List[Path]]) -> str:
     return "\n".join(chunks)
 
 
+def _module_file(repo: str, module: str) -> str:
+    """The source file a dotted module name was read from."""
+    return str(Path(repo) / module.replace(".", "/")) + ".py"
+
+
 def derive_findings(joined: JoinedModel, files_by_root: Dict[str, List[Path]]) -> List[Finding]:
     if not joined.ran:
         return []
@@ -315,24 +324,10 @@ def derive_findings(joined: JoinedModel, files_by_root: Dict[str, List[Path]]) -
 
     for reach in joined.reaches:
         provider = joined.provides.get(reach.package)
-        file = str(Path(reach.repo) / reach.module.replace(".", "/")) + ".py"
+        file = _module_file(reach.repo, reach.module)
 
         if provider is None:
-            out.append(_finding(
-                "boundary provider absent", Severity.MINOR, file,
-                f"'{reach.module}' reaches for '{reach.package}', which no "
-                f"repository in this joined set provides",
-                "The seam is declared and the other side is not here. Either the "
-                "join is incomplete -- add the repository that provides this "
-                "package -- or the dependency is external and this is simply how "
-                "it degrades, in which case nothing is wrong and the fallback is "
-                "doing its job.\n\nReported MINOR because both readings are "
-                "common, and because the fallback means nothing crashes today. "
-                "What it costs is that every test behind this guard stays "
-                "dormant, and a dormant test proves nothing.",
-                {"package": reach.package, "reaching_module": reach.module},
-                reach.line,
-            ))
+            out.append(_provider_absent(reach, file))
             continue
 
         provider_root, exported = provider
@@ -361,50 +356,15 @@ def derive_findings(joined: JoinedModel, files_by_root: Dict[str, List[Path]]) -
 
         missing = [n for n in reach.names if n not in exported]
         if missing:
-            out.append(_finding(
-                "cross repo import unresolved", Severity.CRITICAL, file,
-                f"'{reach.module}' imports {', '.join(missing)} from "
-                f"'{reach.package}', which does not export "
-                f"{'them' if len(missing) > 1 else 'it'}",
-                "Neither repository's CI can catch this. The importing side "
-                "guards the import and skips its tests when the other is absent, "
-                "so it never runs the seam; the providing side has never heard of "
-                "the importer. The contract is checked at exactly one moment -- "
-                "when somebody joins the two -- and this says it will fail then."
-                "\n\nScope limit: a name re-exported through a package __init__ "
-                "by a mechanism this scan could not follow, or provided "
-                "dynamically, would look identical. Confirm before deleting the "
-                "import.",
-                {"package": reach.package, "missing": ", ".join(missing),
-                 "provider": provider_root, "reaching_module": reach.module},
-                reach.line,
-            ))
+            out.append(_import_unresolved(reach, file, missing, provider_root))
             continue
 
         untested = [n for n in reach.names if n and not re.search(rf"\b{re.escape(n)}\b", corpus)]
         if untested:
-            out.append(_finding(
-                "boundary symbol untested", Severity.MAJOR, file,
-                f"'{reach.module}' imports {', '.join(untested)} from "
-                f"'{reach.package}', and no test in either repository mentions "
-                f"{'them' if len(untested) > 1 else 'it'}",
-                "This is the mechanical form of 'is a new test needed here'. The "
-                "symbol crosses a repository boundary, both sides resolve, and "
-                "nothing anywhere exercises it -- not a live test, not a dormant "
-                "one waiting for the join. The seam works today by luck and "
-                "nobody would learn otherwise until it stopped.\n\nA test for "
-                "this belongs on the importing side, guarded the same way the "
-                "import is, so that it lies dormant alone and runs on join.\n\n"
-                "Scope limit: presence of a name in the test corpus proves only "
-                "that it is mentioned. This check is built to be certain about "
-                "ABSENCE and modest about presence.",
-                {"package": reach.package, "untested": ", ".join(untested),
-                 "reaching_module": reach.module},
-                reach.line,
-            ))
+            out.append(_symbol_untested(reach, file, untested))
 
     for dormant in joined.dormant_tests:
-        file = str(Path(dormant.repo) / dormant.module.replace(".", "/")) + ".py"
+        file = _module_file(dormant.repo, dormant.module)
         out.append(_finding(
             "dormant boundary test", Severity.INFORMATIONAL, file,
             f"'{dormant.module}' holds a test that skips: {dormant.reason!r}",
@@ -417,6 +377,68 @@ def derive_findings(joined: JoinedModel, files_by_root: Dict[str, List[Path]]) -
             {"reason": dormant.reason, "module": dormant.module}, dormant.line,
         ))
     return out
+
+
+def _provider_absent(reach: GuardedImport, file: str) -> Finding:
+    return _finding(
+        "boundary provider absent", Severity.MINOR, file,
+        f"'{reach.module}' reaches for '{reach.package}', which no "
+        f"repository in this joined set provides",
+        "The seam is declared and the other side is not here. Either the "
+        "join is incomplete -- add the repository that provides this "
+        "package -- or the dependency is external and this is simply how "
+        "it degrades, in which case nothing is wrong and the fallback is "
+        "doing its job.\n\nReported MINOR because both readings are "
+        "common, and because the fallback means nothing crashes today. "
+        "What it costs is that every test behind this guard stays "
+        "dormant, and a dormant test proves nothing.",
+        {"package": reach.package, "reaching_module": reach.module},
+        reach.line,
+    )
+
+
+def _import_unresolved(reach: GuardedImport, file: str, missing: List[str],
+                       provider_root: str) -> Finding:
+    return _finding(
+        "cross repo import unresolved", Severity.CRITICAL, file,
+        f"'{reach.module}' imports {', '.join(missing)} from "
+        f"'{reach.package}', which does not export "
+        f"{'them' if len(missing) > 1 else 'it'}",
+        "Neither repository's CI can catch this. The importing side "
+        "guards the import and skips its tests when the other is absent, "
+        "so it never runs the seam; the providing side has never heard of "
+        "the importer. The contract is checked at exactly one moment -- "
+        "when somebody joins the two -- and this says it will fail then."
+        "\n\nScope limit: a name re-exported through a package __init__ "
+        "by a mechanism this scan could not follow, or provided "
+        "dynamically, would look identical. Confirm before deleting the "
+        "import.",
+        {"package": reach.package, "missing": ", ".join(missing),
+         "provider": provider_root, "reaching_module": reach.module},
+        reach.line,
+    )
+
+
+def _symbol_untested(reach: GuardedImport, file: str, untested: List[str]) -> Finding:
+    return _finding(
+        "boundary symbol untested", Severity.MAJOR, file,
+        f"'{reach.module}' imports {', '.join(untested)} from "
+        f"'{reach.package}', and no test in either repository mentions "
+        f"{'them' if len(untested) > 1 else 'it'}",
+        "This is the mechanical form of 'is a new test needed here'. The "
+        "symbol crosses a repository boundary, both sides resolve, and "
+        "nothing anywhere exercises it -- not a live test, not a dormant "
+        "one waiting for the join. The seam works today by luck and "
+        "nobody would learn otherwise until it stopped.\n\nA test for "
+        "this belongs on the importing side, guarded the same way the "
+        "import is, so that it lies dormant alone and runs on join.\n\n"
+        "Scope limit: presence of a name in the test corpus proves only "
+        "that it is mentioned. This check is built to be certain about "
+        "ABSENCE and modest about presence.",
+        {"package": reach.package, "untested": ", ".join(untested),
+         "reaching_module": reach.module},
+        reach.line,
+    )
 
 
 def render_report(joined: JoinedModel, findings: List[Finding]) -> str:

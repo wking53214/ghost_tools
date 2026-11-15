@@ -39,7 +39,7 @@ import ast
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Set, Union
+from typing import Dict, Iterable, List, Optional, Sequence, Set, Union
 
 from . import corpus
 from .naming import is_test_path
@@ -142,6 +142,11 @@ def _literal_facts(tree: ast.Module) -> Dict[str, tuple]:
     return out
 
 
+def _bare_names(nodes: Iterable[ast.AST]) -> Set[str]:
+    """The names among `nodes` that are a plain variable, not an expression."""
+    return {n.id for n in nodes if isinstance(n, ast.Name)}
+
+
 def _may_change(loop_parts: List[ast.AST], call: ast.Call) -> bool:
     """Could something else in this loop change what `call`'s arguments
     refer to between iterations? The tree cannot see side effects, so it
@@ -158,7 +163,7 @@ def _may_change(loop_parts: List[ast.AST], call: ast.Call) -> bool:
     (`Finding(file=...)`) do not count: they read, they do not change.
     The first serum ranked four invariant calls that were nothing of the
     kind, all of them one of these three shapes."""
-    args = {a.id for a in call.args if isinstance(a, ast.Name)}
+    args = _bare_names(call.args)
     if not args:
         return False
     for part in loop_parts:
@@ -172,8 +177,8 @@ def _may_change(loop_parts: List[ast.AST], call: ast.Call) -> bool:
                     return True
                 if (isinstance(callee, ast.Name) and callee.id not in _CHEAP
                         and not callee.id[:1].isupper()):
-                    passed = {a.id for a in node.args if isinstance(a, ast.Name)}
-                    passed |= {k.value.id for k in node.keywords if isinstance(k.value, ast.Name)}
+                    passed = _bare_names(node.args)
+                    passed |= _bare_names(k.value for k in node.keywords)
                     if passed & args:
                         return True
             elif isinstance(node, (ast.Attribute, ast.Subscript)) and isinstance(node.ctx, ast.Store):
