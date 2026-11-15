@@ -42,7 +42,7 @@ Tiers are proposed from the network categorization. PRODUCT picks are the owner'
 | interconnected_beta | LIBRARY | license, CI, no status line, pins not tags | Keep LIBRARY. Pinned by Reporting and delta. Pin zeta by tag (currently no version). |
 | interconnected_delta | LIBRARY | license, CI, no status line, pins not tags | Keep LIBRARY. No cycle with beta (checked). Pin beta and zeta by tag (currently no version). |
 | interconnected_zeta | LIBRARY | license, CI, no status line | Keep LIBRARY. Publish a tag; consumers pin the tag. |
-| JUDGE | LIBRARY | license, CI, no status line, pins not tags | Keep LIBRARY. Cycle with WARDEN is being fixed elsewhere. |
+| JUDGE | LIBRARY | license, CI, no status line, pins not tags | Keep LIBRARY. Cycle with WARDEN reported fixed elsewhere. |
 | Link | LAB | license, CI, no status line | Add the one-line status line in README. |
 | OBSERVE | LAB | license, CI, no status line | Add the one-line status line in README. |
 | observe-perceive | PRODUCT | license, CI, no status line | PROMOTE to PRODUCT. Retired AUGUR pin is still used by the demo (requirements-demo.txt, fixture_augur.py). Drop only after you decide the demo's fate. |
@@ -55,14 +55,14 @@ Tiers are proposed from the network categorization. PRODUCT picks are the owner'
 | TIE | LIBRARY | license, CI, no status line | Keep LIBRARY. Publish a tag; consumers pin the tag. |
 | Triad-42 | LIBRARY | license, CI, no status line, pins not tags | Keep LIBRARY. Publish a tag; consumers pin the tag. |
 | URE | LAB | license, CI, no status line | Pin is already a tag (V1.9.1 exists on ghost_tools). Census tool misread it as a branch. No change needed. |
-| WARDEN | LIBRARY | license, CI, no status line, pins not tags | Keep LIBRARY. Cycle with JUDGE is being fixed elsewhere. |
+| WARDEN | LIBRARY | license, CI, no status line, pins not tags | Keep LIBRARY. Cycle with JUDGE reported fixed elsewhere. |
 | WATCHER | ARCHIVE (candidate) | no license, no CI, no status line | Local clone has no commits. Confirm the remote and archive if unused. |
 | WATCHER_MCU | LAB | license, CI, no status line | Add the one-line status line in README. |
 | ZTS | LAB | license, CI, no status line | Add the one-line status line in README. |
 
 ## Follow-ups
 
-- WARDEN <-> JUDGE cycle: being fixed elsewhere. No beta <-> delta cycle exists (earlier reading was wrong).
+- WARDEN <-> JUDGE cycle: reported fixed elsewhere (not re-checked here). No beta <-> delta cycle exists (earlier reading was wrong).
 - Move commit and branch pins to tags across the network. Start with `observe-perceive` (8 pins, most by commit).
 - Retired `AUGUR` pin in `observe-perceive`: decide whether to drop it and retire the demo that uses it.
 
@@ -124,12 +124,13 @@ FLAGS (43)
 
 ## Budget line
 
-Honest weekly build hours: ____
-Priced tiers: PRODUCT x 2 hrs/wk + LIBRARY x 0.5 hr/wk = ____
-Fits? ____
+Honest weekly build hours: 40 (owner's estimate, "probably 40")
+Priced tiers: PRODUCT 2 x 2 hrs/wk = 4 hrs; LIBRARY 19 x 0.5 hr/wk = 9.5 hrs; LAB and ARCHIVE about 0. Total = 13.5 hrs/wk
+Fits? Yes. 13.5 of 40 hrs/wk, leaving about 26.5 hrs/wk for new work.
 
 ## Log
 
+- 2026-11-15: Budget entered (40 hrs/wk estimate). WARDEN <-> JUDGE cycle reported fixed elsewhere.
 - 2026-10-21 status: AUGUR pin kept in observe-perceive until the demo is retired. Reporting still needs a main branch and a default-branch change; push access was denied. beta and zeta have no tags, so pinning them by tag needs version numbers first (owner's decision).
 - 2026-10-21: Corrected (census tool now accepts V tags; sentinel_os's DIT pin is a tag): no beta <-> delta cycle; URE pin is a tag; Reporting needs a main branch and a settings change.
 - 2026-10-21: First census run (41 folders). Tiers assigned from the network categorization (PRODUCT: option B). Budget not yet entered.
