@@ -57,19 +57,21 @@ def _is_namespace(node) -> bool:
 def _constant_prefix(key) -> str:
     """The literal text a computed key starts with, or ''."""
     if isinstance(key, ast.BinOp) and isinstance(key.op, (ast.Add, ast.Mod)):
-        left = key.left
-        if isinstance(left, ast.Constant) and isinstance(left.value, str):
-            return left.value.split("%")[0]
-        return _constant_prefix(left)
+        text = _string_literal(key.left)
+        return _constant_prefix(key.left) if text is None else text.split("%")[0]
     if isinstance(key, ast.JoinedStr) and key.values:
-        first = key.values[0]
-        if isinstance(first, ast.Constant) and isinstance(first.value, str):
-            return first.value
+        return _string_literal(key.values[0]) or ""
     if isinstance(key, ast.Call) and isinstance(key.func, ast.Attribute) and key.func.attr == "format":
-        base = key.func.value
-        if isinstance(base, ast.Constant) and isinstance(base.value, str):
-            return base.value.split("{")[0]
+        text = _string_literal(key.func.value)
+        return "" if text is None else text.split("{")[0]
     return ""
+
+
+def _string_literal(node) -> Optional[str]:
+    """The text of a string literal, or None for anything else."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return None
 
 
 def find_repo_root(files: Iterable[Path]) -> Optional[Path]:
@@ -113,6 +115,11 @@ def entry_points(root: Path) -> Tuple[Dict[Tuple[str, str], str], List[str]]:
         if isinstance(value, str) and (t := _split_target(value)):
             found.setdefault(t, label)
 
+    def add_grouped(groups, kind):
+        for group, table in (groups or {}).items():
+            for k, v in (table or {}).items():
+                add(v, f"pyproject.toml {kind} '{k}' in group '{group}'")
+
     pp = root / "pyproject.toml"
     if pp.is_file():
         try:
@@ -126,14 +133,10 @@ def entry_points(root: Path) -> Tuple[Dict[Tuple[str, str], str], List[str]]:
         for key, kind in (("scripts", "console script"), ("gui-scripts", "gui script")):
             for k, v in (project.get(key) or {}).items():
                 add(v, f"pyproject.toml {kind} '{k}'")
-        for group, table in (project.get("entry-points") or {}).items():
-            for k, v in (table or {}).items():
-                add(v, f"pyproject.toml plugin entry point '{k}' in group '{group}'")
+        add_grouped(project.get("entry-points"), "plugin entry point")
         for k, v in (poetry.get("scripts") or {}).items():
             add(v, f"pyproject.toml poetry script '{k}'")
-        for group, table in (poetry.get("plugins") or {}).items():
-            for k, v in (table or {}).items():
-                add(v, f"pyproject.toml poetry plugin '{k}' in group '{group}'")
+        add_grouped(poetry.get("plugins"), "poetry plugin")
 
     cfg = root / "setup.cfg"
     if cfg.is_file() and (text := _read(cfg)) is not None:

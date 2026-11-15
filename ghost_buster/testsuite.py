@@ -363,14 +363,14 @@ class _PytestRunner:
         self.root = root
         self.python = python
         self.timeout = timeout
-        self._tmp = tempfile.TemporaryDirectory(prefix="ghost_tests_")
-        self.tmpdir = Path(self._tmp.name)
+        self._plugin_dir = tempfile.TemporaryDirectory(prefix="ghost_tests_")
+        self.tmpdir = Path(self._plugin_dir.name)
         (self.tmpdir / f"{_PLUGIN_MODULE}.py").write_text(_PLUGIN_SOURCE, encoding="utf-8")
         self._n = 0
         self._local_modules: Optional[Dict[str, str]] = None
 
     def close(self) -> None:
-        self._tmp.cleanup()
+        self._plugin_dir.cleanup()
 
     def local_module_path(self, name: str) -> Optional[str]:
         """Where a top-level module of that name lives inside the scanned

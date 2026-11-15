@@ -154,9 +154,9 @@ def grant(root: Path) -> Trust:
     data[ident] = {"granted": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                    "path": str(Path(root).resolve())}
     store.parent.mkdir(parents=True, exist_ok=True)
-    tmp = store.with_suffix(store.suffix + ".tmp")
-    tmp.write_text(json.dumps(data, indent=1, sort_keys=True) + "\n")
-    os.replace(tmp, store)
+    staging = store.with_suffix(store.suffix + ".tmp")
+    staging.write_text(json.dumps(data, indent=1, sort_keys=True) + "\n")
+    os.replace(staging, store)
     return Trust(True, ident, store, "consent recorded now (--trust)")
 
 

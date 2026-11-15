@@ -396,14 +396,14 @@ class Finding:
             self._pre_key.append(old)
             self._pre_key_ids.append(old)
         if hashed != portable:
-            self._pre_nfc.append((_stable_id(self.detector, portable, key), portable))
+            self._remember_pre_nfc(portable, key)
         if _SCAN_ROOT is not None and self.evidence.absolute_file:
             old = _legacy_portable_path(self.evidence.absolute_file)
             old_id = _stable_id(self.detector, _nfc(old), key)
             if old_id != self.id:
                 self.legacy_id, self._legacy_file = old_id, old
             if old != _nfc(old):
-                self._pre_nfc.append((_stable_id(self.detector, old, key), old))
+                self._remember_pre_nfc(old, key)
         if self.confidence is not None and not (0.0 <= self.confidence <= 1.0):
             raise ValueError(f"confidence must be 0.0-1.0, got {self.confidence}")
         if self.layer == Layer.MECHANICAL and self.status == Status.REASONED:
@@ -413,6 +413,10 @@ class Finding:
                 "the finding is either present (CONFIRMED) or it wasn't "
                 "produced at all. REASONED is reserved for the semantic layer."
             )
+
+    def _remember_pre_nfc(self, spelling: str, key: str) -> None:
+        """Keep the id `spelling`, un-normalised, would have hashed to."""
+        self._pre_nfc.append((_stable_id(self.detector, spelling, key), spelling))
 
     @property
     def previous_ids(self) -> List[str]:
@@ -733,34 +737,42 @@ def disambiguate_ids(findings: List[Finding]) -> int:
             continue
         # Identical findings (same place, same detail) are one finding
         # reported twice, not two findings; they keep the shared id.
-        def place(f: Finding):
-            return (_nfc(f.evidence.file), f.evidence.line_start or 0,
-                    f.evidence.line_end or 0, _detail_without_root(f))
-        distinct = {place(f) for f in group}
+        distinct = {_place(f) for f in group}
         if len(distinct) < 2:
             continue
         for f in group:
-            placed = place(f)
-            where = "|".join(str(part) for part in placed)
-            f.id = f"{base}-{hashlib.sha256(where.encode('utf-8')).hexdigest()[:6]}"
-            if f.legacy_id is not None and f._legacy_file is not None:
-                old_where = "|".join(str(part) for part in (_nfc(f._legacy_file),) + placed[1:])
-                f.legacy_id = (f"{f.legacy_id}-"
-                               f"{hashlib.sha256(old_where.encode('utf-8')).hexdigest()[:6]}")
-            f._pre_nfc = [
-                (f"{pid}-" + hashlib.sha256(
-                    '|'.join(str(x) for x in (pfile,) + placed[1:]).encode('utf-8')).hexdigest()[:6],
-                 pfile)
-                for pid, pfile in f._pre_nfc]
-            # The suffix this scheme gave before the detail lost the scan folder (1.10.9): a baseline written
-            # from the same folder under it still matches.
-            earlier = "|".join(str(part) for part in placed[:3] + (f.detail,))
-            earlier_id = f"{base}-{hashlib.sha256(earlier.encode('utf-8')).hexdigest()[:6]}"
-            if earlier_id != f.id:
-                f._pre_nfc.append((earlier_id, f.evidence.file))
+            _suffix_by_place(f, base)
             renamed += 1
     _disambiguate_previous_keys(findings)
     return renamed
+
+
+def _place(f: Finding):
+    """Where a finding is, as `disambiguate_ids` tells colliding findings apart."""
+    return (_nfc(f.evidence.file), f.evidence.line_start or 0,
+            f.evidence.line_end or 0, _detail_without_root(f))
+
+
+def _suffix_by_place(f: Finding, base: str) -> None:
+    """Give one member of a colliding group its place suffix, on its id and on every earlier spelling of it."""
+    placed = _place(f)
+    where = "|".join(str(part) for part in placed)
+    f.id = f"{base}-{hashlib.sha256(where.encode('utf-8')).hexdigest()[:6]}"
+    if f.legacy_id is not None and f._legacy_file is not None:
+        old_where = "|".join(str(part) for part in (_nfc(f._legacy_file),) + placed[1:])
+        f.legacy_id = (f"{f.legacy_id}-"
+                       f"{hashlib.sha256(old_where.encode('utf-8')).hexdigest()[:6]}")
+    f._pre_nfc = [
+        (f"{pid}-" + hashlib.sha256(
+            '|'.join(str(x) for x in (pfile,) + placed[1:]).encode('utf-8')).hexdigest()[:6],
+         pfile)
+        for pid, pfile in f._pre_nfc]
+    # The suffix this scheme gave before the detail lost the scan folder (1.10.9): a baseline written
+    # from the same folder under it still matches.
+    earlier = "|".join(str(part) for part in placed[:3] + (f.detail,))
+    earlier_id = f"{base}-{hashlib.sha256(earlier.encode('utf-8')).hexdigest()[:6]}"
+    if earlier_id != f.id:
+        f._pre_nfc.append((earlier_id, f.evidence.file))
 
 
 def _disambiguate_previous_keys(findings: List[Finding]) -> None:
@@ -772,11 +784,11 @@ def _disambiguate_previous_keys(findings: List[Finding]) -> None:
     every twin miss its own entry. They are grouped here by the OLD base id, exactly as the old
     scheme grouped them, and suffixed only where the old scheme would have.
     """
-    by_old: Dict[str, List[Finding]] = {}
+    by_previous_base: Dict[str, List[Finding]] = {}
     for f in findings:
         for base in f._pre_key:
-            by_old.setdefault(base, []).append(f)
-    for base, group in by_old.items():
+            by_previous_base.setdefault(base, []).append(f)
+    for base, group in by_previous_base.items():
         places = {(_nfc(f.evidence.file), f.evidence.line_start or 0, f.evidence.line_end or 0, _detail_without_root(f))
                   for f in group}
         for f in group:

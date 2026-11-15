@@ -58,8 +58,9 @@ MUTANTS = [
 
     # --- mutation's off-state goes unmentioned ---
     ("mutation being off is no longer announced", _P,
-     '        say("ghost_buster: mutation analysis NOT RUN (opt-in: --mutate)")\n',
-     '        pass\n'),
+     '        _not_requested(checks, reasons, "mutate", "mutation analysis", "--mutate", say)\n',
+     '        checks["mutate"] = NOT_RUN\n'
+     '        reasons["mutate"] = "opt-in and not requested (--mutate)"\n'),
 ]
 
 

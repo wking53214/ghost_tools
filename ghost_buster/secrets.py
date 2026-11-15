@@ -263,27 +263,8 @@ def _short_message(message: str, limit: int = 90) -> str:
     return first_line if len(first_line) <= limit else first_line[: limit - 1] + "…"
 
 
-def _finding(root: Path, entry: dict) -> Optional[Finding]:
-    file = entry.get("File")
-    if not file:
-        return None
-    rule = entry.get("RuleID") or "unknown-rule"
-    line = entry.get("StartLine")
-    line = line if isinstance(line, int) else None
-    end_line = entry.get("EndLine")
-    end_line = end_line if isinstance(end_line, int) else None
-    column = entry.get("StartColumn")
-    commit = (entry.get("Commit") or "").strip()
-    commit_short = commit[:12] if commit else "unknown commit"
-    fingerprint = entry.get("Fingerprint") or f"{commit}:{file}:{rule}:{line}"
-
-    file_path = Path(file)
-    rel = file_path.as_posix()
-    location = f"{rel}:{line}" if line is not None else rel
-    if column is not None:
-        location += f":{column}"
-    summary = f"a '{rule}' secret is committed in {location} (commit {commit_short})"
-
+def _introduction(entry: dict, commit_short: str) -> str:
+    """Who introduced the leak, when, and with what commit message."""
     intro = f"Introduced in commit {commit_short}"
     who = entry.get("Author")
     if who:
@@ -295,8 +276,11 @@ def _finding(root: Path, entry: dict) -> Optional[Finding]:
     if message:
         intro += f": {message!r}"
     intro += "."
+    return intro
 
-    description = (entry.get("Description") or "").strip()
+
+def _detail_lines(rule: str, description: str, intro: str, fingerprint: str) -> List[str]:
+    """The finding's detail, one paragraph per line: never the secret itself."""
     detail_lines = [
         f"gitleaks rule '{rule}'" + (f": {description}" if description else "."),
         intro,
@@ -327,6 +311,32 @@ def _finding(root: Path, entry: dict) -> Optional[Finding]:
         "fingerprint, which gitleaks will honor on the next scan.",
         f"gitleaks fingerprint: {fingerprint}",
     ]
+    return detail_lines
+
+
+def _finding(root: Path, entry: dict) -> Optional[Finding]:
+    file = entry.get("File")
+    if not file:
+        return None
+    rule = entry.get("RuleID") or "unknown-rule"
+    line = entry.get("StartLine")
+    line = line if isinstance(line, int) else None
+    end_line = entry.get("EndLine")
+    end_line = end_line if isinstance(end_line, int) else None
+    column = entry.get("StartColumn")
+    commit = (entry.get("Commit") or "").strip()
+    commit_short = commit[:12] if commit else "unknown commit"
+    fingerprint = entry.get("Fingerprint") or f"{commit}:{file}:{rule}:{line}"
+
+    file_path = Path(file)
+    rel = file_path.as_posix()
+    location = f"{rel}:{line}" if line is not None else rel
+    if column is not None:
+        location += f":{column}"
+    summary = f"a '{rule}' secret is committed in {location} (commit {commit_short})"
+
+    detail_lines = _detail_lines(rule, (entry.get("Description") or "").strip(),
+                                 _introduction(entry, commit_short), fingerprint)
 
     absolute = root / file_path if not file_path.is_absolute() else file_path
     return Finding(
@@ -350,6 +360,49 @@ def _finding(root: Path, entry: dict) -> Optional[Finding]:
             file=str(absolute), line_start=line, line_end=end_line, snippet=rule,
         ),
     )
+
+
+def _run_gitleaks(binary: str, root: Path, timeout: float, report: SecretsScanReport) -> Optional[str]:
+    """Run gitleaks over `root` and return the text of its JSON report, or
+    None with `report.reason` saying why there is none."""
+    with tempfile.TemporaryDirectory(prefix="ghost_secrets_") as scratch_dir:
+        report_path = Path(scratch_dir) / "report.json"
+        cmd = [
+            binary, "detect", "--source", str(root), "--no-banner",
+            "--report-format", "json", "--report-path", str(report_path),
+            "--redact", "--exit-code", "0",
+            # gitleaks runs `git log -p` itself; keep the target's diff
+            # drivers (textconv, external diff) out of it. See gitsafe.py.
+            # Giving --log-opts REPLACES gitleaks' own defaults for the log
+            # command (gitleaks 8.28: `--full-history --all --diff-filter=tuxdb`),
+            # so those are repeated here to keep the same history in scope.
+            "--log-opts=--full-history --all --diff-filter=tuxdb --no-ext-diff --no-textconv",
+        ]
+        try:
+            # No cwd: --source above is already absolute and is gitleaks'
+            # only source of the target path, deliberately not doubled up
+            # with cwd (see the resolve() comment in scan()).
+            proc = subprocess.run(
+                cmd, capture_output=True, text=True, errors="replace", timeout=timeout,
+                env=gitsafe.env(),
+            )
+        except subprocess.TimeoutExpired:
+            report.reason = f"gitleaks did not finish within {timeout:.0f}s"
+            return None
+        except (OSError, ValueError) as e:
+            report.reason = f"gitleaks could not be run: {type(e).__name__}: {e}"
+            return None
+
+        if proc.returncode != 0:
+            tail = (proc.stderr or proc.stdout or "no output").strip()
+            report.reason = f"gitleaks exited {proc.returncode}: {tail[-500:]}"
+            return None
+
+        if not report_path.exists():
+            report.reason = "gitleaks exited 0 but produced no report file"
+            return None
+
+        return report_path.read_text(encoding="utf-8", errors="replace")
 
 
 def scan(root: Path, *, gitleaks_path: Optional[str] = None,
@@ -390,44 +443,9 @@ def scan(root: Path, *, gitleaks_path: Optional[str] = None,
     report.scope = ("scanned the checked-out branch's own history, not every "
                     "ref (gitleaks' default, not --log-opts=--all)")
 
-    with tempfile.TemporaryDirectory(prefix="ghost_secrets_") as tmp:
-        report_path = Path(tmp) / "report.json"
-        cmd = [
-            binary, "detect", "--source", str(root), "--no-banner",
-            "--report-format", "json", "--report-path", str(report_path),
-            "--redact", "--exit-code", "0",
-            # gitleaks runs `git log -p` itself; keep the target's diff
-            # drivers (textconv, external diff) out of it. See gitsafe.py.
-            # Giving --log-opts REPLACES gitleaks' own defaults for the log
-            # command (gitleaks 8.28: `--full-history --all --diff-filter=tuxdb`),
-            # so those are repeated here to keep the same history in scope.
-            "--log-opts=--full-history --all --diff-filter=tuxdb --no-ext-diff --no-textconv",
-        ]
-        try:
-            # No cwd: --source above is already absolute and is gitleaks'
-            # only source of the target path, deliberately not doubled up
-            # with cwd (see the resolve() comment above).
-            proc = subprocess.run(
-                cmd, capture_output=True, text=True, errors="replace", timeout=timeout,
-                env=gitsafe.env(),
-            )
-        except subprocess.TimeoutExpired:
-            report.reason = f"gitleaks did not finish within {timeout:.0f}s"
-            return [], report
-        except (OSError, ValueError) as e:
-            report.reason = f"gitleaks could not be run: {type(e).__name__}: {e}"
-            return [], report
-
-        if proc.returncode != 0:
-            tail = (proc.stderr or proc.stdout or "no output").strip()
-            report.reason = f"gitleaks exited {proc.returncode}: {tail[-500:]}"
-            return [], report
-
-        if not report_path.exists():
-            report.reason = "gitleaks exited 0 but produced no report file"
-            return [], report
-
-        raw = report_path.read_text(encoding="utf-8", errors="replace")
+    raw = _run_gitleaks(binary, root, timeout, report)
+    if raw is None:
+        return [], report
 
     try:
         entries = json.loads(raw) if raw.strip() else []
