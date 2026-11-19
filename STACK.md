@@ -1,6 +1,6 @@
 # Stack role: ghost_tools
 
-**ASSURANCE (not the live decision path).**
+**ASSURANCE (not the orchestrator path).**
 
 The scanner (Ghost Buster). Finds what is present and wrong: dead code, documentation drift, duplication, vacuous tests, secrets. Reports, never writes. Its findings keep their identity across the loop, and it says what it could not look at.
 
@@ -71,8 +71,8 @@ earlier recorded run (2026-10-14, every seat live on a scratch repository, `ACCE
 see Warden's `docs/REGISTRY.json`) used the older circuit that seated them.
 
 ```text
-Live path: Admission → OBSERVE/Keys → Locks → PERCEIVE → Decision → Conservation → Execution → Custody
-Assurance: ASSAY · ghost_tools · SWIZZLE · Warden · Judge  (this circuit, off the live path)
+Orchestrator path: Admission → OBSERVE/Keys → Locks → PERCEIVE → Decision → Conservation → Execution → Custody
+Assurance: ASSAY · ghost_tools · SWIZZLE · Warden · Judge  (this circuit, off the orchestrator path)
 ```
 
 CNS (public, https://github.com/wking53214/CNS) holds the interoperability contracts. No repository in the circuit modifies it.
