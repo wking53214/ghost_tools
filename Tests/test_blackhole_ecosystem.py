@@ -8,12 +8,49 @@ submodule. Every one was true and none was a loss. The reader could not tell
 """
 from __future__ import annotations
 
+import builtins
+import importlib.util
 import json
 import textwrap
 from pathlib import Path
 
+import pytest
+
 from blackhole_extrapolator import EvidenceKind, resolve_providers, scan
 from blackhole_extrapolator.cli import main
+
+
+@pytest.fixture(autouse=True)
+def _ccc_is_not_installed(monkeypatch):
+    """These tests need `ccc` to be absent from the environment.
+
+    Every test here builds a fake sibling checkout called CCC and expects the
+    detector to treat `ccc` as "not installed, but provided by the sibling".
+    If a real package that provides `ccc` is importable where the suite runs,
+    the detector says "installed in this environment" first and five of these
+    tests fail. The import detector asks `importlib.util.find_spec` and the
+    orphaned-test detector calls `__import__`, so both are told that `ccc`
+    does not exist. Every other name passes through unchanged. This applies to
+    this file only.
+    """
+    real_find_spec = importlib.util.find_spec
+    real_import = builtins.__import__
+
+    def _is_ccc(name):
+        return name == "ccc" or name.startswith("ccc.")
+
+    def find_spec(name, *args, **kwargs):
+        if _is_ccc(name):
+            return None
+        return real_find_spec(name, *args, **kwargs)
+
+    def hiding_import(name, *args, **kwargs):
+        if _is_ccc(name):
+            raise ModuleNotFoundError(f"No module named {name!r}", name=name)
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(importlib.util, "find_spec", find_spec)
+    monkeypatch.setattr(builtins, "__import__", hiding_import)
 
 
 def _repo(parent: Path, name: str, files: dict) -> Path:
