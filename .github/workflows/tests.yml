@@ -145,7 +145,7 @@ jobs:
           - label: pinned siblings
             blocking: true
             swizzle_ref: 3fcb27f62add4ba4355a55dff6f3a180fda816ed  # SWIZZLE 0.8.13 (pyproject), tested set: the last one this repository's CI tested on its own
-            assay_ref: 3d50a70566f8c2278b0fc5d110309f3ace75bfdf  # ASSAY 0.11.10 (_version.py), tested set: the last one this repository's CI tested on its own
+            assay_ref: 5c71dc37694ce13cc02a99555598b063c340021b  # ASSAY 0.11.10 (_version.py), tested set: the last one this repository's CI tested on its own
           - label: latest siblings, non-blocking
             blocking: false
             swizzle_ref: ""   # empty ref: the default branch
