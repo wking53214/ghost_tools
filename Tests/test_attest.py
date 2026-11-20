@@ -163,3 +163,38 @@ def test_no_runs_is_reported_rather_than_passed(tmp_path):
 
 def test_the_digest_is_stable_across_key_order():
     assert digest({"a": 1, "b": 2}) == digest({"b": 2, "a": 1})
+
+def test_new_digests_and_links_are_the_full_sha256(tmp_path):
+    record = tmp_path / "a.json"
+    record.write_text('{"a": 1}')
+    assert len(digest_file(record)) == 64 and len(digest({"a": 1})) == 64
+    _ledger_with_runs(tmp_path, 2)
+    assert all(len(run["link"]) == 64 for run in _runs_on_disk(tmp_path))
+
+
+def _legacy_chain(runs):
+    """A chain as 1.10.14 and earlier wrote it: every link cut to its first 16 digits."""
+    previous = ""
+    for run in runs:
+        run["link"] = link(previous, run)[:16]
+        previous = run["link"]
+    return runs
+
+
+def test_a_chain_written_with_16_digit_links_still_verifies(tmp_path):
+    _ledger_with_runs(tmp_path, 4)
+    assert verify(_legacy_chain(_runs_on_disk(tmp_path))) == []
+
+
+def test_an_edit_to_a_16_digit_chain_is_still_a_break(tmp_path):
+    _ledger_with_runs(tmp_path, 4)
+    runs = _legacy_chain(_runs_on_disk(tmp_path))
+    runs[1]["commit"] = "edited"
+    assert [b.run_index for b in verify(runs)][:1] == [1]
+
+
+def test_a_link_of_some_other_short_length_is_not_accepted_as_a_prefix(tmp_path):
+    _ledger_with_runs(tmp_path, 3)
+    runs = _runs_on_disk(tmp_path)
+    runs[1]["link"] = runs[1]["link"][:8]
+    assert verify(runs)
