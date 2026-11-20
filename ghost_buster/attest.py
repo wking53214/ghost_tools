@@ -54,7 +54,7 @@ def digest(data: object) -> str:
     """A stable digest of a JSON-shaped value. Keys are sorted, so a record
     that is rewritten by a different json writer still matches."""
     text = json.dumps(data, sort_keys=True, separators=(",", ":"), default=str)
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def digest_file(path: Optional[Path]) -> str:
@@ -68,7 +68,7 @@ def digest_file(path: Optional[Path]) -> str:
         # Unreadable or not JSON. That is a fact about the record, and
         # hashing the raw bytes keeps it in the chain instead of dropping it.
         try:
-            return hashlib.sha256(Path(path).read_bytes()).hexdigest()[:16]
+            return hashlib.sha256(Path(path).read_bytes()).hexdigest()
         except OSError:
             return ABSENT
 
@@ -91,6 +91,17 @@ class Break:
         return f"run {self.run_index} ({self.run_id}): {self.what}"
 
 
+#: Links written by 1.10.14 and earlier were the first 16 hex digits of the SHA-256. They are still read, by prefix,
+#: so an old ledger does not report a break it does not have; nothing new is written at that length.
+LEGACY_LENGTH = 16
+
+
+def _same_link(recorded: str, expected: str) -> bool:
+    if recorded == expected:
+        return True
+    return len(recorded) == LEGACY_LENGTH and expected.startswith(recorded)
+
+
 def verify(runs: List[dict]) -> List[Break]:
     """Every link, recomputed. An empty list means the chain is intact for
     the runs that carry one; runs written before this existed have no link
@@ -105,7 +116,7 @@ def verify(runs: List[dict]) -> List[Break]:
             previous = link(previous, run)
             continue
         expected = link(previous, run)
-        if recorded != expected:
+        if not _same_link(recorded, expected):
             breaks.append(Break(i, str(run.get("run_id", "")),
                                 f"link {recorded} does not match {expected} recomputed from this run "
                                 "and the one before it"))
