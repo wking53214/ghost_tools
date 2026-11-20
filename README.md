@@ -111,7 +111,7 @@ workflow installs the same pin as the `cns` extra, so there they run.
 `Tests/test_cns_independence.py` runs with `cns` blocked and holds the package,
 the CLI and a real scan working without it.
 
-Current pin: the tag `v4.0.0` of CNS (a lightweight tag, so the tag is the commit `eabe6c72d71557b6327b80b42b0afab572acce80`). The same text is in the `cns` extra of `pyproject.toml`, in `.github/workflows/tests.yml` and as `CNS_PIN` in `Tests/test_cns_independence.py`; `Tests/test_workflow_pins.py` and that file hold them together. Earlier pins (v1.9.0, v2.0.0, v2.1.0, v2.2.0, v2.3.0) and the reasons for each move are in CHANGELOG.md, releases 1.10.8 to 1.10.12.
+Current pin: the tag `v4.1.0` of CNS (an annotated tag that peels to the commit `c84ef8c60079aae1753f92d9169d89081c670c22`). The same text is in the `cns` extra of `pyproject.toml`, in `.github/workflows/tests.yml` and as `CNS_PIN` in `Tests/test_cns_independence.py`; `Tests/test_workflow_pins.py` and that file hold them together. Earlier pins (v1.9.0, v2.0.0, v2.1.0, v2.2.0, v2.3.0) and the reasons for each move are in CHANGELOG.md, releases 1.10.8 to 1.10.12.
 
 ## 3. What It Does NOT Do / Non-Goals
 
