@@ -153,7 +153,7 @@ def test_the_blocking_gate_pins_the_recorded_tested_set_with_true_version_commen
     assay = re.search(r"^\s*assay_ref: ([0-9a-f]{40})\s+# (.*)$", text, re.M)
     assert swizzle and assay
     assert swizzle[1] == "3fcb27f62add4ba4355a55dff6f3a180fda816ed" and "SWIZZLE 0.8.13" in swizzle[2]
-    assert assay[1] == "3d50a70566f8c2278b0fc5d110309f3ace75bfdf" and "ASSAY 0.11.10" in assay[2]
+    assert assay[1] == "4da96411eb09f25e68a024cd1aeb004322c1c99f" and "ASSAY 0.11.10" in assay[2]
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     assert swizzle[1] in readme and assay[1] in readme
 
