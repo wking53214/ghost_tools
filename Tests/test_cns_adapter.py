@@ -18,14 +18,15 @@ def test_cns_available_when_installed():
 def test_translate_confirmed_shape():
     r = cns_adapter.translate_status(Status.CONFIRMED, {"path": "a.py", "id": "1"})
     assert r.translation.source_value == "confirmed"
-    assert r.translation.cns_outcome == "pass"
     assert r.translation.information_lost
     if r.translation.cns_present:
+        assert r.translation.cns_outcome == "pass"
         assert r.translation.authority == "cns.gate"
         assert r.gate_result is not None
         assert r.gate_result.subject_digest == r.translation.subject_digest
         assert r.translation.subject_digest
     else:
+        assert r.translation.cns_outcome is None
         assert r.translation.authority == "advisory_only"
         assert r.gate_result is None
         assert r.translation.subject_digest == ""
