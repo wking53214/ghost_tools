@@ -6,6 +6,8 @@ accepted by the publish workflow.
 
 ## Unreleased
 
+- CNS pin `v4.1.0` -> `v4.2.0` (`670246fe5006ae15757f90e48350f57b53c56414`) in the `cns` extra, CI, the install hints, the docs and the tests that hold them; 4.2.0 adds only the optional `Evidence.edit_sources` field, which nothing here reads. No version change, no code change other than the install-hint text.
+
 ### Added
 - A scan that finds Rust (`.rs`) files now says they were not analysed. Ghost has no Rust analysis, so a scan of a Rust tree used to look clean when its Rust code was never checked. The report adds an `unmeasured` row (`check: "rust"`, `state: "not_analysed"`, `by_request: false`), `scan.rust_files_not_analysed` holds the count, and `status` is `"incomplete"`. Cargo's `target/` directory and the usual excluded directories are not counted. A Python-only scan is unchanged.
 

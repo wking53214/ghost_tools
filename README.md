@@ -74,7 +74,7 @@ Defaults, all 27 detectors and the mutant census: [docs/REFERENCE.md](docs/REFER
 **optional**: ghost_tools imports and runs without CNS, and nothing loads `cns`
 until a CNS-backed function is called. Install the pinned package from a checkout
 of this repository with `pip install -e '.[cns]'`, or install just CNS with
-`pip install "cns @ git+https://github.com/wking53214/CNS.git@v4.1.0"`. Do not ask PyPI
+`pip install "cns @ git+https://github.com/wking53214/CNS.git@v4.2.0"`. Do not ask PyPI
 for a `cns` extra of `ghost-tools`: the project of that name there is an older release
 (1.6.0) that has none, and it installs the wrong thing. Without CNS, `FindingGate`, `cns_chain` and
 `check_report` raise `CnsNotInstalled` (an `ImportError` naming that command),
@@ -111,7 +111,7 @@ workflow installs the same pin as the `cns` extra, so there they run.
 `Tests/test_cns_independence.py` runs with `cns` blocked and holds the package,
 the CLI and a real scan working without it.
 
-Current pin: the tag `v4.1.0` of CNS (an annotated tag that peels to the commit `c84ef8c60079aae1753f92d9169d89081c670c22`). The same text is in the `cns` extra of `pyproject.toml`, in `.github/workflows/tests.yml` and as `CNS_PIN` in `Tests/test_cns_independence.py`; `Tests/test_workflow_pins.py` and that file hold them together. Earlier pins (v1.9.0, v2.0.0, v2.1.0, v2.2.0, v2.3.0) and the reasons for each move are in CHANGELOG.md, releases 1.10.8 to 1.10.12.
+Current pin: the tag `v4.2.0` of CNS (an annotated tag that peels to the commit `670246fe5006ae15757f90e48350f57b53c56414`). The same text is in the `cns` extra of `pyproject.toml`, in `.github/workflows/tests.yml` and as `CNS_PIN` in `Tests/test_cns_independence.py`; `Tests/test_workflow_pins.py` and that file hold them together. Earlier pins (v1.9.0, v2.0.0, v2.1.0, v2.2.0, v2.3.0) and the reasons for each move are in CHANGELOG.md, releases 1.10.8 to 1.10.12.
 
 ## 3. What It Does NOT Do / Non-Goals
 
