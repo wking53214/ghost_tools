@@ -10,6 +10,7 @@ accepted by the publish workflow.
 - A scan that finds Rust (`.rs`) files now says they were not analysed. Ghost has no Rust analysis, so a scan of a Rust tree used to look clean when its Rust code was never checked. The report adds an `unmeasured` row (`check: "rust"`, `state: "not_analysed"`, `by_request: false`), `scan.rust_files_not_analysed` holds the count, and `status` is `"incomplete"`. Cargo's `target/` directory and the usual excluded directories are not counted. A Python-only scan is unchanged.
 
 ### Changed
+- CNS pin `v4.1.0` -> `v4.2.0` (`670246fe5006ae15757f90e48350f57b53c56414`), which adds `Evidence.edit_sources`; the circuit and the repositories released from it move together. No code change here.
 - The run-chain links and the baseline and case-file digests in the ledger are now the full 64-digit SHA-256. They were cut to 16 digits (64 bits), too short for a value that is meant to show an edit. Ledgers written by 1.10.14 and earlier still verify: a recorded 16-digit link counts as intact when it is the start of the recomputed one. Finding IDs (`ghost-...`, `void-...`) are labels for baseline matching, not integrity values, and stay short.
 - The `--version` banner backronym reads "FFF: Founders' Favorite Fumbles" (owner decision, 2026-11-05); known defect 1 in the README is closed. No behaviour other than that text changes, and the circuit's pinned ghost_tools commit is unchanged until the next repin.
 
